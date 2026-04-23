@@ -1,1 +1,28 @@
+.ui-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
 
+.ui-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-elevated);
+}
+
+.ui-table th,
+.ui-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-table th {
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ui-table tbody tr:hover {
+  background: var(--bg-muted);
+}
