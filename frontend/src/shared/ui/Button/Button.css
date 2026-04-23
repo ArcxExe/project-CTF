@@ -1,1 +1,41 @@
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  min-height: 44px;
+  padding: 0 16px;
+  transition: 0.2s ease;
+}
 
+.ui-button--primary {
+  background: var(--primary);
+  color: white;
+}
+
+.ui-button--primary:hover {
+  background: var(--primary-hover);
+}
+
+.ui-button--secondary {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.ui-button--danger {
+  background: var(--danger);
+  color: white;
+}
+
+.ui-button--full {
+  width: 100%;
+}
