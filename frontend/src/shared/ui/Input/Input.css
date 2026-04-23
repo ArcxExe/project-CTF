@@ -1,1 +1,29 @@
+.ui-field {
+  display: grid;
+  gap: 8px;
+}
 
+.ui-field__label {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.ui-field__error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.ui-input {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  padding: 0 14px;
+  outline: none;
+}
+
+.ui-input:focus {
+  border-color: var(--primary);
+}
