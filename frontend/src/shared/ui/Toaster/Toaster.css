@@ -1,1 +1,29 @@
+.ui-toaster {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 10px;
+  z-index: 40;
+}
 
+.ui-toast {
+  min-width: 260px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.ui-toast--success {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.ui-toast--error {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.ui-toast--info {
+  border-color: rgba(37, 99, 235, 0.35);
+}
