@@ -1,4 +1,4 @@
-package com.project.ctf;
+package com.arcx.ctf;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
