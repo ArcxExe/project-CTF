@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { ThemeToggle } from "@/features/theme/ui/ThemeToggle";
 import { useAuthStore } from "@/features/auth/model/authStore";
@@ -14,11 +13,7 @@ const adminLinks = [
 const participantLinks = [{ to: "/participant/profile", label: "Профиль" }];
 
 export const AppLayout = () => {
-  const { currentUser, restoreSession, logout } = useAuthStore();
-
-  useEffect(() => {
-    void restoreSession();
-  }, [restoreSession]);
+  const { currentUser, logout } = useAuthStore();
 
   const links = currentUser?.role === "admin" ? adminLinks : participantLinks;
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { studentsApi } from "@/shared/api/services/students";
+import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -16,13 +17,24 @@ export const StudentsPage = () => {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { push } = useToastStore();
 
   useEffect(() => {
-    void studentsApi.getAll().then((response) => {
-      setStudents(response);
-      setIsLoading(false);
-    });
-  }, []);
+    void studentsApi
+      .getAll()
+      .then((response) => {
+        setStudents(response);
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить список студентов",
+          variant: "error",
+        });
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [push]);
 
   const filteredStudents = useMemo(
     () =>

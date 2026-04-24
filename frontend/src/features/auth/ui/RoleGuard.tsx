@@ -10,15 +10,15 @@ interface RoleGuardProps extends PropsWithChildren {
 }
 
 export const RoleGuard = ({ allowedRoles, children }: RoleGuardProps) => {
-  const { currentUser, isLoading, restoreSession } = useAuthStore();
+  const { currentUser, isLoading, isSessionHydrated, restoreSession } = useAuthStore();
 
   useEffect(() => {
-    if (!currentUser) {
+    if (!isSessionHydrated) {
       void restoreSession();
     }
-  }, [currentUser, restoreSession]);
+  }, [isSessionHydrated, restoreSession]);
 
-  if (isLoading) {
+  if (!isSessionHydrated || isLoading) {
     return <Loader label="Проверяем доступ..." />;
   }
 

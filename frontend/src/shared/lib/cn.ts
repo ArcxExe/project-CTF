@@ -1,3 +1,4 @@
 import clsx from "clsx";
+import type { ClassValue } from "clsx";
 
-export const cn = (...values: clsx.ClassValue[]) => clsx(values);
+export const cn = (...values: ClassValue[]) => clsx(...values);

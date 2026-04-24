@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { competitionsApi } from "@/shared/api/services/competitions";
+import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Card } from "@/shared/ui/Card/Card";
 import { Loader } from "@/shared/ui/Loader/Loader";
@@ -10,13 +11,24 @@ import "./pages.css";
 export const CompetitionsPage = () => {
   const [items, setItems] = useState<Competition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { push } = useToastStore();
 
   useEffect(() => {
-    void competitionsApi.getAll().then((response) => {
-      setItems(response);
-      setIsLoading(false);
-    });
-  }, []);
+    void competitionsApi
+      .getAll()
+      .then((response) => {
+        setItems(response);
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить соревнования",
+          variant: "error",
+        });
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [push]);
 
   if (isLoading) {
     return <Loader label="Загружаем соревнования..." />;
