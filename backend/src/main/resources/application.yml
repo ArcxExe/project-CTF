@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: ctf-platform
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ctf_platform}
+    username: ${DB_USER:ctf_user}
+    password: ${DB_PASSWORD:ctf_password}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info}
+  endpoint:
+    health:
+      show-details: when_authorized
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:3600000}

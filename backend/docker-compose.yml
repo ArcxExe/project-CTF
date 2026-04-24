@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ctf-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ctf_platform}
+      POSTGRES_USER: ${DB_USER:-ctf_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ctf_password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ctf_user} -d ${DB_NAME:-ctf_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ctf-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-ctf_platform}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-ctf_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-ctf_password}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-ctf_platform}
+      DB_USER: ${DB_USER:-ctf_user}
+      DB_PASSWORD: ${DB_PASSWORD:-ctf_password}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-3600000}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:-health,info}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+
+volumes:
+  postgres_data:
