@@ -7,28 +7,50 @@ export const DashboardPage = () => (
   <div className="page-stack">
     <PageHeader
       title="Административная панель"
-      subtitle="Стартовый экран для управления учебной CTF-платформой."
+      subtitle="Сводка учебной CTF-платформы и быстрый контроль ключевых зон."
       actions={<Badge tone="info">mock mode</Badge>}
     />
 
+    <div className="metric-grid">
+      <Card>
+        <div className="metric-card">
+          <span className="muted">Студентов</span>
+          <strong>62</strong>
+          <Badge tone="success">58 в рейтинге</Badge>
+        </div>
+      </Card>
+      <Card>
+        <div className="metric-card">
+          <span className="muted">Соревнований</span>
+          <strong>4</strong>
+          <Badge tone="info">1 активное</Badge>
+        </div>
+      </Card>
+      <Card>
+        <div className="metric-card">
+          <span className="muted">Ручные проверки</span>
+          <strong>14</strong>
+          <Badge tone="danger">очередь</Badge>
+        </div>
+      </Card>
+    </div>
+
     <div className="grid grid-2">
       <Card>
-        <h3>Что уже можно делать</h3>
+        <h3>Операционные разделы</h3>
         <ul className="page-list">
-          <li>Переключаться между ролями через mock login</li>
-          <li>Открывать административные страницы</li>
-          <li>Просматривать студентов и соревнования из mock API</li>
-          <li>Тестировать тему, модалки и уведомления</li>
+          <li>Студенты, группы, потоки и лабораторные баллы</li>
+          <li>Соревнования, тесты, категории и задания</li>
+          <li>Ручные проверки, санкции, промокоды и рейтинг</li>
         </ul>
       </Card>
 
       <Card>
-        <h3>Что подключать следующим шагом</h3>
+        <h3>Контроль и выгрузки</h3>
         <ul className="page-list">
-          <li>Экран тестового этапа</li>
-          <li>Экран основного CTF</li>
-          <li>Real-time рейтинг</li>
-          <li>Реальные API-контракты</li>
+          <li>Аналитика активности и качества заданий</li>
+          <li>Журнал действий для аудита</li>
+          <li>Отчеты по учебным потокам и соревнованиям</li>
         </ul>
       </Card>
     </div>

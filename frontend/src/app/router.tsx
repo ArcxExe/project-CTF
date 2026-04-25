@@ -1,61 +1,94 @@
+import { createBrowserRouter } from "react-router-dom";
 import {
-  createBrowserRouter,
-  Navigate,
-} from "react-router-dom";
-import { AppLayout } from "@/widgets/AppLayout/AppLayout";
-import { LoginPage } from "@/pages/LoginPage";
-import { DashboardPage } from "@/pages/DashboardPage";
-import { StudentsPage } from "@/pages/StudentsPage";
+  AdminActionLogPage,
+  AdminAnalyticsPage,
+  AdminCategoriesPage,
+  AdminGroupsPage,
+  AdminLabScoresPage,
+  AdminManualReviewsPage,
+  AdminPromoCodesPage,
+  AdminRatingPage,
+  AdminReportsPage,
+  AdminSanctionsPage,
+  AdminStreamsPage,
+  AdminTasksPage,
+  AdminTestsPage,
+} from "@/pages/AdminPages";
 import { CompetitionsPage } from "@/pages/CompetitionsPage";
-import { ParticipantProfilePage } from "@/pages/ParticipantProfilePage";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
-import { RoleGuard } from "@/features/auth/ui/RoleGuard";
+import {
+  ParticipantCompetitionPage,
+  ParticipantCtfPage,
+  ParticipantRatingPage,
+  ParticipantTaskPage,
+  ParticipantTestPage,
+  PromoCodePage,
+  RegisterPage,
+} from "@/pages/ParticipantPages";
+import { ParticipantProfilePage } from "@/pages/ParticipantProfilePage";
+import { StudentsPage } from "@/pages/StudentsPage";
+import { RoleGuard, RoleRedirect } from "@/features/auth/ui/RoleGuard";
+import { AdminLayout, ParticipantLayout } from "@/widgets/AppLayout/AppLayout";
 
 export const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <RoleRedirect />,
+  },
   {
     path: "/login",
     element: <LoginPage />,
   },
   {
-    path: "/",
-    element: <AppLayout />,
+    path: "/register",
+    element: <RegisterPage />,
+  },
+  {
+    path: "/admin",
+    element: (
+      <RoleGuard allowedRoles={["admin"]}>
+        <AdminLayout />
+      </RoleGuard>
+    ),
     children: [
-      {
-        index: true,
-        element: <Navigate to="/admin/dashboard" replace />,
-      },
-      {
-        path: "admin/dashboard",
-        element: (
-          <RoleGuard allowedRoles={["admin"]}>
-            <DashboardPage />
-          </RoleGuard>
-        ),
-      },
-      {
-        path: "admin/students",
-        element: (
-          <RoleGuard allowedRoles={["admin"]}>
-            <StudentsPage />
-          </RoleGuard>
-        ),
-      },
-      {
-        path: "admin/competitions",
-        element: (
-          <RoleGuard allowedRoles={["admin"]}>
-            <CompetitionsPage />
-          </RoleGuard>
-        ),
-      },
-      {
-        path: "participant/profile",
-        element: (
-          <RoleGuard allowedRoles={["participant"]}>
-            <ParticipantProfilePage />
-          </RoleGuard>
-        ),
-      },
+      { index: true, element: <DashboardPage /> },
+      { path: "dashboard", element: <DashboardPage /> },
+      { path: "students", element: <StudentsPage /> },
+      { path: "groups", element: <AdminGroupsPage /> },
+      { path: "streams", element: <AdminStreamsPage /> },
+      { path: "lab-scores", element: <AdminLabScoresPage /> },
+      { path: "competitions", element: <CompetitionsPage /> },
+      { path: "tests", element: <AdminTestsPage /> },
+      { path: "categories", element: <AdminCategoriesPage /> },
+      { path: "tasks", element: <AdminTasksPage /> },
+      { path: "manual-reviews", element: <AdminManualReviewsPage /> },
+      { path: "rating", element: <AdminRatingPage /> },
+      { path: "promo-codes", element: <AdminPromoCodesPage /> },
+      { path: "sanctions", element: <AdminSanctionsPage /> },
+      { path: "analytics", element: <AdminAnalyticsPage /> },
+      { path: "action-log", element: <AdminActionLogPage /> },
+      { path: "reports", element: <AdminReportsPage /> },
+    ],
+  },
+  {
+    path: "/participant",
+    element: (
+      <RoleGuard allowedRoles={["participant"]}>
+        <ParticipantLayout />
+      </RoleGuard>
+    ),
+    children: [
+      { index: true, element: <ParticipantProfilePage /> },
+      { path: "profile", element: <ParticipantProfilePage /> },
+      { path: "competition", element: <ParticipantCompetitionPage /> },
+      { path: "competitions/:competitionId", element: <ParticipantCompetitionPage /> },
+      { path: "test", element: <ParticipantTestPage /> },
+      { path: "ctf", element: <ParticipantCtfPage /> },
+      { path: "tasks/:taskId", element: <ParticipantTaskPage /> },
+      { path: "rating", element: <ParticipantRatingPage /> },
+      { path: "promo-code", element: <PromoCodePage /> },
     ],
   },
   {

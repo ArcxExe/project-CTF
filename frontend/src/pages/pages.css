@@ -9,6 +9,32 @@
   width: min(460px, 100%);
 }
 
+.auth-switch {
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.mock-login-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  padding: 14px;
+}
+
+.mock-login-panel__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auth-switch a,
+.task-card__footer a {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 .page-list {
   display: grid;
   gap: 10px;
@@ -26,4 +52,168 @@
   gap: 14px;
   flex-wrap: wrap;
   color: var(--text-secondary);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-card strong {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.admin-toolbar,
+.promo-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 16px;
+}
+
+.info-grid span {
+  color: var(--text-secondary);
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.page-link-button {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text);
+  font-weight: 700;
+  padding: 0 14px;
+  text-align: center;
+}
+
+.test-row {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  align-items: center;
+  gap: 20px;
+}
+
+.progress-block {
+  display: grid;
+  gap: 8px;
+}
+
+.progress-block span {
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-align: right;
+}
+
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-muted);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.task-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.task-card {
+  min-height: 220px;
+  display: grid;
+  align-content: space-between;
+  gap: 18px;
+}
+
+.task-card__head,
+.task-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-card__footer {
+  color: var(--text-secondary);
+}
+
+.hint-box {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  padding: 14px;
+}
+
+.hint-box span {
+  color: var(--text-secondary);
+}
+
+.bar-chart {
+  height: 240px;
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  padding: 16px;
+}
+
+.bar-chart span {
+  flex: 1;
+  min-width: 18px;
+  border-radius: 8px 8px 0 0;
+  background: var(--primary);
+}
+
+@media (max-width: 1100px) {
+  .task-grid,
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .task-grid,
+  .metric-grid,
+  .action-grid,
+  .test-row,
+  .admin-toolbar,
+  .promo-form,
+  .mock-login-panel__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-block span {
+    text-align: left;
+  }
 }

@@ -33,3 +33,28 @@ export const RoleGuard = ({ allowedRoles, children }: RoleGuardProps) => {
 
   return <>{children}</>;
 };
+
+export const RoleRedirect = () => {
+  const { currentUser, isLoading, isSessionHydrated, restoreSession } = useAuthStore();
+
+  useEffect(() => {
+    if (!isSessionHydrated) {
+      void restoreSession();
+    }
+  }, [isSessionHydrated, restoreSession]);
+
+  if (!isSessionHydrated || isLoading) {
+    return <Loader label="Проверяем сессию..." />;
+  }
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return (
+    <Navigate
+      to={currentUser.role === "admin" ? "/admin/dashboard" : "/participant/profile"}
+      replace
+    />
+  );
+};

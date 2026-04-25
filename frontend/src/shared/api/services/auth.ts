@@ -1,6 +1,12 @@
 import { mockUsers } from "@/shared/api/mock/db";
 import { sleep } from "@/shared/lib/sleep";
+import type { Role } from "@/shared/types/common";
 import type { AuthPayload, User } from "@/shared/types/user";
+
+const toSafeUser = (user: (typeof mockUsers)[number]): User => {
+  const { password: _, ...safeUser } = user;
+  return safeUser;
+};
 
 export const authApi = {
   async login(payload: AuthPayload): Promise<User> {
@@ -18,8 +24,19 @@ export const authApi = {
       throw new Error("Пользователь заблокирован");
     }
 
-    const { password: _, ...safeUser } = user;
-    return safeUser;
+    return toSafeUser(user);
+  },
+
+  async loginAsRole(role: Role): Promise<User> {
+    await sleep(150);
+
+    const user = mockUsers.find((item) => item.role === role && !item.isBlocked);
+
+    if (!user) {
+      throw new Error("Не найден mock user для выбранной роли");
+    }
+
+    return toSafeUser(user);
   },
 
   async getCurrentUser(userId: string): Promise<User | null> {
@@ -30,7 +47,6 @@ export const authApi = {
       return null;
     }
 
-    const { password: _, ...safeUser } = user;
-    return safeUser;
+    return toSafeUser(user);
   },
 };

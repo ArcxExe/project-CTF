@@ -1,6 +1,7 @@
 export type Role = "admin" | "participant";
 
 export type Identifier = string;
+export type ISODateTime = string;
 
 export interface ApiResponse<T> {
   data: T;
