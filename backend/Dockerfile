@@ -1,8 +1,20 @@
+FROM gradle:8.14.4-jdk21-alpine AS build
+
+WORKDIR /workspace
+
+COPY --chown=gradle:gradle build.gradle settings.gradle ./
+
+RUN gradle resolveRuntimeClasspath --no-daemon
+
+COPY --chown=gradle:gradle src ./src
+
+RUN gradle bootJar --no-daemon
+
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
-COPY build/libs/*.jar app.jar
+COPY --from=build /workspace/build/libs/*.jar app.jar
 
 EXPOSE 8080
 

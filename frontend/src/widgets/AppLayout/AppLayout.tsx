@@ -11,6 +11,7 @@ interface LayoutLink {
 
 const adminLinks: LayoutLink[] = [
   { to: "/admin/dashboard", label: "Dashboard" },
+  { to: "/admin/progress", label: "Прогресс" },
   { to: "/admin/students", label: "Студенты" },
   { to: "/admin/groups", label: "Группы" },
   { to: "/admin/streams", label: "Потоки" },

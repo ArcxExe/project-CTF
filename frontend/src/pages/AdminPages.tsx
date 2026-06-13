@@ -1,8 +1,21 @@
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import { useToastStore } from "@/entities/notification/model/toastStore";
+import { adminChallengesApi } from "@/shared/api/services/challenges";
+import type { Challenge } from "@/shared/api/services/challenges";
+import { adminCompetitionsApi } from "@/shared/api/services/competitions";
+import { adminPromoCodesApi } from "@/shared/api/services/promoCodes";
+import type { PromoCode } from "@/shared/api/services/promoCodes";
+import { adminTestsApi } from "@/shared/api/services/tests";
+import type { CtfTest } from "@/shared/api/services/tests";
+import type { Competition } from "@/shared/types/competition";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
 import { DataTable } from "@/shared/ui/DataTable/DataTable";
 import { Input } from "@/shared/ui/Input/Input";
+import { Loader } from "@/shared/ui/Loader/Loader";
+import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import "./pages.css";
 
@@ -324,15 +337,865 @@ const AdminSectionPage = ({ config }: { config: AdminSectionConfig }) => (
   </div>
 );
 
+const challengeDifficultyLabels: Record<Challenge["difficulty"], string> = {
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+};
+
+const challengeStatusLabels: Record<Challenge["status"], string> = {
+  draft: "Черновик",
+  published: "Опубликовано",
+};
+
+const testStatusLabels: Record<CtfTest["status"], string> = {
+  draft: "Черновик",
+  published: "Опубликовано",
+  archived: "Архив",
+};
+
+const promoStatusLabels: Record<PromoCode["status"], string> = {
+  active: "Активно",
+  expired: "Просрочено",
+  disabled: "Отключено",
+};
+
+const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString("ru-RU") : "—");
+
+const toIsoDateTime = (value: string) => (value ? new Date(value).toISOString() : undefined);
+
+const optionalNumber = (value: string) => (value === "" ? undefined : Number(value));
+
+const AdminTasksManagerPage = () => {
+  const { push } = useToastStore();
+  const [tasks, setTasks] = useState<Challenge[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({
+    competitionId: "",
+    title: "",
+    category: "Web",
+    description: "",
+    difficulty: "easy" as Challenge["difficulty"],
+    points: "100",
+    flag: "",
+    status: "published" as Challenge["status"],
+  });
+
+  useEffect(() => {
+    void Promise.all([adminChallengesApi.getAll(), adminCompetitionsApi.getAll()])
+      .then(([challengeRows, competitionRows]) => {
+        setTasks(challengeRows);
+        setCompetitions(competitionRows);
+        setForm((current) => ({
+          ...current,
+          competitionId: current.competitionId || competitionRows[0]?.id || "",
+        }));
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить задания",
+          variant: "error",
+        });
+      })
+      .finally(() => setIsLoading(false));
+  }, [push]);
+
+  const filteredTasks = useMemo(
+    () =>
+      tasks.filter((task) =>
+        [task.title, task.category, task.description, task.status]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    [search, tasks],
+  );
+
+  const handleCreate = async (event: FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+
+    try {
+      const created = await adminChallengesApi.create({
+        competitionId: form.competitionId,
+        title: form.title,
+        category: form.category,
+        description: form.description || undefined,
+        difficulty: form.difficulty,
+        points: Number(form.points),
+        flag: form.flag,
+        status: form.status,
+      });
+
+      setTasks((current) => [created, ...current]);
+      setForm({
+        competitionId: competitions[0]?.id || "",
+        title: "",
+        category: "Web",
+        description: "",
+        difficulty: "easy",
+        points: "100",
+        flag: "",
+        status: "published",
+      });
+      setIsModalOpen(false);
+      push({ title: "Задание создано", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось создать задание",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePublish = async (task: Challenge) => {
+    try {
+      const published = await adminChallengesApi.publish(task.id);
+      setTasks((current) => current.map((item) => (item.id === published.id ? published : item)));
+      push({ title: "Задание опубликовано", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось опубликовать задание",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleDelete = async (task: Challenge) => {
+    if (!window.confirm(`Удалить задание "${task.title}"?`)) {
+      return;
+    }
+
+    try {
+      await adminChallengesApi.delete(task.id);
+      setTasks((current) => current.filter((item) => item.id !== task.id));
+      push({ title: "Задание удалено", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить задание",
+        variant: "error",
+      });
+    }
+  };
+
+  if (isLoading) {
+    return <Loader label="Загружаем задания..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Задания"
+        subtitle="Банк CTF-заданий из backend API: создание, публикация и удаление."
+        actions={<Button onClick={() => setIsModalOpen(true)}>Создать задание</Button>}
+      />
+
+      <div className="metric-grid">
+        <Card>
+          <div className="metric-card">
+            <span className="muted">Всего</span>
+            <strong>{tasks.length}</strong>
+          </div>
+        </Card>
+        <Card>
+          <div className="metric-card">
+            <span className="muted">Опубликовано</span>
+            <strong>{tasks.filter((task) => task.status === "published").length}</strong>
+          </div>
+        </Card>
+        <Card>
+          <div className="metric-card">
+            <span className="muted">Черновики</span>
+            <strong>{tasks.filter((task) => task.status === "draft").length}</strong>
+          </div>
+        </Card>
+      </div>
+
+      <Card>
+        <Input
+          label="Поиск"
+          placeholder="Название, категория, описание"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </Card>
+
+      <DataTable
+        columns={[
+          { key: "title", title: "Задание" },
+          { key: "category", title: "Категория" },
+          {
+            key: "difficulty",
+            title: "Сложность",
+            render: (task) => challengeDifficultyLabels[task.difficulty],
+          },
+          { key: "points", title: "Баллы" },
+          {
+            key: "status",
+            title: "Статус",
+            render: (task) => (
+              <Badge tone={task.status === "published" ? "success" : "info"}>
+                {challengeStatusLabels[task.status]}
+              </Badge>
+            ),
+          },
+          {
+            key: "actions",
+            title: "Действия",
+            render: (task) => (
+              <div className="table-actions">
+                {task.status === "draft" && (
+                  <Button variant="secondary" onClick={() => void handlePublish(task)}>
+                    Опубликовать
+                  </Button>
+                )}
+                <Button variant="danger" onClick={() => void handleDelete(task)}>
+                  Удалить
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+        rows={filteredTasks}
+      />
+
+      <Modal open={isModalOpen} title="Новое задание" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleCreate}>
+          <label className="ui-field">
+            <span className="ui-field__label">Соревнование</span>
+            <select
+              className="ui-input"
+              value={form.competitionId}
+              onChange={(event) => setForm((current) => ({ ...current, competitionId: event.target.value }))}
+              required
+            >
+              {competitions.map((competition) => (
+                <option key={competition.id} value={competition.id}>
+                  {competition.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <Input
+            label="Название"
+            value={form.title}
+            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+            required
+          />
+
+          <label className="ui-field">
+            <span className="ui-field__label">Описание</span>
+            <textarea
+              className="ui-input ui-textarea"
+              value={form.description}
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+            />
+          </label>
+
+          <div className="admin-form-grid">
+            <Input
+              label="Категория"
+              value={form.category}
+              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+              required
+            />
+            <Input
+              label="Баллы"
+              type="number"
+              min={1}
+              value={form.points}
+              onChange={(event) => setForm((current) => ({ ...current, points: event.target.value }))}
+              required
+            />
+            <label className="ui-field">
+              <span className="ui-field__label">Сложность</span>
+              <select
+                className="ui-input"
+                value={form.difficulty}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, difficulty: event.target.value as Challenge["difficulty"] }))
+                }
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </label>
+            <label className="ui-field">
+              <span className="ui-field__label">Статус</span>
+              <select
+                className="ui-input"
+                value={form.status}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, status: event.target.value as Challenge["status"] }))
+                }
+              >
+                <option value="published">Опубликовано</option>
+                <option value="draft">Черновик</option>
+              </select>
+            </label>
+          </div>
+
+          <Input
+            label="Флаг"
+            placeholder="CTF{example}"
+            value={form.flag}
+            onChange={(event) => setForm((current) => ({ ...current, flag: event.target.value }))}
+            required
+          />
+
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Сохраняем..." : "Создать"}
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+const AdminTestsManagerPage = () => {
+  const { push } = useToastStore();
+  const [tests, setTests] = useState<CtfTest[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [testChallenges, setTestChallenges] = useState<Challenge[]>([]);
+  const [selectedTestId, setSelectedTestId] = useState("");
+  const [selectedChallengeId, setSelectedChallengeId] = useState("");
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    status: "published" as CtfTest["status"],
+    timeLimitMinutes: "30",
+    passingScore: "70",
+    questionsCount: "10",
+  });
+
+  useEffect(() => {
+    void Promise.all([adminTestsApi.getAll(), adminChallengesApi.getAll()])
+      .then(([testRows, challengeRows]) => {
+        setTests(testRows);
+        setChallenges(challengeRows);
+        setSelectedTestId(testRows[0]?.id ?? "");
+        setSelectedChallengeId(challengeRows[0]?.id ?? "");
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить тесты",
+          variant: "error",
+        });
+      })
+      .finally(() => setIsLoading(false));
+  }, [push]);
+
+  useEffect(() => {
+    if (!selectedTestId) {
+      setTestChallenges([]);
+      return;
+    }
+
+    void adminTestsApi
+      .getChallenges(selectedTestId)
+      .then(setTestChallenges)
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить задания теста",
+          variant: "error",
+        });
+      });
+  }, [push, selectedTestId]);
+
+  const filteredTests = useMemo(
+    () =>
+      tests.filter((test) =>
+        [test.title, test.description, test.status].join(" ").toLowerCase().includes(search.toLowerCase()),
+      ),
+    [search, tests],
+  );
+
+  const handleCreate = async (event: FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+
+    try {
+      const created = await adminTestsApi.create({
+        title: form.title,
+        description: form.description || undefined,
+        status: form.status,
+        timeLimitMinutes: Number(form.timeLimitMinutes),
+        passingScore: Number(form.passingScore),
+        questionsCount: Number(form.questionsCount),
+      });
+
+      setTests((current) => [created, ...current]);
+      setSelectedTestId(created.id);
+      setForm({
+        title: "",
+        description: "",
+        status: "published",
+        timeLimitMinutes: "30",
+        passingScore: "70",
+        questionsCount: "10",
+      });
+      setIsModalOpen(false);
+      push({ title: "Тест создан", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось создать тест",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddChallenge = async () => {
+    if (!selectedTestId || !selectedChallengeId) {
+      return;
+    }
+
+    try {
+      const updated = await adminTestsApi.addChallenge(selectedTestId, selectedChallengeId);
+      setTests((current) => current.map((test) => (test.id === updated.id ? updated : test)));
+      setTestChallenges(await adminTestsApi.getChallenges(selectedTestId));
+      push({ title: "Задание добавлено в тест", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось добавить задание",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleRemoveChallenge = async (challengeId: string) => {
+    if (!selectedTestId) {
+      return;
+    }
+
+    try {
+      const updated = await adminTestsApi.removeChallenge(selectedTestId, challengeId);
+      setTests((current) => current.map((test) => (test.id === updated.id ? updated : test)));
+      setTestChallenges((current) => current.filter((challenge) => challenge.id !== challengeId));
+      push({ title: "Задание удалено из теста", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить задание",
+        variant: "error",
+      });
+    }
+  };
+
+  if (isLoading) {
+    return <Loader label="Загружаем тесты..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Тесты"
+        subtitle="Предварительные тесты допуска из backend API."
+        actions={<Button onClick={() => setIsModalOpen(true)}>Создать тест</Button>}
+      />
+
+      <Card>
+        <Input
+          label="Поиск"
+          placeholder="Название, описание, статус"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </Card>
+
+      <DataTable
+        columns={[
+          { key: "title", title: "Название" },
+          { key: "questionsCount", title: "Вопросов" },
+          { key: "timeLimitMinutes", title: "Лимит, мин" },
+          { key: "passingScore", title: "Проходной %" },
+          {
+            key: "status",
+            title: "Статус",
+            render: (test) => (
+              <Badge tone={test.status === "published" ? "success" : "info"}>{testStatusLabels[test.status]}</Badge>
+            ),
+          },
+        ]}
+        rows={filteredTests}
+      />
+
+      <Card>
+        <div className="page-stack">
+          <div className="admin-form-grid">
+            <label className="ui-field">
+              <span className="ui-field__label">Тест</span>
+              <select
+                className="ui-input"
+                value={selectedTestId}
+                onChange={(event) => setSelectedTestId(event.target.value)}
+              >
+                {tests.map((test) => (
+                  <option key={test.id} value={test.id}>
+                    {test.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="ui-field">
+              <span className="ui-field__label">Задание</span>
+              <select
+                className="ui-input"
+                value={selectedChallengeId}
+                onChange={(event) => setSelectedChallengeId(event.target.value)}
+              >
+                {challenges.map((challenge) => (
+                  <option key={challenge.id} value={challenge.id}>
+                    {challenge.title} · {challenge.points} pts
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button type="button" onClick={() => void handleAddChallenge()}>
+              Добавить задание
+            </Button>
+          </div>
+
+          <DataTable
+            columns={[
+              { key: "title", title: "Задание" },
+              { key: "category", title: "Категория" },
+              { key: "points", title: "Баллы" },
+              {
+                key: "status",
+                title: "Статус",
+                render: (challenge) => (
+                  <Badge tone={challenge.status === "published" ? "success" : "info"}>
+                    {challengeStatusLabels[challenge.status]}
+                  </Badge>
+                ),
+              },
+              {
+                key: "actions",
+                title: "Действия",
+                render: (challenge) => (
+                  <Button variant="danger" onClick={() => void handleRemoveChallenge(challenge.id)}>
+                    Удалить из теста
+                  </Button>
+                ),
+              },
+            ]}
+            rows={testChallenges}
+          />
+        </div>
+      </Card>
+
+      <Modal open={isModalOpen} title="Новый тест" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleCreate}>
+          <Input
+            label="Название"
+            value={form.title}
+            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+            required
+          />
+
+          <label className="ui-field">
+            <span className="ui-field__label">Описание</span>
+            <textarea
+              className="ui-input ui-textarea"
+              value={form.description}
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+            />
+          </label>
+
+          <div className="admin-form-grid">
+            <Input
+              label="Лимит, мин"
+              type="number"
+              min={1}
+              max={480}
+              value={form.timeLimitMinutes}
+              onChange={(event) => setForm((current) => ({ ...current, timeLimitMinutes: event.target.value }))}
+              required
+            />
+            <Input
+              label="Проходной %"
+              type="number"
+              min={1}
+              max={100}
+              value={form.passingScore}
+              onChange={(event) => setForm((current) => ({ ...current, passingScore: event.target.value }))}
+              required
+            />
+            <Input
+              label="Вопросов"
+              type="number"
+              min={0}
+              value={form.questionsCount}
+              onChange={(event) => setForm((current) => ({ ...current, questionsCount: event.target.value }))}
+              required
+            />
+            <label className="ui-field">
+              <span className="ui-field__label">Статус</span>
+              <select
+                className="ui-input"
+                value={form.status}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, status: event.target.value as CtfTest["status"] }))
+                }
+              >
+                <option value="published">Опубликовано</option>
+                <option value="draft">Черновик</option>
+                <option value="archived">Архив</option>
+              </select>
+            </label>
+          </div>
+
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Сохраняем..." : "Создать"}
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+const AdminPromoCodesManagerPage = () => {
+  const { push } = useToastStore();
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({
+    code: "",
+    title: "",
+    description: "",
+    bonusPoints: "50",
+    bonusAttempts: "",
+    maxUses: "30",
+    status: "active" as PromoCode["status"],
+    expiresAt: "",
+  });
+
+  useEffect(() => {
+    void adminPromoCodesApi
+      .getAll()
+      .then(setPromoCodes)
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить промокоды",
+          variant: "error",
+        });
+      })
+      .finally(() => setIsLoading(false));
+  }, [push]);
+
+  const filteredPromoCodes = useMemo(
+    () =>
+      promoCodes.filter((promoCode) =>
+        [promoCode.code, promoCode.title, promoCode.description, promoCode.status]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    [promoCodes, search],
+  );
+
+  const handleCreate = async (event: FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+
+    try {
+      const created = await adminPromoCodesApi.create({
+        code: form.code,
+        title: form.title,
+        description: form.description || undefined,
+        bonusPoints: optionalNumber(form.bonusPoints),
+        bonusAttempts: optionalNumber(form.bonusAttempts),
+        maxUses: optionalNumber(form.maxUses),
+        status: form.status,
+        expiresAt: toIsoDateTime(form.expiresAt),
+      });
+
+      setPromoCodes((current) => [created, ...current]);
+      setForm({
+        code: "",
+        title: "",
+        description: "",
+        bonusPoints: "50",
+        bonusAttempts: "",
+        maxUses: "30",
+        status: "active",
+        expiresAt: "",
+      });
+      setIsModalOpen(false);
+      push({ title: "Промокод создан", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось создать промокод",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return <Loader label="Загружаем промокоды..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Промокоды"
+        subtitle="Промокоды для бонусов, подсказок и специальных условий соревнования."
+        actions={<Button onClick={() => setIsModalOpen(true)}>Создать промокод</Button>}
+      />
+
+      <Card>
+        <Input
+          label="Поиск"
+          placeholder="Код, название, описание"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </Card>
+
+      <DataTable
+        columns={[
+          { key: "code", title: "Код" },
+          { key: "title", title: "Название" },
+          {
+            key: "bonus",
+            title: "Бонус",
+            render: (promoCode) => {
+              const parts = [
+                promoCode.bonusPoints > 0 ? `+${promoCode.bonusPoints} баллов` : "",
+                promoCode.bonusAttempts > 0 ? `+${promoCode.bonusAttempts} попыток` : "",
+              ].filter(Boolean);
+
+              return parts.join(", ") || "Без бонуса";
+            },
+          },
+          {
+            key: "uses",
+            title: "Использовано",
+            render: (promoCode) => `${promoCode.usedCount}/${promoCode.maxUses ?? "∞"}`,
+          },
+          {
+            key: "expiresAt",
+            title: "Истекает",
+            render: (promoCode) => formatDateTime(promoCode.expiresAt),
+          },
+          {
+            key: "status",
+            title: "Статус",
+            render: (promoCode) => (
+              <Badge tone={promoCode.status === "active" ? "success" : "danger"}>
+                {promoStatusLabels[promoCode.status]}
+              </Badge>
+            ),
+          },
+        ]}
+        rows={filteredPromoCodes}
+      />
+
+      <Modal open={isModalOpen} title="Новый промокод" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleCreate}>
+          <div className="admin-form-grid">
+            <Input
+              label="Код"
+              value={form.code}
+              onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))}
+              required
+            />
+            <Input
+              label="Название"
+              value={form.title}
+              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              required
+            />
+          </div>
+
+          <label className="ui-field">
+            <span className="ui-field__label">Описание</span>
+            <textarea
+              className="ui-input ui-textarea"
+              value={form.description}
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+            />
+          </label>
+
+          <div className="admin-form-grid">
+            <Input
+              label="Бонусные баллы"
+              type="number"
+              min={0}
+              value={form.bonusPoints}
+              onChange={(event) => setForm((current) => ({ ...current, bonusPoints: event.target.value }))}
+            />
+            <Input
+              label="Бонусные попытки"
+              type="number"
+              min={0}
+              value={form.bonusAttempts}
+              onChange={(event) => setForm((current) => ({ ...current, bonusAttempts: event.target.value }))}
+            />
+            <Input
+              label="Максимум использований"
+              type="number"
+              min={1}
+              value={form.maxUses}
+              onChange={(event) => setForm((current) => ({ ...current, maxUses: event.target.value }))}
+            />
+            <Input
+              label="Истекает"
+              type="datetime-local"
+              value={form.expiresAt}
+              onChange={(event) => setForm((current) => ({ ...current, expiresAt: event.target.value }))}
+            />
+            <label className="ui-field">
+              <span className="ui-field__label">Статус</span>
+              <select
+                className="ui-input"
+                value={form.status}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, status: event.target.value as PromoCode["status"] }))
+                }
+              >
+                <option value="active">Активно</option>
+                <option value="disabled">Отключено</option>
+                <option value="expired">Просрочено</option>
+              </select>
+            </label>
+          </div>
+
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Сохраняем..." : "Создать"}
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
 export const AdminGroupsPage = () => <AdminSectionPage config={sectionConfigs.groups} />;
 export const AdminStreamsPage = () => <AdminSectionPage config={sectionConfigs.streams} />;
 export const AdminLabScoresPage = () => <AdminSectionPage config={sectionConfigs.labScores} />;
-export const AdminTestsPage = () => <AdminSectionPage config={sectionConfigs.tests} />;
+export const AdminTestsPage = () => <AdminTestsManagerPage />;
 export const AdminCategoriesPage = () => <AdminSectionPage config={sectionConfigs.categories} />;
-export const AdminTasksPage = () => <AdminSectionPage config={sectionConfigs.tasks} />;
+export const AdminTasksPage = () => <AdminTasksManagerPage />;
 export const AdminManualReviewsPage = () => <AdminSectionPage config={sectionConfigs.manualReviews} />;
 export const AdminRatingPage = () => <AdminSectionPage config={sectionConfigs.rating} />;
-export const AdminPromoCodesPage = () => <AdminSectionPage config={sectionConfigs.promoCodes} />;
+export const AdminPromoCodesPage = () => <AdminPromoCodesManagerPage />;
 export const AdminSanctionsPage = () => <AdminSectionPage config={sectionConfigs.sanctions} />;
 export const AdminActionLogPage = () => <AdminSectionPage config={sectionConfigs.actionLog} />;
 export const AdminReportsPage = () => <AdminSectionPage config={sectionConfigs.reports} />;

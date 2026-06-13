@@ -16,6 +16,7 @@ import {
 } from "@/pages/AdminPages";
 import { CompetitionsPage } from "@/pages/CompetitionsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { AdminProgressPage } from "@/pages/AdminProgressPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import {
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "dashboard", element: <DashboardPage /> },
+      { path: "progress", element: <AdminProgressPage /> },
       { path: "students", element: <StudentsPage /> },
       { path: "groups", element: <AdminGroupsPage /> },
       { path: "streams", element: <AdminStreamsPage /> },

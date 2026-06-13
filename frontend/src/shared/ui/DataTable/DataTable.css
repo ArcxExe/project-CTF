@@ -26,3 +26,8 @@
 .ui-table tbody tr:hover {
   background: var(--bg-muted);
 }
+
+.ui-table__empty {
+  text-align: center;
+  color: var(--text-secondary);
+}

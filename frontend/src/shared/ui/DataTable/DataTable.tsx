@@ -9,9 +9,10 @@ interface Column<T> {
 interface DataTableProps<T> {
   columns: Column<T>[];
   rows: T[];
+  emptyLabel?: string;
 }
 
-export const DataTable = <T,>({ columns, rows }: DataTableProps<T>) => (
+export const DataTable = <T,>({ columns, rows, emptyLabel = "Нет данных" }: DataTableProps<T>) => (
   <div className="ui-table-wrap">
     <table className="ui-table">
       <thead>
@@ -22,17 +23,25 @@ export const DataTable = <T,>({ columns, rows }: DataTableProps<T>) => (
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, rowIndex) => (
-          <tr key={rowIndex}>
-            {columns.map((column) => (
-              <td key={String(column.key)}>
-                {column.render
-                  ? column.render(row)
-                  : String((row as Record<string, unknown>)[String(column.key)] ?? "—")}
-              </td>
-            ))}
+        {rows.length > 0 ? (
+          rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {columns.map((column) => (
+                <td key={String(column.key)}>
+                  {column.render
+                    ? column.render(row)
+                    : String((row as Record<string, unknown>)[String(column.key)] ?? "—")}
+                </td>
+              ))}
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td className="ui-table__empty" colSpan={columns.length}>
+              {emptyLabel}
+            </td>
           </tr>
-        ))}
+        )}
       </tbody>
     </table>
   </div>

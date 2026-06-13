@@ -1,52 +1,112 @@
-import { mockUsers } from "@/shared/api/mock/db";
-import { sleep } from "@/shared/lib/sleep";
+import { apiRequest, authTokenStorage } from "@/shared/api/client";
 import type { Role } from "@/shared/types/common";
 import type { AuthPayload, User } from "@/shared/types/user";
 
-const toSafeUser = (user: (typeof mockUsers)[number]): User => {
-  const { password: _, ...safeUser } = user;
-  return safeUser;
+interface BackendAuthResponse {
+  accessToken: string;
+  userId: string;
+  email: string;
+  role: "ADMIN" | "USER";
+}
+
+interface BackendUserResponse {
+  id: string;
+  email: string;
+  username: string;
+  fullName?: string;
+  role: "ADMIN" | "USER";
+  status: "ACTIVE" | "BLOCKED" | "PENDING_VERIFICATION";
+}
+
+interface AuthSession {
+  token: string;
+  user: User;
+}
+
+const roleMap: Record<BackendUserResponse["role"], Role> = {
+  ADMIN: "admin",
+  USER: "participant",
+};
+
+const statusMap: Record<BackendUserResponse["status"], User["status"]> = {
+  ACTIVE: "active",
+  BLOCKED: "blocked",
+  PENDING_VERIFICATION: "pending_verification",
+};
+
+const toUser = (response: BackendUserResponse): User => ({
+  id: response.id,
+  fullName: response.fullName ?? response.username ?? response.email,
+  username: response.username,
+  email: response.email,
+  role: roleMap[response.role],
+  isBlocked: response.status === "BLOCKED",
+  status: statusMap[response.status],
+});
+
+const toUserFromAuth = (response: BackendAuthResponse): User => ({
+  id: response.userId,
+  fullName: response.email,
+  email: response.email,
+  role: roleMap[response.role],
+  isBlocked: false,
+  status: "active",
+});
+
+const demoCredentials: Record<Role, AuthPayload> = {
+  admin: { email: "admin@ctf.local", password: "password" },
+  participant: { email: "student@ctf.local", password: "password" },
 };
 
 export const authApi = {
-  async login(payload: AuthPayload): Promise<User> {
-    await sleep();
+  async login(payload: AuthPayload): Promise<AuthSession> {
+    const auth = await apiRequest<BackendAuthResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        login: payload.email,
+        password: payload.password,
+      }),
+    });
 
-    const user = mockUsers.find(
-      (item) => item.email === payload.email && item.password === payload.password,
-    );
+    authTokenStorage.set(auth.accessToken);
 
-    if (!user) {
-      throw new Error("Неверный логин или пароль");
+    try {
+      return {
+        token: auth.accessToken,
+        user: await this.getCurrentUser(),
+      };
+    } catch {
+      return {
+        token: auth.accessToken,
+        user: toUserFromAuth(auth),
+      };
     }
-
-    if (user.isBlocked) {
-      throw new Error("Пользователь заблокирован");
-    }
-
-    return toSafeUser(user);
   },
 
-  async loginAsRole(role: Role): Promise<User> {
-    await sleep(150);
+  async register(payload: AuthPayload & { fullName?: string }): Promise<AuthSession> {
+    const auth = await apiRequest<BackendAuthResponse>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: payload.email,
+        password: payload.password,
+        fullName: payload.fullName,
+      }),
+    });
 
-    const user = mockUsers.find((item) => item.role === role && !item.isBlocked);
+    authTokenStorage.set(auth.accessToken);
 
-    if (!user) {
-      throw new Error("Не найден mock user для выбранной роли");
-    }
-
-    return toSafeUser(user);
+    return {
+      token: auth.accessToken,
+      user: await this.getCurrentUser(),
+    };
   },
 
-  async getCurrentUser(userId: string): Promise<User | null> {
-    await sleep(150);
-    const user = mockUsers.find((item) => item.id === userId);
+  async loginAsRole(role: Role): Promise<AuthSession> {
+    return this.login(demoCredentials[role]);
+  },
 
-    if (!user) {
-      return null;
-    }
-
-    return toSafeUser(user);
+  async getCurrentUser(): Promise<User> {
+    const response = await apiRequest<BackendUserResponse>("/api/users/me");
+    return toUser(response);
   },
 };

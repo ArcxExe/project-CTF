@@ -51,3 +51,9 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+tasks.register('resolveRuntimeClasspath') {
+    doLast {
+        configurations.runtimeClasspath.resolve()
+    }
+}

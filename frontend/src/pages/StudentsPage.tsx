@@ -55,7 +55,7 @@ export const StudentsPage = () => {
     <div className="page-stack">
       <PageHeader
         title="Студенты"
-        subtitle="Базовый экран списка студентов с mock API."
+        subtitle="Список студентов из backend API."
         actions={<Button onClick={() => setIsModalOpen(true)}>Добавить студента</Button>}
       />
 

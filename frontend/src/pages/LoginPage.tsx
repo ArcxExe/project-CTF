@@ -12,7 +12,7 @@ export const LoginPage = () => {
   const { currentUser, login, loginAsMockUser, isLoading } = useAuthStore();
   const { push } = useToastStore();
   const [email, setEmail] = useState("admin@ctf.local");
-  const [password, setPassword] = useState("admin");
+  const [password, setPassword] = useState("password");
 
   if (currentUser) {
     const target = currentUser.role === "admin" ? "/admin/dashboard" : "/participant/profile";
@@ -52,7 +52,7 @@ export const LoginPage = () => {
           <div>
             <h1>Вход в платформу</h1>
             <p className="muted">
-              Тестовые учётные записи: admin@ctf.local / admin и student@ctf.local / student
+              Тестовые учётные записи: admin@ctf.local / password и student@ctf.local / password
             </p>
           </div>
 
@@ -75,7 +75,7 @@ export const LoginPage = () => {
           </form>
 
           <div className="mock-login-panel">
-            <span className="muted">Быстрый вход без реального API</span>
+            <span className="muted">Быстрый вход через backend seed users</span>
             <div className="mock-login-panel__actions">
               <Button variant="secondary" onClick={() => void handleMockLogin("admin")} disabled={isLoading}>
                 Войти как admin
