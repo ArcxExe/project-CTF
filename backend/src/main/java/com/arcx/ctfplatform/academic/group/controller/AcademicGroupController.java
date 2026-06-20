@@ -3,6 +3,7 @@ package com.arcx.ctfplatform.academic.group.controller;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -40,14 +41,14 @@ public class AcademicGroupController {
     }
 
     @PostMapping("")
-    public ResponseEntity<AcademicGroupResponseDTO> createGroup(@RequestBody AcademicGroupRequestDTO entity) {
+    public ResponseEntity<AcademicGroupResponseDTO> createGroup(@Valid @RequestBody AcademicGroupRequestDTO entity) {
 
         return new ResponseEntity<>(service.createGroup(entity), HttpStatus.CREATED);
     }
 
     @PatchMapping("/{id}")
     public ResponseEntity<AcademicGroupResponseDTO> updateGroup(@PathVariable UUID id,
-            @RequestBody AcademicGroupRequestDTO entity) {
+            @Valid @RequestBody AcademicGroupRequestDTO entity) {
 
         return new ResponseEntity<>(service.updateGroup(id, entity), HttpStatus.OK);
     }
