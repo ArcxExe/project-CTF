@@ -1,4 +1,4 @@
-package com.arcx.ctfplatform.attempts.entity;
+package com.arcx.ctfplatform.modifiers.entity;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,42 +17,36 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "attempts")
+@Table(name = "score_adjustments")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @EqualsAndHashCode(of = "id")
-public class Attempt {
+public class ScoreAdjustment {
 
     @Id
     @GeneratedValue
     private UUID id;
 
-    @Column(name = "challenge_id", nullable = false)
-    private UUID challengeId;
-
     @Column(name = "student_id", nullable = false)
     private UUID studentId;
 
-    @Column(name = "submitted_flag")
-    private String submittedFlag;
+    @Column(name = "competition_id")
+    private UUID competitionId;
 
-    @Column(name = "is_correct", nullable = false)
-    private boolean isCorrect;
+    @Column(nullable = false)
+    private Integer points;
 
-    @Column(name = "file_path", length = 512)
-    private String filePath;
+    @Column(columnDefinition = "TEXT")
+    private String reason;
 
-    @Column(name = "score_awarded")
-    private Integer scoreAwarded;
-
-    @Column(name = "submitted_at", nullable = false, updatable = false)
-    private Instant submittedAt;
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
     @PrePersist
     protected void onCreate() {
-        this.submittedAt = Instant.now();
+        this.createdAt = Instant.now();
     }
 }

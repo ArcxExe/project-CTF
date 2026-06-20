@@ -1,8 +1,8 @@
 INSERT INTO users (id, email, password_hash, role, status)
 VALUES
-    ('00000000-0000-0000-0000-000000000001', 'admin@ctf.local', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'ADMIN', 'ACTIVE'),
-    ('00000000-0000-0000-0000-000000000002', 'student@ctf.local', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'STUDENT', 'ACTIVE'),
-    ('00000000-0000-0000-0000-000000000003', 'instructor@ctf.local', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'INSTRUCTOR', 'ACTIVE')
+    ('00000000-0000-0000-0000-000000000001', 'admin@ctf.local', '$2a$10$rbloaQUVm2fsPL7xcXzoJua0N9ugpi/hGInL51tU7pqsOftbhdXaC', 'ADMIN', 'ACTIVE'),
+    ('00000000-0000-0000-0000-000000000002', 'student@ctf.local', '$2a$10$rbloaQUVm2fsPL7xcXzoJua0N9ugpi/hGInL51tU7pqsOftbhdXaC', 'STUDENT', 'ACTIVE'),
+    ('00000000-0000-0000-0000-000000000003', 'instructor@ctf.local', '$2a$10$rbloaQUVm2fsPL7xcXzoJua0N9ugpi/hGInL51tU7pqsOftbhdXaC', 'INSTRUCTOR', 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO academic_streams (id, name)

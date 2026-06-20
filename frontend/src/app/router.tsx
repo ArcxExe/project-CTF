@@ -28,6 +28,7 @@ import {
   PromoCodePage,
   RegisterPage,
 } from "@/pages/ParticipantPages";
+import { ParticipantTestRunnerPage } from "@/pages/ParticipantTestRunnerPage";
 import { ParticipantProfilePage } from "@/pages/ParticipantProfilePage";
 import { StudentsPage } from "@/pages/StudentsPage";
 import { RoleGuard, RoleRedirect } from "@/features/auth/ui/RoleGuard";
@@ -87,6 +88,7 @@ export const router = createBrowserRouter([
       { path: "competition", element: <ParticipantCompetitionPage /> },
       { path: "competitions/:competitionId", element: <ParticipantCompetitionPage /> },
       { path: "test", element: <ParticipantTestPage /> },
+      { path: "test/:testId", element: <ParticipantTestRunnerPage /> },
       { path: "ctf", element: <ParticipantCtfPage /> },
       { path: "tasks/:taskId", element: <ParticipantTaskPage /> },
       { path: "rating", element: <ParticipantRatingPage /> },

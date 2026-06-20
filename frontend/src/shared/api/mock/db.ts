@@ -59,7 +59,7 @@ export const mockCompetitions: Competition[] = [
     id: "c1",
     title: "Весенний учебный CTF",
     description: "Тестовый запуск платформы и базовые категории.",
-    status: "active",
+    status: "published",
     startsAt: "2026-05-10T10:00:00",
     endsAt: "2026-05-10T14:00:00",
     ratingVisible: true,

@@ -15,6 +15,34 @@ export interface CtfTest {
   updatedAt: string;
 }
 
+export interface QuizOption {
+  id: string;
+  questionId: string;
+  text: string;
+  sequenceOrder?: number;
+  isCorrect?: boolean;
+}
+
+export interface QuizQuestion {
+  id: string;
+  testId: string;
+  type: "RADIO" | "CHECKBOX" | "SEQUENCE";
+  text: string;
+  points: number;
+  ordering: number;
+  options: QuizOption[];
+}
+
+export interface QuizSubmission {
+  id: string;
+  testId: string;
+  studentId: string;
+  startedAt: string;
+  submittedAt?: string;
+  score: number;
+  isActive: boolean;
+}
+
 export interface CtfTestPayload {
   competitionId?: string;
   title: string;
@@ -90,6 +118,23 @@ export const testsApi = {
       body: JSON.stringify({ flag }),
     });
   },
+
+  async getQuestions(testId: string): Promise<QuizQuestion[]> {
+    return apiRequest<QuizQuestion[]>(`/api/tests/${testId}/questions`);
+  },
+
+  async startQuiz(testId: string): Promise<QuizSubmission> {
+    return apiRequest<QuizSubmission>(`/api/quizzes/${testId}/start`, {
+      method: "POST"
+    });
+  },
+
+  async submitAnswers(submissionId: string, answers: Record<string, string[]>): Promise<QuizSubmission> {
+    return apiRequest<QuizSubmission>(`/api/quizzes/submissions/${submissionId}/submit`, {
+      method: "POST",
+      body: JSON.stringify(answers)
+    });
+  }
 };
 
 export const adminTestsApi = {

@@ -1,6 +1,8 @@
 package com.arcx.ctfplatform.competitions.entity;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -12,6 +14,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -50,6 +59,19 @@ public class Competition {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(name = "sum_test_points", nullable = false)
+    @Builder.Default
+    private boolean sumTestPoints = false;
+
+    @Column(name = "leaderboard_hidden", nullable = false)
+    @Builder.Default
+    private boolean leaderboardHidden = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "hidden_student_ids", columnDefinition = "jsonb")
+    @Builder.Default
+    private List<UUID> hiddenStudentIds = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {

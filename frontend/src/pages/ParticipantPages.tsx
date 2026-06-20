@@ -12,6 +12,8 @@ import type { LeaderboardRow } from "@/shared/api/services/leaderboard";
 import { promoCodesApi } from "@/shared/api/services/promoCodes";
 import { testsApi } from "@/shared/api/services/tests";
 import type { CtfTest } from "@/shared/api/services/tests";
+import { competitionsApi } from "@/shared/api/services/competitions";
+import type { Competition } from "@/shared/types/competition";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -20,16 +22,6 @@ import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import "./pages.css";
-
-const participantCompetition = {
-  title: "Intro CTF Demo",
-  status: "Активно",
-  phase: "Основной этап",
-  startsAt: "26.04.2026, 10:00",
-  endsAt: "26.04.2026, 18:00",
-  description:
-    "Учебное соревнование с тестовым допуском, основным CTF-этапом, рейтингом и промокодами.",
-};
 
 export const RegisterPage = () => {
   const { push } = useToastStore();
@@ -91,69 +83,101 @@ export const RegisterPage = () => {
   );
 };
 
-export const ParticipantCompetitionPage = () => (
-  <div className="page-stack">
-    <PageHeader
-      title="Страница соревнования"
-      subtitle="Обзор этапов, сроков, допуска и быстрых переходов участника."
-      actions={<Badge tone="success">{participantCompetition.status}</Badge>}
-    />
+export const ParticipantCompetitionPage = () => {
+  const { push } = useToastStore();
+  const { competitionId } = useParams();
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-    <div className="grid grid-2">
-      <Card>
+  useEffect(() => {
+    void competitionsApi
+      .getAll()
+      .then((data) => {
+        if (competitionId) {
+          setCompetitions(data.filter((c) => c.id === competitionId));
+        } else {
+          setCompetitions(data);
+        }
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить соревнования",
+          variant: "error",
+        });
+      })
+      .finally(() => setIsLoading(false));
+  }, [push, competitionId]);
+
+  if (isLoading) {
+    return <Loader label="Загружаем соревнования..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title={competitions.length === 1 ? "Страница соревнования" : "Соревнования"}
+        subtitle="Обзор этапов, сроков, допуска и быстрых переходов участника."
+      />
+
+      {competitions.length > 0 ? (
         <div className="page-stack">
-          <div>
-            <h3>{participantCompetition.title}</h3>
-            <p className="muted">{participantCompetition.description}</p>
-          </div>
-          <div className="info-grid">
-            <span>Старт</span>
-            <strong>{participantCompetition.startsAt}</strong>
-            <span>Финиш</span>
-            <strong>{participantCompetition.endsAt}</strong>
-            <span>Текущий этап</span>
-            <strong>{participantCompetition.phase}</strong>
-          </div>
-        </div>
-      </Card>
+          {competitions.map((competition) => (
+            <div key={competition.id} className="grid grid-2">
+              <Card>
+                <div className="page-stack">
+                  <div>
+                    <h3>{competition.title}</h3>
+                    <p className="muted">{competition.description}</p>
+                  </div>
+                  <div className="info-grid">
+                    <span>Старт</span>
+                    <strong>{new Date(competition.startsAt).toLocaleString("ru-RU")}</strong>
+                    <span>Финиш</span>
+                    <strong>{new Date(competition.endsAt).toLocaleString("ru-RU")}</strong>
+                    <span>Статус</span>
+                    <strong>{competition.status === "published" ? "Активно" : competition.status}</strong>
+                  </div>
+                </div>
+              </Card>
 
-      <Card>
-        <div className="action-grid">
-          <Link className="page-link-button" to="/participant/test">
-            Перейти к тесту
-          </Link>
-          <Link className="page-link-button" to="/participant/ctf">
-            Открыть CTF
-          </Link>
-          <Link className="page-link-button" to="/participant/rating">
-            Смотреть рейтинг
-          </Link>
-          <Link className="page-link-button" to="/participant/promo-code">
-            Ввести промокод
-          </Link>
+              <Card>
+                <div className="action-grid">
+                  <Link className="page-link-button" to="/participant/test">
+                    Перейти к тесту
+                  </Link>
+                  <Link className="page-link-button" to="/participant/ctf">
+                    Открыть CTF
+                  </Link>
+                  <Link className="page-link-button" to="/participant/rating">
+                    Смотреть рейтинг
+                  </Link>
+                  <Link className="page-link-button" to="/participant/promo-code">
+                    Ввести промокод
+                  </Link>
+                </div>
+              </Card>
+            </div>
+          ))}
         </div>
-      </Card>
+      ) : (
+        <Card>
+          <p className="muted">Нет доступных соревнований.</p>
+        </Card>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 export const ParticipantTestPage = () => {
   const { push } = useToastStore();
   const [tests, setTests] = useState<CtfTest[]>([]);
-  const [testChallenges, setTestChallenges] = useState<Record<string, Challenge[]>>({});
-  const [flags, setFlags] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
 
   useEffect(() => {
     void testsApi
       .getPublished()
       .then(async (testRows) => {
         setTests(testRows);
-        const entries = await Promise.all(
-          testRows.map(async (test) => [test.id, await testsApi.getChallenges(test.id)] as const),
-        );
-        setTestChallenges(Object.fromEntries(entries));
       })
       .catch((error: unknown) => {
         push({
@@ -164,31 +188,6 @@ export const ParticipantTestPage = () => {
       .finally(() => setIsLoading(false));
   }, [push]);
 
-  const handleSubmit = async (testId: string, challengeId: string) => {
-    const key = `${testId}:${challengeId}`;
-    const flag = flags[key]?.trim();
-    if (!flag) {
-      return;
-    }
-
-    setSubmittingKey(key);
-    try {
-      const response = await testsApi.submitChallengeFlag(testId, challengeId, flag);
-      push({
-        title: response.pointsAdded ? `${response.message}: +${response.pointsAdded} pts` : response.message,
-        variant: response.correct ? "success" : "error",
-      });
-      setFlags((current) => ({ ...current, [key]: "" }));
-    } catch (error) {
-      push({
-        title: error instanceof Error ? error.message : "Не удалось отправить флаг",
-        variant: "error",
-      });
-    } finally {
-      setSubmittingKey(null);
-    }
-  };
-
   if (isLoading) {
     return <Loader label="Загружаем тесты..." />;
   }
@@ -196,8 +195,8 @@ export const ParticipantTestPage = () => {
   return (
     <div className="page-stack">
       <PageHeader
-        title="Страница теста"
-        subtitle="Предварительная проверка знаний перед доступом к основному CTF."
+        title="Тесты"
+        subtitle="Список доступных тестов для прохождения."
         actions={<Badge tone="info">{tests.length} тестов</Badge>}
       />
 
@@ -218,43 +217,11 @@ export const ParticipantTestPage = () => {
                   </div>
                 </div>
 
-                {(testChallenges[test.id] ?? []).map((challenge) => {
-                  const key = `${test.id}:${challenge.id}`;
-                  return (
-                    <div className="test-row" key={challenge.id}>
-                      <div>
-                        <h4>{challenge.title}</h4>
-                        <p className="muted">{challenge.description}</p>
-                        <div className="entity-summary">
-                          <span>{challenge.points} pts</span>
-                        </div>
-                      </div>
-                      <form
-                        className="admin-form"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          void handleSubmit(test.id, challenge.id);
-                        }}
-                      >
-                        <Input
-                          label="Флаг"
-                          placeholder="CTF{example}"
-                          value={flags[key] ?? ""}
-                          onChange={(event) =>
-                            setFlags((current) => ({ ...current, [key]: event.target.value }))
-                          }
-                        />
-                        <Button type="submit" disabled={submittingKey === key}>
-                          {submittingKey === key ? "Проверяем..." : "Отправить"}
-                        </Button>
-                      </form>
-                    </div>
-                  );
-                })}
-
-                {(testChallenges[test.id] ?? []).length === 0 && (
-                  <p className="muted">В тест пока не добавлены опубликованные задания.</p>
-                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                  <Button onClick={() => window.location.href = `/participant/test/${test.id}`}>
+                    Начать тест
+                  </Button>
+                </div>
               </div>
             </Card>
           ))}
@@ -354,6 +321,32 @@ export const ParticipantTaskPage = () => {
         });
       })
       .finally(() => setIsLoading(false));
+
+    // Listen for FIRST_BLOOD
+    const eventSource = new EventSource("/api/leaderboard/live");
+    eventSource.addEventListener("FIRST_BLOOD", (event) => {
+      try {
+        const data = JSON.parse((event as MessageEvent).data);
+        push({
+          title: `Участник ${data.username} получил First Blood по задаче "${data.challengeTitle}"! Вы всё еще можете сдать решение, но баллы за скорость уже начислены.`,
+          variant: "info",
+        });
+        
+        setTask(current => {
+          if (current && current.title === data.challengeTitle) {
+            // Update local state to show First Blood is taken
+            return { ...current, firstBloodTaken: true };
+          }
+          return current;
+        });
+      } catch (err) {
+        console.error("Failed to parse FIRST_BLOOD event", err);
+      }
+    });
+    
+    return () => {
+      eventSource.close();
+    };
   }, [push, taskId]);
 
   const handleSubmit = async (event: FormEvent) => {
@@ -457,16 +450,54 @@ export const ParticipantRatingPage = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void leaderboardApi
-      .getAll()
-      .then(setRows)
-      .catch((error: unknown) => {
-        push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить рейтинг",
-          variant: "error",
-        });
-      })
-      .finally(() => setIsLoading(false));
+    setIsLoading(true);
+    const eventSource = new EventSource("/api/leaderboard/live");
+
+    const parseAndSetRows = (data: string) => {
+      try {
+        const raw = JSON.parse(data);
+        const newRows = raw.map((entry: any, index: number) => ({
+          place: index + 1,
+          participant: entry.username || entry.participant,
+          group: entry.groupName ?? "Без группы",
+          score: entry.score ?? entry.totalScore ?? 0,
+          solved: entry.solvedCount ?? 0,
+        }));
+        setRows(newRows);
+        setIsLoading(false);
+      } catch (err) {
+        console.error("Failed to parse leaderboard data", err);
+      }
+    };
+
+    eventSource.addEventListener("INIT", (event) => {
+      parseAndSetRows((event as MessageEvent).data);
+    });
+
+    eventSource.addEventListener("UPDATE", (event) => {
+      parseAndSetRows((event as MessageEvent).data);
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("Leaderboard SSE error", error);
+      eventSource.close();
+      
+      // Fallback to static fetch if SSE fails
+      void leaderboardApi
+        .getAll()
+        .then(setRows)
+        .catch((error: unknown) => {
+          push({
+            title: error instanceof Error ? error.message : "Не удалось загрузить рейтинг",
+            variant: "error",
+          });
+        })
+        .finally(() => setIsLoading(false));
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, [push]);
 
   if (isLoading) {
@@ -495,10 +526,15 @@ export const PromoCodePage = () => {
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const isValidFormat = code.length >= 6;
+  const hasInput = code.length > 0;
+  const validationColor = !hasInput ? undefined : isValidFormat ? "var(--success)" : "var(--danger)";
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (!code.trim()) {
+    if (!isValidFormat) {
+      push({ title: "Слишком короткий промокод", variant: "error" });
       return;
     }
 
@@ -536,8 +572,10 @@ export const PromoCodePage = () => {
             placeholder="SPRING-CTF-2026"
             value={code}
             onChange={(event) => setCode(event.target.value.toUpperCase())}
+            style={{ borderColor: validationColor, borderWidth: validationColor ? '2px' : '1px' }}
+            error={hasInput && !isValidFormat ? "Минимум 6 символов" : undefined}
           />
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || (hasInput && !isValidFormat)}>
             {isSubmitting ? "Активируем..." : "Активировать"}
           </Button>
         </form>

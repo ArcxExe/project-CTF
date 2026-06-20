@@ -4,7 +4,7 @@ export interface Competition {
   id: Identifier;
   title: string;
   description: string;
-  status: "draft" | "published" | "active" | "completed" | "archived";
+  status: "draft" | "published" | "archived";
   startsAt: ISODateTime;
   endsAt: ISODateTime;
   ratingVisible: boolean;

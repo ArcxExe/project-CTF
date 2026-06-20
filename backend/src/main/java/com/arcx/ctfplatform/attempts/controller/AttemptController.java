@@ -19,6 +19,9 @@ import com.arcx.ctfplatform.users.entity.User;
 
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.RequestParam;
+
 @RestController
 @RequestMapping("/api/challenges")
 @RequiredArgsConstructor
@@ -33,6 +36,16 @@ public class AttemptController {
             @AuthenticationPrincipal User user) {
 
         ChallengeSubmitResponse response = attemptService.submitFlag(user.getId(), id, request.flag());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/submit-file")
+    public ResponseEntity<ChallengeSubmitResponse> submitFile(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User user) {
+        
+        ChallengeSubmitResponse response = attemptService.submitFile(user.getId(), id, file);
         return ResponseEntity.ok(response);
     }
 }

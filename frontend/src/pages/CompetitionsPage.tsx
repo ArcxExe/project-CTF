@@ -16,8 +16,6 @@ import "./pages.css";
 const statusLabels: Record<Competition["status"], string> = {
   draft: "Черновик",
   published: "Опубликовано",
-  active: "Активно",
-  completed: "Завершено",
   archived: "Архив",
 };
 
@@ -108,7 +106,7 @@ export const CompetitionsPage = () => {
                 </div>
 
                 <div className="competition-card__meta">
-                  <Badge tone={competition.status === "active" ? "success" : "info"}>
+                  <Badge tone={competition.status === "published" ? "success" : "info"}>
                     {statusLabels[competition.status]}
                   </Badge>
                   <span>Старт: {new Date(competition.startsAt).toLocaleString("ru-RU")}</span>
