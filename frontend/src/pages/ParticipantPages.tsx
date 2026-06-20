@@ -226,9 +226,7 @@ export const ParticipantTestPage = () => {
                         <h4>{challenge.title}</h4>
                         <p className="muted">{challenge.description}</p>
                         <div className="entity-summary">
-                          <span>{challenge.category}</span>
                           <span>{challenge.points} pts</span>
-                          <span>{challenge.difficulty}</span>
                         </div>
                       </div>
                       <form

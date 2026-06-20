@@ -2,19 +2,23 @@ import { apiRequest, authTokenStorage } from "@/shared/api/client";
 import type { Role } from "@/shared/types/common";
 import type { AuthPayload, User } from "@/shared/types/user";
 
+/** Matches backend AuthResponse record (auth/dto/AuthResponse.java) */
 interface BackendAuthResponse {
   accessToken: string;
+  tokenType: string;
+  expiresInMillis: number;
   userId: string;
   email: string;
-  role: "ADMIN" | "USER";
+  role: "ADMIN" | "INSTRUCTOR" | "STUDENT" | "USER";
 }
 
+/** Matches expected /api/users/me response (not yet implemented on backend) */
 interface BackendUserResponse {
   id: string;
   email: string;
   username: string;
   fullName?: string;
-  role: "ADMIN" | "USER";
+  role: "ADMIN" | "INSTRUCTOR" | "STUDENT" | "USER";
   status: "ACTIVE" | "BLOCKED" | "PENDING_VERIFICATION";
 }
 
@@ -23,8 +27,15 @@ interface AuthSession {
   user: User;
 }
 
-const roleMap: Record<BackendUserResponse["role"], Role> = {
+/**
+ * Backend roles → frontend roles mapping.
+ * ADMIN and INSTRUCTOR both map to "admin" (full access).
+ * STUDENT and USER both map to "participant" (limited access).
+ */
+const roleMap: Record<BackendAuthResponse["role"], Role> = {
   ADMIN: "admin",
+  INSTRUCTOR: "admin",
+  STUDENT: "participant",
   USER: "participant",
 };
 
@@ -95,10 +106,17 @@ export const authApi = {
 
     authTokenStorage.set(auth.accessToken);
 
-    return {
-      token: auth.accessToken,
-      user: await this.getCurrentUser(),
-    };
+    try {
+      return {
+        token: auth.accessToken,
+        user: await this.getCurrentUser(),
+      };
+    } catch {
+      return {
+        token: auth.accessToken,
+        user: toUserFromAuth(auth),
+      };
+    }
   },
 
   async loginAsRole(role: Role): Promise<AuthSession> {

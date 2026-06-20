@@ -1,37 +1,41 @@
 import { apiRequest } from "@/shared/api/client";
 
+/**
+ * Frontend Challenge model.
+ * Fields category, difficulty, status are kept optional for UI backward-compatibility
+ * but are NOT present in the backend ChallengeResponse.
+ */
 export interface Challenge {
   id: string;
   competitionId: string;
   title: string;
   description: string;
-  category: string;
-  difficulty: "easy" | "medium" | "hard";
+  category?: string;
+  difficulty?: "easy" | "medium" | "hard";
   points: number;
-  status: "draft" | "published";
+  status?: "draft" | "published";
   createdAt: string;
 }
 
+/**
+ * Payload for creating/updating a challenge.
+ * Matches backend ChallengeRequest: title, description, points, flag, competitionId.
+ */
 export interface ChallengePayload {
   competitionId?: string;
   title: string;
   description?: string;
-  category: string;
-  difficulty: Challenge["difficulty"];
   points: number;
   flag?: string;
-  status?: Challenge["status"];
 }
 
+/** Matches backend ChallengeResponse (challenges/dto/ChallengeResponse.java) */
 export interface BackendChallengeResponse {
   id: string;
-  competitionId: string;
   title: string;
-  description?: string;
-  category: string;
-  difficulty: "EASY" | "MEDIUM" | "HARD";
+  description: string | null;
   points: number;
-  status: "DRAFT" | "PUBLISHED";
+  competitionId: string;
   createdAt: string;
 }
 
@@ -42,51 +46,26 @@ export interface SubmitFlagResponse {
   pointsAdded: number;
 }
 
-const difficultyMap: Record<BackendChallengeResponse["difficulty"], Challenge["difficulty"]> = {
-  EASY: "easy",
-  MEDIUM: "medium",
-  HARD: "hard",
-};
-
-const statusMap: Record<BackendChallengeResponse["status"], Challenge["status"]> = {
-  DRAFT: "draft",
-  PUBLISHED: "published",
-};
-
-const backendDifficultyMap: Record<Challenge["difficulty"], BackendChallengeResponse["difficulty"]> = {
-  easy: "EASY",
-  medium: "MEDIUM",
-  hard: "HARD",
-};
-
-const backendStatusMap: Record<Challenge["status"], BackendChallengeResponse["status"]> = {
-  draft: "DRAFT",
-  published: "PUBLISHED",
-};
-
 export const toChallenge = (response: BackendChallengeResponse): Challenge => ({
   id: response.id,
   competitionId: response.competitionId,
   title: response.title,
   description: response.description ?? "",
-  category: response.category,
-  difficulty: difficultyMap[response.difficulty],
   points: response.points,
-  status: statusMap[response.status],
   createdAt: response.createdAt,
 });
 
 const toBackendPayload = (payload: ChallengePayload) => ({
-  competitionId: payload.competitionId,
   title: payload.title,
   description: payload.description,
-  category: payload.category,
-  difficulty: backendDifficultyMap[payload.difficulty],
   points: payload.points,
   flag: payload.flag,
-  status: payload.status ? backendStatusMap[payload.status] : undefined,
+  competitionId: payload.competitionId,
 });
 
+/**
+ * Public Challenges API — GET endpoints available to all authenticated users.
+ */
 export const challengesApi = {
   async getAll(): Promise<Challenge[]> {
     const response = await apiRequest<BackendChallengeResponse[]>("/api/challenges");
@@ -106,14 +85,18 @@ export const challengesApi = {
   },
 };
 
+/**
+ * Admin Challenges API — mutation endpoints protected by @PreAuthorize("hasRole('ADMIN')") on backend.
+ * Uses the same /api/challenges base path (single controller in backend).
+ */
 export const adminChallengesApi = {
   async getAll(): Promise<Challenge[]> {
-    const response = await apiRequest<BackendChallengeResponse[]>("/api/admin/challenges");
+    const response = await apiRequest<BackendChallengeResponse[]>("/api/challenges");
     return response.map(toChallenge);
   },
 
   async create(payload: ChallengePayload & { flag: string }): Promise<Challenge> {
-    const response = await apiRequest<BackendChallengeResponse>("/api/admin/challenges", {
+    const response = await apiRequest<BackendChallengeResponse>("/api/challenges", {
       method: "POST",
       body: JSON.stringify(toBackendPayload(payload)),
     });
@@ -121,7 +104,7 @@ export const adminChallengesApi = {
   },
 
   async update(id: string, payload: ChallengePayload): Promise<Challenge> {
-    const response = await apiRequest<BackendChallengeResponse>(`/api/admin/challenges/${id}`, {
+    const response = await apiRequest<BackendChallengeResponse>(`/api/challenges/${id}`, {
       method: "PUT",
       body: JSON.stringify(toBackendPayload(payload)),
     });
@@ -129,15 +112,8 @@ export const adminChallengesApi = {
   },
 
   async delete(id: string): Promise<void> {
-    await apiRequest<void>(`/api/admin/challenges/${id}`, {
+    await apiRequest<void>(`/api/challenges/${id}`, {
       method: "DELETE",
     });
-  },
-
-  async publish(id: string): Promise<Challenge> {
-    const response = await apiRequest<BackendChallengeResponse>(`/api/admin/challenges/${id}/publish`, {
-      method: "POST",
-    });
-    return toChallenge(response);
   },
 };

@@ -337,16 +337,6 @@ const AdminSectionPage = ({ config }: { config: AdminSectionConfig }) => (
   </div>
 );
 
-const challengeDifficultyLabels: Record<Challenge["difficulty"], string> = {
-  easy: "Easy",
-  medium: "Medium",
-  hard: "Hard",
-};
-
-const challengeStatusLabels: Record<Challenge["status"], string> = {
-  draft: "Черновик",
-  published: "Опубликовано",
-};
 
 const testStatusLabels: Record<CtfTest["status"], string> = {
   draft: "Черновик",
@@ -377,12 +367,9 @@ const AdminTasksManagerPage = () => {
   const [form, setForm] = useState({
     competitionId: "",
     title: "",
-    category: "Web",
     description: "",
-    difficulty: "easy" as Challenge["difficulty"],
     points: "100",
     flag: "",
-    status: "published" as Challenge["status"],
   });
 
   useEffect(() => {
@@ -407,7 +394,7 @@ const AdminTasksManagerPage = () => {
   const filteredTasks = useMemo(
     () =>
       tasks.filter((task) =>
-        [task.title, task.category, task.description, task.status]
+        [task.title, task.description]
           .join(" ")
           .toLowerCase()
           .includes(search.toLowerCase()),
@@ -423,24 +410,18 @@ const AdminTasksManagerPage = () => {
       const created = await adminChallengesApi.create({
         competitionId: form.competitionId,
         title: form.title,
-        category: form.category,
         description: form.description || undefined,
-        difficulty: form.difficulty,
         points: Number(form.points),
         flag: form.flag,
-        status: form.status,
       });
 
       setTasks((current) => [created, ...current]);
       setForm({
         competitionId: competitions[0]?.id || "",
         title: "",
-        category: "Web",
         description: "",
-        difficulty: "easy",
         points: "100",
         flag: "",
-        status: "published",
       });
       setIsModalOpen(false);
       push({ title: "Задание создано", variant: "success" });
@@ -454,17 +435,11 @@ const AdminTasksManagerPage = () => {
     }
   };
 
-  const handlePublish = async (task: Challenge) => {
-    try {
-      const published = await adminChallengesApi.publish(task.id);
-      setTasks((current) => current.map((item) => (item.id === published.id ? published : item)));
-      push({ title: "Задание опубликовано", variant: "success" });
-    } catch (error) {
-      push({
-        title: error instanceof Error ? error.message : "Не удалось опубликовать задание",
-        variant: "error",
-      });
-    }
+  const handlePublish = async (_task: Challenge) => {
+    push({
+      title: "Публикация через API пока не поддерживается",
+      variant: "info",
+    });
   };
 
   const handleDelete = async (task: Challenge) => {
@@ -506,13 +481,13 @@ const AdminTasksManagerPage = () => {
         <Card>
           <div className="metric-card">
             <span className="muted">Опубликовано</span>
-            <strong>{tasks.filter((task) => task.status === "published").length}</strong>
+            <strong>{tasks.length}</strong>
           </div>
         </Card>
         <Card>
           <div className="metric-card">
-            <span className="muted">Черновики</span>
-            <strong>{tasks.filter((task) => task.status === "draft").length}</strong>
+            <span className="muted">Баллов всего</span>
+            <strong>{tasks.reduce((sum, task) => sum + task.points, 0)}</strong>
           </div>
         </Card>
       </div>
@@ -529,22 +504,8 @@ const AdminTasksManagerPage = () => {
       <DataTable
         columns={[
           { key: "title", title: "Задание" },
-          { key: "category", title: "Категория" },
-          {
-            key: "difficulty",
-            title: "Сложность",
-            render: (task) => challengeDifficultyLabels[task.difficulty],
-          },
           { key: "points", title: "Баллы" },
-          {
-            key: "status",
-            title: "Статус",
-            render: (task) => (
-              <Badge tone={task.status === "published" ? "success" : "info"}>
-                {challengeStatusLabels[task.status]}
-              </Badge>
-            ),
-          },
+          { key: "competitionId", title: "Соревнование" },
           {
             key: "actions",
             title: "Действия",
@@ -601,12 +562,6 @@ const AdminTasksManagerPage = () => {
 
           <div className="admin-form-grid">
             <Input
-              label="Категория"
-              value={form.category}
-              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-              required
-            />
-            <Input
               label="Баллы"
               type="number"
               min={1}
@@ -614,33 +569,6 @@ const AdminTasksManagerPage = () => {
               onChange={(event) => setForm((current) => ({ ...current, points: event.target.value }))}
               required
             />
-            <label className="ui-field">
-              <span className="ui-field__label">Сложность</span>
-              <select
-                className="ui-input"
-                value={form.difficulty}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, difficulty: event.target.value as Challenge["difficulty"] }))
-                }
-              >
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </label>
-            <label className="ui-field">
-              <span className="ui-field__label">Статус</span>
-              <select
-                className="ui-input"
-                value={form.status}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, status: event.target.value as Challenge["status"] }))
-                }
-              >
-                <option value="published">Опубликовано</option>
-                <option value="draft">Черновик</option>
-              </select>
-            </label>
           </div>
 
           <Input
@@ -871,17 +799,8 @@ const AdminTestsManagerPage = () => {
           <DataTable
             columns={[
               { key: "title", title: "Задание" },
-              { key: "category", title: "Категория" },
               { key: "points", title: "Баллы" },
-              {
-                key: "status",
-                title: "Статус",
-                render: (challenge) => (
-                  <Badge tone={challenge.status === "published" ? "success" : "info"}>
-                    {challengeStatusLabels[challenge.status]}
-                  </Badge>
-                ),
-              },
+              { key: "competitionId", title: "Соревнование" },
               {
                 key: "actions",
                 title: "Действия",
