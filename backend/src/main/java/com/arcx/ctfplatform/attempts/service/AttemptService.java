@@ -16,8 +16,8 @@ import com.arcx.ctfplatform.challenges.repository.ChallengeRepository;
 import com.arcx.ctfplatform.competitions.entity.Competition;
 import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
-import com.arcx.ctfplatform.students.entity.Student;
-import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import org.springframework.web.multipart.MultipartFile;
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
 

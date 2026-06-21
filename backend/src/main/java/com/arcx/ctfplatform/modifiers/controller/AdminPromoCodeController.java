@@ -20,8 +20,8 @@ import com.arcx.ctfplatform.modifiers.dto.PromoCodeCreateRequest;
 import com.arcx.ctfplatform.modifiers.dto.PromoCodeResponse;
 import com.arcx.ctfplatform.modifiers.entity.PromoCode;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
-import com.arcx.ctfplatform.students.entity.Student;
-import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 

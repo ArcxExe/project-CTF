@@ -8,8 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.arcx.ctfplatform.academic.group.dto.AcademicGroupRequestDTO;
 import com.arcx.ctfplatform.academic.group.dto.AcademicGroupResponseDTO;
-import com.arcx.ctfplatform.academic.group.entity.AcademicGroup;
-import com.arcx.ctfplatform.academic.group.repository.AcademicGroupRepository;
+import com.arcx.ctfplatform.academic.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.common.config.IMapping;
 
 import lombok.RequiredArgsConstructor;

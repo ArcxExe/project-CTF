@@ -2,8 +2,8 @@ package com.arcx.ctfplatform.modifiers.service;
 
 import com.arcx.ctfplatform.modifiers.entity.PromoCode;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
-import com.arcx.ctfplatform.students.entity.Student;
-import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

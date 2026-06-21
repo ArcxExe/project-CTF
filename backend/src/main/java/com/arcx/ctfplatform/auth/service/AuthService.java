@@ -8,8 +8,8 @@ import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.entity.UserStatus;
 import com.arcx.ctfplatform.users.repository.UserRepository;
-import com.arcx.ctfplatform.students.entity.Student;
-import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +39,13 @@ public class AuthService {
             throw new IllegalArgumentException("User with this username already exists");
         }
 
+        Student student = studentRepository.findByStudentCode(request.studentCode())
+                .orElseThrow(() -> new IllegalArgumentException("Student code not registered"));
+
+        if (student.getUserId() != null) {
+            throw new IllegalArgumentException("This student code is already linked");
+        }
+
         User user = User.builder()
                 .email(email)
                 .username(username)
@@ -48,13 +55,11 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(user);
-        if (savedUser.getRole() == Role.STUDENT) {
-            Student student = Student.builder()
-                    .userId(savedUser.getId())
-                    .studentCode("STU-" + savedUser.getUsername().toUpperCase())
-                    .build();
-            studentRepository.save(student);
-        }
+
+        student.setUserId(savedUser.getId());
+        student.setStatus(com.arcx.ctfplatform.academic.entity.StudentStatus.PENDING_BINDING_VERIFICATION);
+        studentRepository.save(student);
+
         String token = jwtService.generateAccessToken(savedUser);
 
         return new AuthResponse(

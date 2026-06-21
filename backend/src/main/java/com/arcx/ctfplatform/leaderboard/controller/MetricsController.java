@@ -1,8 +1,8 @@
 package com.arcx.ctfplatform.leaderboard.controller;
 
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
-import com.arcx.ctfplatform.students.entity.Student;
-import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;

@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.arcx.ctfplatform.attempts.dto.AttemptHistoryResponse;
 import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
-import com.arcx.ctfplatform.students.entity.Student;
-import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.users.entity.User;
 
 import lombok.RequiredArgsConstructor;

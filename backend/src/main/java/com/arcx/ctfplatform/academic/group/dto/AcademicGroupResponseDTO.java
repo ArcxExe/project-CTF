@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
-import com.arcx.ctfplatform.academic.group.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.entity.AcademicGroup;
 import com.arcx.ctfplatform.common.config.IMapping;
 
 public record AcademicGroupResponseDTO(
