@@ -1492,6 +1492,7 @@ const AdminPromoCodesManagerPage = () => {
     code: "",
     modifierType: "FIXED_ADD" as PromoCode["modifierType"],
     value: "50",
+    maxUses: "1",
   });
 
   useEffect(() => {
@@ -1527,6 +1528,7 @@ const AdminPromoCodesManagerPage = () => {
         code: form.code,
         modifierType: form.modifierType,
         value: Number(form.value) || 0,
+        maxUses: Number(form.maxUses) || 1,
       });
 
       setPromoCodes((current) => [created, ...current]);
@@ -1534,6 +1536,7 @@ const AdminPromoCodesManagerPage = () => {
         code: "",
         modifierType: "FIXED_ADD",
         value: "50",
+        maxUses: "1",
       });
       setIsModalOpen(false);
       push({ title: "Промокод создан", variant: "success" });
@@ -1608,13 +1611,22 @@ const AdminPromoCodesManagerPage = () => {
           },
           { key: "value", title: "Значение" },
           {
+            key: "maxUses",
+            title: "Использовано",
+            render: (promoCode) => (
+              <span>
+                {promoCode.usedCount} из {promoCode.maxUses}
+              </span>
+            ),
+          },
+          {
             key: "usedByStudentName",
             title: "Кем использован",
             render: (promoCode) => {
-              if (promoCode.isUsed) {
+              if (promoCode.usedCount > 0) {
                 return (
                   <span>
-                    👤 {promoCode.usedByStudentName || promoCode.usedByStudentId || "Студент"}{" "}
+                    👤 {promoCode.usedByStudentName || "Студент"}{" "}
                     {promoCode.usedAt ? `(${formatDateTime(promoCode.usedAt)})` : ""}
                   </span>
                 );
@@ -1668,6 +1680,13 @@ const AdminPromoCodesManagerPage = () => {
               type="number"
               value={form.value}
               onChange={(event) => setForm((current) => ({ ...current, value: event.target.value }))}
+              required
+            />
+            <Input
+              label="Лимит использований"
+              type="number"
+              value={form.maxUses}
+              onChange={(event) => setForm((current) => ({ ...current, maxUses: event.target.value }))}
               required
             />
           </div>

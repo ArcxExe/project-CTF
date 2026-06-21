@@ -19,13 +19,18 @@ import org.springframework.web.bind.annotation.RestController;
 import com.arcx.ctfplatform.modifiers.dto.PromoCodeCreateRequest;
 import com.arcx.ctfplatform.modifiers.dto.PromoCodeResponse;
 import com.arcx.ctfplatform.modifiers.entity.PromoCode;
+import com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+
+import java.util.Comparator;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/admin/promo-codes")
@@ -34,6 +39,7 @@ import lombok.RequiredArgsConstructor;
 public class AdminPromoCodeController {
 
     private final PromoCodeRepository promoCodeRepository;
+    private final PromoCodeClaimRepository promoCodeClaimRepository;
     private final StudentRepository studentRepository;
     private final UserRepository userRepository;
 
@@ -50,8 +56,41 @@ public class AdminPromoCodeController {
                         (s1, s2) -> s1
                 ));
 
+        List<PromoCodeClaim> allClaims = promoCodeClaimRepository.findAll();
+        Map<UUID, List<PromoCodeClaim>> claimsByPromoCode = allClaims.stream()
+                .collect(Collectors.groupingBy(c -> c.getPromoCode().getId()));
+
         List<PromoCodeResponse> responseList = promoCodeRepository.findAll().stream()
-                .map(promo -> toResponse(promo, studentIdToUsername.getOrDefault(promo.getUsedByStudentId(), null)))
+                .map(promo -> {
+                    List<PromoCodeClaim> claims = claimsByPromoCode.getOrDefault(promo.getId(), List.of());
+                    Optional<PromoCodeClaim> latestClaimOpt = claims.stream()
+                            .max(Comparator.comparing(PromoCodeClaim::getClaimedAt));
+
+                    String usedByStudentName = claims.stream()
+                            .map(c -> studentIdToUsername.getOrDefault(c.getStudentId(), "Unknown"))
+                            .collect(Collectors.joining(", "));
+
+                    if (usedByStudentName.isEmpty()) {
+                        usedByStudentName = null;
+                    }
+
+                    boolean isUsed = promo.getUsedCount() > 0;
+                    UUID usedByStudentId = latestClaimOpt.map(PromoCodeClaim::getStudentId).orElse(null);
+                    Instant usedAt = latestClaimOpt.map(PromoCodeClaim::getClaimedAt).orElse(null);
+
+                    return new PromoCodeResponse(
+                            promo.getId(),
+                            promo.getCode(),
+                            promo.getModifierType(),
+                            promo.getValue(),
+                            isUsed,
+                            usedByStudentId,
+                            usedByStudentName,
+                            usedAt,
+                            promo.getMaxUses(),
+                            promo.getUsedCount()
+                    );
+                })
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responseList);
     }
@@ -62,11 +101,24 @@ public class AdminPromoCodeController {
                 .code(request.code().trim().toUpperCase())
                 .modifierType(request.modifierType())
                 .value(request.value() != null ? request.value() : 0)
-                .isUsed(false)
+                .maxUses(request.maxUses() != null ? request.maxUses() : 1)
+                .usedCount(0)
                 .build();
 
         PromoCode saved = promoCodeRepository.save(promo);
-        return ResponseEntity.ok(toResponse(saved, null));
+        PromoCodeResponse response = new PromoCodeResponse(
+                saved.getId(),
+                saved.getCode(),
+                saved.getModifierType(),
+                saved.getValue(),
+                false,
+                null,
+                null,
+                null,
+                saved.getMaxUses(),
+                saved.getUsedCount()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/{id}")
@@ -77,17 +129,5 @@ public class AdminPromoCodeController {
         promoCodeRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
-
-    private PromoCodeResponse toResponse(PromoCode promo, String usedByStudentName) {
-        return new PromoCodeResponse(
-                promo.getId(),
-                promo.getCode(),
-                promo.getModifierType(),
-                promo.getValue(),
-                promo.isUsed(),
-                promo.getUsedByStudentId(),
-                usedByStudentName,
-                promo.getUsedAt()
-        );
-    }
 }
+

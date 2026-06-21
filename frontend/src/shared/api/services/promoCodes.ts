@@ -9,12 +9,15 @@ export interface PromoCode {
   usedByStudentId?: string;
   usedByStudentName?: string;
   usedAt?: string;
+  maxUses: number;
+  usedCount: number;
 }
 
 export interface PromoCodePayload {
   code: string;
   modifierType: PromoCode["modifierType"];
   value: number;
+  maxUses?: number;
 }
 
 interface BackendPromoCodeResponse {
@@ -26,6 +29,8 @@ interface BackendPromoCodeResponse {
   usedByStudentId?: string;
   usedByStudentName?: string;
   usedAt?: string;
+  maxUses: number;
+  usedCount: number;
 }
 
 interface RedeemPromoCodeResponse {
@@ -44,13 +49,17 @@ const toPromoCode = (response: BackendPromoCodeResponse): PromoCode => ({
   usedByStudentId: response.usedByStudentId,
   usedByStudentName: response.usedByStudentName,
   usedAt: response.usedAt,
+  maxUses: response.maxUses,
+  usedCount: response.usedCount,
 });
 
 const toBackendPayload = (payload: PromoCodePayload) => ({
   code: payload.code.trim().toUpperCase(),
   modifierType: payload.modifierType,
   value: payload.value,
+  maxUses: payload.maxUses ?? 1,
 });
+
 
 export const promoCodesApi = {
   async redeem(code: string): Promise<RedeemPromoCodeResponse> {

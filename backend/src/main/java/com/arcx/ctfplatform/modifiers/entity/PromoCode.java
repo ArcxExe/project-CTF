@@ -41,13 +41,12 @@ public class PromoCode {
     @Column(nullable = false)
     private Integer value;
 
-    @Column(name = "is_used", nullable = false)
+    @Column(name = "max_uses", nullable = false)
     @Builder.Default
-    private boolean isUsed = false;
+    private int maxUses = 1;
 
-    @Column(name = "used_by_student_id")
-    private UUID usedByStudentId;
-
-    @Column(name = "used_at")
-    private Instant usedAt;
+    @Column(name = "used_count", nullable = false)
+    @Builder.Default
+    private int usedCount = 0;
 }
+

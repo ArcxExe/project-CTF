@@ -5,7 +5,9 @@ import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.competitions.entity.Competition;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
 import com.arcx.ctfplatform.modifiers.entity.PromoCode;
+import com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment;
 import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
 import com.arcx.ctfplatform.academic.entity.Student;
@@ -36,9 +38,11 @@ public class LeaderboardService {
     private final AttemptRepository attemptRepository;
     private final QuizSubmissionRepository quizSubmissionRepository;
     private final PromoCodeRepository promoCodeRepository;
+    private final PromoCodeClaimRepository promoCodeClaimRepository;
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
     private final CompetitionRepository competitionRepository;
     private final AcademicGroupRepository academicGroupRepository;
+
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
@@ -128,14 +132,25 @@ public class LeaderboardService {
             }
 
             // 3. Promo Codes
-            List<PromoCode> promos = promoCodeRepository.findAllByUsedByStudentId(student.getId());
-            for (PromoCode promo : promos) {
-                switch (promo.getModifierType()) {
-                    case FIXED_ADD -> score += promo.getValue();
-                    case FIXED_SUB -> score -= promo.getValue();
-                    case DOUBLE_COEFF -> score *= promo.getValue();
+            List<PromoCodeClaim> claims = promoCodeClaimRepository.findAllByStudentId(student.getId());
+            int additions = 0;
+            int subtractions = 0;
+            double multiplier = 1.0;
+            for (PromoCodeClaim claim : claims) {
+                PromoCode promo = claim.getPromoCode();
+                if (promo != null) {
+                    switch (promo.getModifierType()) {
+                        case FIXED_ADD -> additions += promo.getValue();
+                        case FIXED_SUB -> subtractions += promo.getValue();
+                        case DOUBLE_COEFF -> multiplier *= promo.getValue();
+                    }
                 }
             }
+            score = (int) Math.round((score + additions) * multiplier) - subtractions;
+            if (score < 0) {
+                score = 0;
+            }
+
 
             // 4. Adjustments
             List<ScoreAdjustment> adjustments = scoreAdjustmentRepository.findAllByStudentId(student.getId());

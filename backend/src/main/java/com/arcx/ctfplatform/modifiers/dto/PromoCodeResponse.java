@@ -12,5 +12,8 @@ public record PromoCodeResponse(
     boolean isUsed,
     UUID usedByStudentId,
     String usedByStudentName,
-    Instant usedAt
+    Instant usedAt,
+    Integer maxUses,
+    Integer usedCount
 ) {}
+

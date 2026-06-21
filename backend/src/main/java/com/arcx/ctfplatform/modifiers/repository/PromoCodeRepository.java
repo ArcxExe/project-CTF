@@ -8,5 +8,5 @@ import java.util.List;
 
 public interface PromoCodeRepository extends JpaRepository<PromoCode, UUID> {
     Optional<PromoCode> findByCode(String code);
-    List<PromoCode> findAllByUsedByStudentId(UUID studentId);
 }
+
