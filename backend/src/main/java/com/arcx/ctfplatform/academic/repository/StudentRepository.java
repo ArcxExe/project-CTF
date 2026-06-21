@@ -37,4 +37,5 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     );
 
     Page<Student> findByStatus(com.arcx.ctfplatform.academic.entity.StudentStatus status, Pageable pageable);
+    long countByAcademicGroupAcademicFlowId(UUID flowId);
 }

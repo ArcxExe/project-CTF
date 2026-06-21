@@ -10,4 +10,5 @@ import com.arcx.ctfplatform.academic.entity.AcademicGroup;
 public interface AcademicGroupRepository extends JpaRepository<AcademicGroup, UUID> {
     Optional<AcademicGroup> findByName(String name);
     boolean existsByName(String name);
+    long countByAcademicFlowId(UUID flowId);
 }
