@@ -27,7 +27,7 @@ export const RegisterPage = () => {
   const { push } = useToastStore();
   const { currentUser, register, isLoading } = useAuthStore();
   const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [studentCode, setStudentCode] = useState("");
   const [password, setPassword] = useState("");
 
   if (currentUser) {
@@ -38,7 +38,7 @@ export const RegisterPage = () => {
     event.preventDefault();
 
     try {
-      await register({ email, password, fullName: fullName || undefined });
+      await register({ email, password, studentCode });
       push({
         title: "Регистрация выполнена",
         variant: "success",
@@ -61,13 +61,14 @@ export const RegisterPage = () => {
           </div>
 
           <form className="page-stack" onSubmit={handleSubmit}>
-            <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <Input label="ФИО" value={fullName} onChange={(event) => setFullName(event.target.value)} />
+            <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <Input label="Шифр студента" value={studentCode} onChange={(event) => setStudentCode(event.target.value)} required />
             <Input
               label="Пароль"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              required
             />
             <Button type="submit" fullWidth disabled={isLoading}>
               {isLoading ? "Регистрируем..." : "Зарегистрироваться"}

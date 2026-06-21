@@ -96,13 +96,13 @@ export const authApi = {
     }
   },
 
-  async register(payload: AuthPayload & { fullName?: string }): Promise<AuthSession> {
+  async register(payload: AuthPayload & { studentCode: string }): Promise<AuthSession> {
     const auth = await apiRequest<BackendAuthResponse>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
         email: payload.email,
         password: payload.password,
-        fullName: payload.fullName,
+        studentCode: payload.studentCode,
       }),
     });
 

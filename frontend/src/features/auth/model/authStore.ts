@@ -9,7 +9,7 @@ interface AuthState {
   isLoading: boolean;
   isSessionHydrated: boolean;
   login: (payload: AuthPayload) => Promise<void>;
-  register: (payload: AuthPayload & { fullName?: string }) => Promise<void>;
+  register: (payload: AuthPayload & { studentCode: string }) => Promise<void>;
   loginAsMockUser: (role: Role) => Promise<void>;
   logout: () => void;
   restoreSession: () => Promise<void>;
