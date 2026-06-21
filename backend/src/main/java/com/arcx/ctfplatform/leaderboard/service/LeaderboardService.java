@@ -93,7 +93,7 @@ public class LeaderboardService {
     public List<LeaderboardEntry> getLeaderboardSnapshot() {
         List<Student> allStudents = studentRepository.findAll();
         List<User> allUsers = userRepository.findAll();
-        Map<UUID, String> userIdToUsername = allUsers.stream().collect(Collectors.toMap(User::getId, User::getUsername));
+        Map<UUID, String> userIdToUsername = allUsers.stream().collect(Collectors.toMap(User::getId, u -> u.getUsername() != null ? u.getUsername() : u.getEmail()));
         List<AcademicGroup> allGroups = academicGroupRepository.findAll();
         Map<UUID, String> groupIdToGroupName = allGroups.stream()
                 .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName));

@@ -42,7 +42,7 @@ public class AdminPromoCodeController {
         List<Student> students = studentRepository.findAll();
         List<User> users = userRepository.findAll();
         Map<UUID, String> userIdToUsername = users.stream()
-                .collect(Collectors.toMap(User::getId, User::getUsername, (u1, u2) -> u1));
+                .collect(Collectors.toMap(User::getId, u -> u.getUsername() != null ? u.getUsername() : u.getEmail(), (u1, u2) -> u1));
         Map<UUID, String> studentIdToUsername = students.stream()
                 .collect(Collectors.toMap(
                         Student::getId,

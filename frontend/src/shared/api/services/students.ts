@@ -3,16 +3,20 @@ import type { Student } from "@/shared/types/education";
 
 interface BackendStudentResponse {
   id: string;
-  fullName: string;
-  username: string;
-  email: string;
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
+  fullName?: string;
+  username?: string;
+  email?: string;
   studentCode?: string;
   groupId?: string;
   groupName?: string;
-  status?: "ACTIVE" | "BLOCKED" | "OUT_OF_RATING" | "DISQUALIFIED";
+  status?: string;
+  laboratoryScore?: number;
 }
 
-const statusMap: Record<NonNullable<BackendStudentResponse["status"]>, Student["status"]> = {
+const statusMap: Record<string, Student["status"]> = {
   ACTIVE: "active",
   BLOCKED: "blocked",
   OUT_OF_RATING: "out_of_rating",
@@ -26,23 +30,40 @@ const backendStatusMap: Record<Student["status"], string> = {
   disqualified: "DISQUALIFIED",
 };
 
-const toStudent = (response: BackendStudentResponse): Student => ({
-  id: response.id,
-  fullName: response.fullName,
-  nickname: response.username,
-  email: response.email,
-  studentCode: response.studentCode,
-  groupId: response.groupId,
-  group: response.groupName ?? "Без группы",
-  stream: "Не назначен",
-  laboratoryScore: 0,
-  status: response.status ? statusMap[response.status] : "active",
-});
+const toStudent = (response: BackendStudentResponse): Student => {
+  const first = response.firstName ?? "";
+  const last = response.lastName ?? "";
+  const calculatedFullName = response.fullName ?? [first, last].filter(Boolean).join(" ");
+
+  return {
+    id: response.id,
+    fullName: calculatedFullName || "Студент",
+    nickname: response.username ?? "",
+    email: response.email ?? "",
+    studentCode: response.studentCode,
+    groupId: response.groupId,
+    group: response.groupName ?? "Без группы",
+    stream: "Не назначен",
+    laboratoryScore: response.laboratoryScore ?? 0,
+    status: response.status ? (statusMap[response.status] ?? (response.status.toLowerCase() as any)) : "active",
+  };
+};
+
+// Helper to extract array from Spring Page or raw array response
+function extractContent(response: any): BackendStudentResponse[] {
+  if (Array.isArray(response)) {
+    return response;
+  }
+  if (response && Array.isArray(response.content)) {
+    return response.content;
+  }
+  return [];
+}
 
 export const studentsApi = {
   async getAll(): Promise<Student[]> {
-    const response = await apiRequest<BackendStudentResponse[]>("/api/admin/students");
-    return response.map(toStudent);
+    const response = await apiRequest<any>("/api/admin/students");
+    return extractContent(response).map(toStudent);
   },
 
   async importStudents(file: File): Promise<void> {
@@ -54,36 +75,43 @@ export const studentsApi = {
     });
   },
 
-  async updateStatus(
-    id: string,
-    status: "active" | "blocked" | "out_of_rating" | "disqualified"
-  ): Promise<void> {
+  async updateStatus(id: string, status: string): Promise<void> {
+    const backendStatus = backendStatusMap[status as Student["status"]] ?? status.toUpperCase();
     await apiRequest<void>(`/api/admin/students/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status: backendStatusMap[status] }),
+      body: JSON.stringify({ status: backendStatus }),
     });
   },
 
-  async getPendingBindings(): Promise<Student[]> {
-    const response = await apiRequest<BackendStudentResponse[]>(
-      "/api/admin/students/pending-bindings"
-    );
-    return response.map(toStudent);
+  async getPending(): Promise<Student[]> {
+    const response = await apiRequest<any>("/api/admin/students/pending-bindings");
+    return extractContent(response).map(toStudent);
   },
 
-  async approveBinding(id: string): Promise<void> {
+  async approveStudent(id: string): Promise<void> {
     await apiRequest<void>(`/api/admin/students/${id}/approve-binding`, {
       method: "POST",
     });
   },
 
-  async rejectBinding(id: string): Promise<void> {
+  async rejectStudent(id: string): Promise<void> {
     await apiRequest<void>(`/api/admin/students/${id}/reject-binding`, {
       method: "POST",
     });
   },
+
+  // Aliases for compatibility
+  async getPendingBindings(): Promise<Student[]> {
+    return this.getPending();
+  },
+
+  async approveBinding(id: string): Promise<void> {
+    return this.approveStudent(id);
+  },
+
+  async rejectBinding(id: string): Promise<void> {
+    return this.rejectStudent(id);
+  },
 };
 
-// Re-export authTokenStorage for blob download helpers in other modules
 export { authTokenStorage };
-

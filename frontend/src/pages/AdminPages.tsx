@@ -26,6 +26,13 @@ import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import "./pages.css";
 
+import { groupsApi } from "@/shared/api/services/groups";
+import { streamsApi } from "@/shared/api/services/streams";
+import { labScoresApi } from "@/shared/api/services/labScores";
+import { auditLogsApi } from "@/shared/api/services/auditLogs";
+import { reportsApi } from "@/shared/api/services/reports";
+
+
 type AdminRow = Record<string, string | number | boolean>;
 
 interface AdminSectionConfig {
@@ -1674,9 +1681,242 @@ const AdminPromoCodesManagerPage = () => {
   );
 };
 
-export const AdminGroupsPage = () => <AdminSectionPage config={sectionConfigs.groups} />;
-export const AdminStreamsPage = () => <AdminSectionPage config={sectionConfigs.streams} />;
-export const AdminLabScoresPage = () => <AdminSectionPage config={sectionConfigs.labScores} />;
+
+export const AdminGroupsPage = () => {
+  const { push } = useToastStore();
+  const [groups, setGroups] = useState<any[]>([]);
+  const [streams, setStreams] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", streamId: "" });
+
+  useEffect(() => {
+    Promise.all([
+      groupsApi.getAll(),
+      streamsApi.getAll().catch(() => [])
+    ])
+    .then(([groupsData, streamsData]) => {
+      setGroups(groupsData);
+      setStreams(streamsData);
+    })
+    .catch((error) => {
+      push({ title: error instanceof Error ? error.message : "Ошибка загрузки", variant: "error" });
+    })
+    .finally(() => setIsLoading(false));
+  }, [push]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+
+      const created = await groupsApi.create({
+        name: form.name,
+        streamId: form.streamId || undefined,
+      });
+      setGroups((curr) => [created, ...curr]);
+      setIsModalOpen(false);
+      setForm({ name: "", streamId: "" });
+      push({ title: "Группа создана", variant: "success" });
+    } catch (error) {
+      push({ title: error instanceof Error ? error.message : "Ошибка", variant: "error" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const filtered = groups.filter((g) => g.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (isLoading) return <Loader label="Загрузка групп..." />;
+
+  return (
+    <div className="page-stack">
+      <PageHeader title="Группы" subtitle="Учебные группы, привязка к потокам" actions={<Button onClick={() => setIsModalOpen(true)}>Добавить группу</Button>} />
+      <Card><Input label="Поиск" value={search} onChange={(e) => setSearch(e.target.value)} /></Card>
+      <DataTable
+        columns={[
+          { key: "name", title: "Группа" },
+          { key: "streamId", title: "Поток", render: (g) => streams.find(s => s.id === g.streamId)?.name || "Не назначен" },
+          { key: "actions", title: "Действия", render: (g) => <Button variant="danger" onClick={async () => {
+            if(!confirm("Удалить?")) return;
+
+            await groupsApi.delete(g.id);
+            setGroups(groups.filter(gr => gr.id !== g.id));
+          }}>Удалить</Button> }
+        ]}
+        rows={filtered}
+      />
+      <Modal open={isModalOpen} title="Новая группа" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleCreate}>
+          <Input label="Название" value={form.name} onChange={(e) => setForm(c => ({...c, name: e.target.value}))} required />
+          <label className="ui-field">
+            <span className="ui-field__label">Поток</span>
+            <select className="ui-input" value={form.streamId} onChange={(e) => setForm(c => ({...c, streamId: e.target.value}))}>
+              <option value="">Не назначен</option>
+              {streams.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </label>
+          <Button type="submit" disabled={isSaving}>{isSaving ? "Сохранение..." : "Добавить"}</Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+
+export const AdminStreamsPage = () => {
+  const { push } = useToastStore();
+  const [streams, setStreams] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({ name: "" });
+
+  useEffect(() => {
+    streamsApi.getAll()
+      .then(setStreams)
+      .catch(() => push({ title: "Ошибка загрузки", variant: "error" }))
+      .finally(() => setIsLoading(false));
+  }, [push]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+
+      const created = await streamsApi.create(form);
+      setStreams(curr => [created, ...curr]);
+      setIsModalOpen(false);
+      setForm({ name: "" });
+      push({ title: "Поток создан", variant: "success" });
+    } catch (error) {
+      push({ title: "Ошибка", variant: "error" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const filtered = streams.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (isLoading) return <Loader label="Загрузка потоков..." />;
+
+  return (
+    <div className="page-stack">
+      <PageHeader title="Потоки" subtitle="Потоки обучения" actions={<Button onClick={() => setIsModalOpen(true)}>Создать поток</Button>} />
+      <Card><Input label="Поиск" value={search} onChange={(e) => setSearch(e.target.value)} /></Card>
+      <DataTable
+        columns={[
+          { key: "name", title: "Поток" },
+          { key: "groupsCount", title: "Групп" },
+          { key: "studentsCount", title: "Студентов" },
+          { key: "actions", title: "Действия", render: (s) => <Button variant="danger" onClick={async () => {
+            if(!confirm("Удалить?")) return;
+
+            await streamsApi.delete(s.id);
+            setStreams(streams.filter(st => st.id !== s.id));
+          }}>Удалить</Button> }
+        ]}
+        rows={filtered}
+      />
+      <Modal open={isModalOpen} title="Новый поток" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleCreate}>
+          <Input label="Название" value={form.name} onChange={(e) => setForm({name: e.target.value})} required />
+          <Button type="submit" disabled={isSaving}>{isSaving ? "Сохранение..." : "Добавить"}</Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+
+export const AdminLabScoresPage = () => {
+  const { push } = useToastStore();
+  const [scores, setScores] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [form, setForm] = useState({ score: 0, reason: "" });
+
+  const loadData = () => {
+    labScoresApi.getAllScores()
+      .then(setScores)
+      .catch(() => push({ title: "Ошибка загрузки", variant: "error" }))
+      .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => { loadData(); }, [push]);
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    try {
+
+      await labScoresApi.importScores(e.target.files[0]);
+      push({ title: "Импорт успешен", variant: "success" });
+      loadData();
+    } catch (err) {
+      push({ title: "Ошибка импорта", variant: "error" });
+    }
+    e.target.value = "";
+  };
+
+  const handleAdjust = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+
+      await labScoresApi.setScore(selectedStudent.studentId, form.score, form.reason);
+      push({ title: "Баллы обновлены", variant: "success" });
+      setIsModalOpen(false);
+      loadData();
+    } catch (err) {
+      push({ title: "Ошибка", variant: "error" });
+    }
+  };
+
+  const filtered = scores.filter(s => s.studentName.toLowerCase().includes(search.toLowerCase()));
+
+  if (isLoading) return <Loader label="Загрузка баллов..." />;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Баллы за лабораторные"
+        subtitle="Учет баллов"
+        actions={
+          <label className="ui-button">
+            Импорт баллов
+            <input type="file" style={{display: "none"}} onChange={handleImport} />
+          </label>
+        }
+      />
+      <Card><Input label="Поиск" value={search} onChange={(e) => setSearch(e.target.value)} /></Card>
+      <DataTable
+        columns={[
+          { key: "studentName", title: "Студент" },
+          { key: "groupName", title: "Группа" },
+          { key: "score", title: "Баллы" },
+          { key: "status", title: "Статус", render: (s) => <Badge tone={s.status === "active" ? "success" : "neutral"}>{s.status}</Badge> },
+          { key: "actions", title: "Действия", render: (s) => <Button onClick={() => { setSelectedStudent(s); setForm({ score: s.score, reason: "" }); setIsModalOpen(true); }}>Изменить</Button> }
+        ]}
+        rows={filtered}
+      />
+      <Modal open={isModalOpen} title="Изменение баллов" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleAdjust}>
+          <Input label="Баллы" type="number" value={String(form.score)} onChange={(e) => setForm(c => ({...c, score: Number(e.target.value)}))} required />
+          <label className="ui-field">
+            <span className="ui-field__label">Основание / Причина</span>
+            <textarea className="ui-input ui-textarea" value={form.reason} onChange={(e) => setForm(c => ({...c, reason: e.target.value}))} required />
+          </label>
+          <Button type="submit">Сохранить</Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
 export const AdminTestsPage = () => <AdminTestsManagerPage />;
 export const AdminCategoriesPage = () => <AdminSectionPage config={sectionConfigs.categories} />;
 export const AdminTasksPage = () => <AdminTasksManagerPage />;
@@ -2073,8 +2313,93 @@ export const AdminRatingPage = () => {
 };
 export const AdminPromoCodesPage = () => <AdminPromoCodesManagerPage />;
 export const AdminSanctionsPage = () => <AdminSectionPage config={sectionConfigs.sanctions} />;
-export const AdminActionLogPage = () => <AdminSectionPage config={sectionConfigs.actionLog} />;
-export const AdminReportsPage = () => <AdminSectionPage config={sectionConfigs.reports} />;
+
+export const AdminActionLogPage = () => {
+  const { push } = useToastStore();
+  const [logs, setLogs] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    auditLogsApi.getAll()
+      .then(setLogs)
+      .catch(() => push({ title: "Ошибка загрузки логов", variant: "error" }))
+      .finally(() => setIsLoading(false));
+  }, [push]);
+
+  const filtered = logs.filter(l =>
+    Object.values(l).some(v => String(v).toLowerCase().includes(search.toLowerCase()))
+  );
+
+  if (isLoading) return <Loader label="Загрузка логов..." />;
+
+  return (
+    <div className="page-stack">
+      <PageHeader title="Журнал действий" subtitle="Аудит действий администраторов и системы." />
+      <Card><Input label="Поиск" value={search} onChange={(e) => setSearch(e.target.value)} /></Card>
+      <DataTable
+        columns={[
+          { key: "timestamp", title: "Дата/Время", render: (l) => new Date(l.timestamp).toLocaleString("ru") },
+          { key: "user", title: "Пользователь" },
+          { key: "role", title: "Роль" },
+          { key: "action", title: "Действие" },
+          { key: "target", title: "Объект" },
+          { key: "oldValue", title: "Старое значение" },
+          { key: "newValue", title: "Новое значение" },
+          { key: "ip", title: "IP" }
+        ]}
+        rows={filtered}
+      />
+    </div>
+  );
+};
+
+
+export const AdminReportsPage = () => {
+  const { push } = useToastStore();
+
+  const handleDownload = async (action: () => Promise<void>, name: string) => {
+    try {
+      await action();
+      push({ title: `Скачивание ${name} началось`, variant: "success" });
+    } catch (e) {
+      push({ title: "Ошибка скачивания", variant: "error" });
+    }
+  };
+
+  return (
+    <div className="page-stack">
+      <PageHeader title="Отчеты" subtitle="Выгрузки по студентам, логам и оценкам." />
+      <div className="grid grid-2">
+        <Card>
+          <div className="page-stack">
+            <h3>Итоговый отчет студентов</h3>
+            <Button onClick={async () => { handleDownload(reportsApi.downloadFinalStudentReport, "отчета"); }}>Скачать Excel</Button>
+          </div>
+        </Card>
+        <Card>
+          <div className="page-stack">
+            <h3>Журнал решений</h3>
+            <Button onClick={async () => { handleDownload(reportsApi.downloadSolutionsLog, "лога"); }}>Скачать CSV</Button>
+          </div>
+        </Card>
+        <Card>
+          <div className="page-stack">
+            <h3>Ручные проверки</h3>
+            <Button onClick={async () => { handleDownload(reportsApi.downloadManualFileReviews, "проверок"); }}>Скачать PDF</Button>
+          </div>
+        </Card>
+        <Card>
+          <div className="page-stack">
+            <h3>История корректировок</h3>
+            <Button onClick={async () => { handleDownload(reportsApi.downloadAdminAdjustmentsHistory, "корректировок"); }}>Скачать CSV</Button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
 
 export const AdminAnalyticsPage = () => (
   <div className="page-stack">
