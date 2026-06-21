@@ -31,7 +31,7 @@ import { streamsApi } from "@/shared/api/services/streams";
 import { labScoresApi } from "@/shared/api/services/labScores";
 import { auditLogsApi } from "@/shared/api/services/auditLogs";
 import { reportsApi } from "@/shared/api/services/reports";
-import { gradingScalesApi, GradingScale, CreateGradingScaleRequest } from "@/shared/api/services/gradingScales";
+import { gradingScalesApi, GradingScale, GradingScalePayload } from "@/shared/api/services/gradingScales";
 
 type AdminRow = Record<string, string | number | boolean>;
 
@@ -2490,7 +2490,7 @@ export const AdminGradingScalePage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [form, setForm] = useState<CreateGradingScaleRequest>({
+  const [form, setForm] = useState<GradingScalePayload>({
     minCoefficient: 0,
     maxCoefficient: 0,
     grade: 2,
@@ -2513,7 +2513,7 @@ export const AdminGradingScalePage = () => {
     void loadData();
   }, [push]);
 
-  const validateScale = (currentForm: CreateGradingScaleRequest, skipId: string | null): boolean => {
+  const validateScale = (currentForm: GradingScalePayload, skipId: string | null): boolean => {
     if (currentForm.minCoefficient >= currentForm.maxCoefficient) {
       push({ title: "Минимальный коэффициент должен быть меньше максимального", variant: "error" });
       return false;
