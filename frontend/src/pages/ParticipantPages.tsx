@@ -563,7 +563,7 @@ export const PromoCodePage = () => {
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isValidFormat = code.length >= 6;
+  const isValidFormat = code.length >= 1;
   const hasInput = code.length > 0;
   const validationColor = !hasInput ? undefined : isValidFormat ? "var(--success)" : "var(--danger)";
 
