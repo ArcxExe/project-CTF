@@ -9,6 +9,7 @@ interface BackendAuthResponse {
   expiresInMillis: number;
   userId: string;
   email: string;
+  username?: string;
   role: "ADMIN" | "INSTRUCTOR" | "STUDENT" | "USER";
 }
 
@@ -57,7 +58,8 @@ const toUser = (response: BackendUserResponse): User => ({
 
 const toUserFromAuth = (response: BackendAuthResponse): User => ({
   id: response.userId,
-  fullName: response.email,
+  fullName: response.username ?? response.email,
+  username: response.username,
   email: response.email,
   role: roleMap[response.role],
   isBlocked: false,

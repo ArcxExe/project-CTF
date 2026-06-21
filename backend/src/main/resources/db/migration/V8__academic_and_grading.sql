@@ -5,25 +5,26 @@ CREATE TABLE academic_flows (
     created_at TIMESTAMP NOT NULL
 );
 
-CREATE TABLE academic_groups (
-    id UUID PRIMARY KEY,
-    name VARCHAR(50) NOT NULL,
-    flow_id UUID REFERENCES academic_flows(id),
-    created_at TIMESTAMP NOT NULL
-);
+-- Migrate existing academic_streams to academic_flows
+INSERT INTO academic_flows (id, name, academic_year, created_at)
+SELECT id, name, '2025/2026', NOW() FROM academic_streams;
 
-CREATE TABLE students (
-    id UUID PRIMARY KEY,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    middle_name VARCHAR(100),
-    group_id UUID REFERENCES academic_groups(id),
-    student_code VARCHAR(50) UNIQUE NOT NULL,
-    user_id UUID UNIQUE REFERENCES users(id),
-    status VARCHAR(30) NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
-);
+-- Modify academic_groups to use flow_id instead of stream_id
+ALTER TABLE academic_groups ALTER COLUMN name TYPE VARCHAR(50);
+ALTER TABLE academic_groups ADD COLUMN flow_id UUID REFERENCES academic_flows(id);
+UPDATE academic_groups SET flow_id = stream_id;
+ALTER TABLE academic_groups DROP COLUMN stream_id;
+DROP TABLE academic_streams;
+
+-- Modify students to support first_name, last_name, middle_name, and status
+ALTER TABLE students
+    ADD COLUMN first_name VARCHAR(100) NOT NULL DEFAULT 'New',
+    ADD COLUMN last_name VARCHAR(100) NOT NULL DEFAULT 'Student',
+    ADD COLUMN middle_name VARCHAR(100),
+    ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE';
+
+ALTER TABLE students ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE students ALTER COLUMN student_code SET NOT NULL;
 
 CREATE TABLE lab_scores (
     id UUID PRIMARY KEY,
@@ -53,16 +54,6 @@ CREATE TABLE manual_submissions (
     checked_at TIMESTAMP,
     percentage_multiplier INTEGER,
     status VARCHAR(30)
-);
-
-CREATE TABLE promo_codes (
-    id UUID PRIMARY KEY,
-    code VARCHAR(50) UNIQUE NOT NULL,
-    modifier_type VARCHAR(30) NOT NULL,
-    value NUMERIC(10,2),
-    is_used BOOLEAN NOT NULL DEFAULT FALSE,
-    used_by_student_id UUID REFERENCES students(id),
-    activated_at TIMESTAMP
 );
 
 CREATE TABLE grading_scales (

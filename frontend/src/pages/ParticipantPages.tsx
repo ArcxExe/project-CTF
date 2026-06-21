@@ -563,7 +563,7 @@ export const PromoCodePage = () => {
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isValidFormat = code.length >= 6;
+  const isValidFormat = code.length >= 1;
   const hasInput = code.length > 0;
   const validationColor = !hasInput ? undefined : isValidFormat ? "var(--success)" : "var(--danger)";
 
@@ -610,7 +610,7 @@ export const PromoCodePage = () => {
             value={code}
             onChange={(event) => setCode(event.target.value.toUpperCase())}
             style={{ borderColor: validationColor, borderWidth: validationColor ? '2px' : '1px' }}
-            error={hasInput && !isValidFormat ? "Минимум 6 символов" : undefined}
+            error={hasInput && !isValidFormat ? "Минимум 1 символов" : undefined}
           />
           <Button type="submit" disabled={isSubmitting || (hasInput && !isValidFormat)}>
             {isSubmitting ? "Активируем..." : "Активировать"}
