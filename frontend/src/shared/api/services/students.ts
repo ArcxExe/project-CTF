@@ -9,6 +9,8 @@ interface BackendStudentResponse {
   studentCode?: string;
   groupId?: string;
   groupName?: string;
+  status?: string;
+  laboratoryScore?: number;
 }
 
 const toStudent = (response: BackendStudentResponse): Student => ({
@@ -20,13 +22,33 @@ const toStudent = (response: BackendStudentResponse): Student => ({
   groupId: response.groupId,
   group: response.groupName ?? "Без группы",
   stream: "Не назначен",
-  laboratoryScore: 0,
-  status: "active",
+  laboratoryScore: response.laboratoryScore ?? 0,
+  status: (response.status as any) ?? "active",
 });
 
 export const studentsApi = {
   async getAll(): Promise<Student[]> {
     const response = await apiRequest<BackendStudentResponse[]>("/api/admin/students");
     return response.map(toStudent);
+  },
+
+  async getPending(): Promise<Student[]> {
+    const response = await apiRequest<BackendStudentResponse[]>("/api/admin/students/pending");
+    return response.map(toStudent);
+  },
+
+  async approveStudent(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/students/${id}/approve`, { method: "POST" });
+  },
+
+  async rejectStudent(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/students/${id}/reject`, { method: "POST" });
+  },
+
+  async updateStatus(id: string, status: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/students/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
   },
 };
