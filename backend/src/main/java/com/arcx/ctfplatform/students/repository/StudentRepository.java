@@ -19,4 +19,6 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Student s WHERE s.userId = :userId")
     Optional<Student> findByUserIdWithLock(@Param("userId") UUID userId);
+
+    Optional<Student> findByStudentCode(String studentCode);
 }
