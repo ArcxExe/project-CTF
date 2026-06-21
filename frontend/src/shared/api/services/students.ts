@@ -60,7 +60,23 @@ function extractContent(response: any): BackendStudentResponse[] {
   return [];
 }
 
+
+export interface CreateStudentPayload {
+  firstName: string;
+  lastName: string;
+  middleName?: string;
+  studentCode: string;
+  groupId: string;
+}
+
 export const studentsApi = {
+  async createStudent(payload: CreateStudentPayload): Promise<void> {
+    await apiRequest<void>("/api/admin/students", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getAll(): Promise<Student[]> {
     const response = await apiRequest<any>("/api/admin/students");
     return extractContent(response).map(toStudent);
