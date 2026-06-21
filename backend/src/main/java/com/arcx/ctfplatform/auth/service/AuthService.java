@@ -51,7 +51,7 @@ public class AuthService {
         if (savedUser.getRole() == Role.STUDENT) {
             Student student = Student.builder()
                     .userId(savedUser.getId())
-                    .studentCode("STU-" + savedUser.getId().toString().substring(0, 8).toUpperCase())
+                    .studentCode("STU-" + savedUser.getUsername().toUpperCase())
                     .build();
             studentRepository.save(student);
         }

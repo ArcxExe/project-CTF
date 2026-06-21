@@ -14,6 +14,8 @@ import com.arcx.ctfplatform.tests.entity.QuizSubmission;
 import com.arcx.ctfplatform.tests.repository.QuizSubmissionRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
+import com.arcx.ctfplatform.academic.group.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.group.repository.AcademicGroupRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,10 +38,11 @@ public class LeaderboardService {
     private final PromoCodeRepository promoCodeRepository;
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
     private final CompetitionRepository competitionRepository;
+    private final AcademicGroupRepository academicGroupRepository;
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public record LeaderboardEntry(UUID studentId, String username, int score) {}
+    public record LeaderboardEntry(UUID studentId, String username, String groupName, int score, int solvedCount) {}
 
     public SseEmitter subscribe() {
         SseEmitter emitter = new SseEmitter(60 * 60 * 1000L); // 1 hour timeout
@@ -91,6 +94,9 @@ public class LeaderboardService {
         List<Student> allStudents = studentRepository.findAll();
         List<User> allUsers = userRepository.findAll();
         Map<UUID, String> userIdToUsername = allUsers.stream().collect(Collectors.toMap(User::getId, User::getUsername));
+        List<AcademicGroup> allGroups = academicGroupRepository.findAll();
+        Map<UUID, String> groupIdToGroupName = allGroups.stream()
+                .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName));
 
         // In a real app we would filter by competition or do group by queries. For now, doing it in memory for simplicity.
         List<Competition> competitions = competitionRepository.findAll();
@@ -136,7 +142,9 @@ public class LeaderboardService {
             score += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
 
             String username = userIdToUsername.getOrDefault(student.getUserId(), "Unknown");
-            entries.add(new LeaderboardEntry(student.getId(), username, score));
+            String groupName = student.getGroupId() != null ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы") : "Без группы";
+            int solvedCount = attempts.size();
+            entries.add(new LeaderboardEntry(student.getId(), username, groupName, score, solvedCount));
         }
 
         entries.sort((e1, e2) -> Integer.compare(e2.score(), e1.score()));

@@ -2,46 +2,30 @@ import { apiRequest } from "@/shared/api/client";
 
 export interface PromoCode {
   id: string;
-  competitionId?: string;
   code: string;
-  title: string;
-  description: string;
-  bonusPoints: number;
-  bonusAttempts: number;
-  maxUses?: number;
-  usedCount: number;
-  status: "active" | "expired" | "disabled";
-  expiresAt?: string;
-  createdAt: string;
-  updatedAt: string;
+  modifierType: "FIXED_ADD" | "FIXED_SUB" | "DOUBLE_COEFF";
+  value: number;
+  isUsed: boolean;
+  usedByStudentId?: string;
+  usedByStudentName?: string;
+  usedAt?: string;
 }
 
 export interface PromoCodePayload {
-  competitionId?: string;
   code: string;
-  title: string;
-  description?: string;
-  bonusPoints?: number;
-  bonusAttempts?: number;
-  maxUses?: number;
-  status?: PromoCode["status"];
-  expiresAt?: string;
+  modifierType: PromoCode["modifierType"];
+  value: number;
 }
 
 interface BackendPromoCodeResponse {
   id: string;
-  competitionId?: string;
   code: string;
-  title: string;
-  description?: string;
-  bonusPoints?: number;
-  bonusAttempts?: number;
-  maxUses?: number;
-  usedCount: number;
-  status: "ACTIVE" | "EXPIRED" | "DISABLED";
-  expiresAt?: string;
-  createdAt: string;
-  updatedAt: string;
+  modifierType: "FIXED_ADD" | "FIXED_SUB" | "DOUBLE_COEFF";
+  value: number;
+  isUsed: boolean;
+  usedByStudentId?: string;
+  usedByStudentName?: string;
+  usedAt?: string;
 }
 
 interface RedeemPromoCodeResponse {
@@ -51,44 +35,21 @@ interface RedeemPromoCodeResponse {
   bonusAttempts: number;
 }
 
-const statusMap: Record<BackendPromoCodeResponse["status"], PromoCode["status"]> = {
-  ACTIVE: "active",
-  EXPIRED: "expired",
-  DISABLED: "disabled",
-};
-
-const backendStatusMap: Record<PromoCode["status"], BackendPromoCodeResponse["status"]> = {
-  active: "ACTIVE",
-  expired: "EXPIRED",
-  disabled: "DISABLED",
-};
-
 const toPromoCode = (response: BackendPromoCodeResponse): PromoCode => ({
   id: response.id,
-  competitionId: response.competitionId,
   code: response.code,
-  title: response.title,
-  description: response.description ?? "",
-  bonusPoints: response.bonusPoints ?? 0,
-  bonusAttempts: response.bonusAttempts ?? 0,
-  maxUses: response.maxUses,
-  usedCount: response.usedCount,
-  status: statusMap[response.status],
-  expiresAt: response.expiresAt,
-  createdAt: response.createdAt,
-  updatedAt: response.updatedAt,
+  modifierType: response.modifierType,
+  value: response.value,
+  isUsed: response.isUsed,
+  usedByStudentId: response.usedByStudentId,
+  usedByStudentName: response.usedByStudentName,
+  usedAt: response.usedAt,
 });
 
 const toBackendPayload = (payload: PromoCodePayload) => ({
-  competitionId: payload.competitionId || undefined,
   code: payload.code.trim().toUpperCase(),
-  title: payload.title,
-  description: payload.description,
-  bonusPoints: payload.bonusPoints ?? 0,
-  bonusAttempts: payload.bonusAttempts ?? 0,
-  maxUses: payload.maxUses,
-  status: payload.status ? backendStatusMap[payload.status] : undefined,
-  expiresAt: payload.expiresAt,
+  modifierType: payload.modifierType,
+  value: payload.value,
 });
 
 export const promoCodesApi = {
@@ -112,5 +73,11 @@ export const adminPromoCodesApi = {
       body: JSON.stringify(toBackendPayload(payload)),
     });
     return toPromoCode(response);
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/promo-codes/${id}`, {
+      method: "DELETE",
+    });
   },
 };

@@ -1,5 +1,7 @@
 package com.arcx.ctfplatform.tests.controller;
 
+import com.arcx.ctfplatform.tests.dto.QuizOptionStudentResponse;
+import com.arcx.ctfplatform.tests.dto.QuizQuestionStudentResponse;
 import com.arcx.ctfplatform.tests.entity.QuizSubmission;
 import com.arcx.ctfplatform.tests.service.QuizService;
 import com.arcx.ctfplatform.users.entity.User;
@@ -65,7 +67,29 @@ public class QuizController {
     }
 
     @GetMapping("/{testId}/questions")
-    public ResponseEntity<List<Map<String, Object>>> getTestQuestions(@PathVariable UUID testId) {
-        return ResponseEntity.ok(quizService.getQuestionsWithOptions(testId));
+    public ResponseEntity<List<QuizQuestionStudentResponse>> getTestQuestions(@PathVariable UUID testId) {
+        List<Map<String, Object>> data = quizService.getQuestionsWithOptions(testId);
+        
+        List<QuizQuestionStudentResponse> response = data.stream().map(map -> {
+            var q = (com.arcx.ctfplatform.tests.entity.QuizQuestion) map.get("question");
+            @SuppressWarnings("unchecked")
+            var opts = (List<com.arcx.ctfplatform.tests.entity.QuizOption>) map.get("options");
+            
+            List<QuizOptionStudentResponse> studentOpts = opts.stream().map(o -> 
+                new QuizOptionStudentResponse(o.getId(), o.getQuestionId(), o.getOptionText(), o.getSequenceOrder())
+            ).toList();
+            
+            return new QuizQuestionStudentResponse(
+                q.getId(),
+                q.getTestId(),
+                q.getType(),
+                q.getText(),
+                q.getPoints(),
+                q.getOrdering(),
+                studentOpts
+            );
+        }).toList();
+        
+        return ResponseEntity.ok(response);
     }
 }

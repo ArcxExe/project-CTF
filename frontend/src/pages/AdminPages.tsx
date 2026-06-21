@@ -7,7 +7,7 @@ import { adminCompetitionsApi } from "@/shared/api/services/competitions";
 import { adminPromoCodesApi } from "@/shared/api/services/promoCodes";
 import type { PromoCode } from "@/shared/api/services/promoCodes";
 import { adminTestsApi } from "@/shared/api/services/tests";
-import type { CtfTest } from "@/shared/api/services/tests";
+import type { CtfTest, QuizQuestion, QuizOption } from "@/shared/api/services/tests";
 import type { Competition } from "@/shared/types/competition";
 import { adminAttemptsApi } from "@/shared/api/services/attempts";
 import type { Attempt } from "@/shared/api/services/attempts";
@@ -345,23 +345,13 @@ const AdminSectionPage = ({ config }: { config: AdminSectionConfig }) => (
 );
 
 
-const testStatusLabels: Record<CtfTest["status"], string> = {
+export const testStatusLabels: Record<CtfTest["status"], string> = {
   draft: "Черновик",
   published: "Опубликовано",
   archived: "Архив",
 };
 
-const promoStatusLabels: Record<PromoCode["status"], string> = {
-  active: "Активно",
-  expired: "Просрочено",
-  disabled: "Отключено",
-};
-
 const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString("ru-RU") : "—");
-
-const toIsoDateTime = (value: string) => (value ? new Date(value).toISOString() : undefined);
-
-const optionalNumber = (value: string) => (value === "" ? undefined : Number(value));
 
 const AdminTasksManagerPage = () => {
   const { push } = useToastStore();
@@ -512,7 +502,14 @@ const AdminTasksManagerPage = () => {
         columns={[
           { key: "title", title: "Задание" },
           { key: "points", title: "Баллы" },
-          { key: "competitionId", title: "Соревнование" },
+          {
+            key: "competitionId",
+            title: "Соревнование",
+            render: (task) => {
+              const comp = competitions.find((c) => c.id === task.competitionId);
+              return comp ? comp.title : task.competitionId;
+            },
+          },
           {
             key: "actions",
             title: "Действия",
@@ -607,6 +604,28 @@ const AdminTestsManagerPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTestId, setEditingTestId] = useState<string | null>(null);
+
+  // Quiz Question Constructor states
+  const [isConstructorOpen, setIsConstructorOpen] = useState(false);
+  const [constructorTest, setConstructorTest] = useState<CtfTest | null>(null);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
+
+  const [questionForm, setQuestionForm] = useState({
+    text: "",
+    type: "RADIO" as QuizQuestion["type"],
+    points: "10",
+  });
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+
+  const [optionForm, setOptionForm] = useState({
+    text: "",
+    isCorrect: false,
+    sequenceOrder: "1",
+  });
+
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -617,22 +636,30 @@ const AdminTestsManagerPage = () => {
     competitionId: "",
   });
 
+  const loadData = async () => {
+    try {
+      const [testRows, challengeRows, competitionRows] = await Promise.all([
+        adminTestsApi.getAll(),
+        adminChallengesApi.getAll(),
+        adminCompetitionsApi.getAll()
+      ]);
+      setTests(testRows);
+      setChallenges(challengeRows);
+      setCompetitions(competitionRows);
+      setSelectedTestId(testRows[0]?.id ?? "");
+      setSelectedChallengeId(challengeRows[0]?.id ?? "");
+    } catch (error: unknown) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось загрузить данные",
+        variant: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    void Promise.all([adminTestsApi.getAll(), adminChallengesApi.getAll(), adminCompetitionsApi.getAll()])
-      .then(([testRows, challengeRows, competitionRows]) => {
-        setTests(testRows);
-        setChallenges(challengeRows);
-        setCompetitions(competitionRows);
-        setSelectedTestId(testRows[0]?.id ?? "");
-        setSelectedChallengeId(challengeRows[0]?.id ?? "");
-      })
-      .catch((error: unknown) => {
-        push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить тесты",
-          variant: "error",
-        });
-      })
-      .finally(() => setIsLoading(false));
+    void loadData();
   }, [push]);
 
   useEffect(() => {
@@ -660,23 +687,100 @@ const AdminTestsManagerPage = () => {
     [search, tests],
   );
 
-  const handleCreate = async (event: FormEvent) => {
+  const handleCreateClick = () => {
+    setEditingTestId(null);
+    setForm({
+      title: "",
+      description: "",
+      status: "published",
+      timeLimitMinutes: "30",
+      passingScore: "70",
+      questionsCount: "10",
+      competitionId: "",
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleEditTest = (test: CtfTest) => {
+    setEditingTestId(test.id);
+    setForm({
+      title: test.title,
+      description: test.description || "",
+      status: test.status,
+      timeLimitMinutes: String(test.timeLimitMinutes),
+      passingScore: String(test.passingScore),
+      questionsCount: String(test.questionsCount),
+      competitionId: test.competitionId || "",
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteTest = async (id: string) => {
+    if (!window.confirm("Вы действительно хотите удалить этот тест?")) {
+      return;
+    }
+
+    try {
+      await adminTestsApi.delete(id);
+      setTests((current) => current.filter((t) => t.id !== id));
+      if (selectedTestId === id) {
+        setSelectedTestId("");
+      }
+      push({ title: "Тест удален", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить тест",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleStatusChange = async (test: CtfTest, newStatus: CtfTest["status"]) => {
+    try {
+      const updated = await adminTestsApi.update(test.id, {
+        title: test.title,
+        description: test.description || undefined,
+        status: newStatus,
+        timeLimitMinutes: test.timeLimitMinutes,
+        passingScore: test.passingScore,
+        questionsCount: test.questionsCount,
+        competitionId: test.competitionId || undefined,
+      });
+      setTests((current) => current.map((t) => (t.id === test.id ? updated : t)));
+      push({ title: "Статус теста обновлен", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось обновить статус",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setIsSaving(true);
 
-    try {
-      const created = await adminTestsApi.create({
-        title: form.title,
-        description: form.description || undefined,
-        status: form.status,
-        timeLimitMinutes: Number(form.timeLimitMinutes),
-        passingScore: Number(form.passingScore),
-        questionsCount: Number(form.questionsCount),
-        competitionId: form.competitionId || undefined,
-      });
+    const payload = {
+      title: form.title,
+      description: form.description || undefined,
+      status: form.status,
+      timeLimitMinutes: Number(form.timeLimitMinutes),
+      passingScore: Number(form.passingScore),
+      questionsCount: Number(form.questionsCount),
+      competitionId: form.competitionId || undefined,
+    };
 
-      setTests((current) => [created, ...current]);
-      setSelectedTestId(created.id);
+    try {
+      if (editingTestId) {
+        const updated = await adminTestsApi.update(editingTestId, payload);
+        setTests((current) => current.map((t) => (t.id === editingTestId ? updated : t)));
+        push({ title: "Тест обновлен", variant: "success" });
+      } else {
+        const created = await adminTestsApi.create(payload);
+        setTests((current) => [created, ...current]);
+        setSelectedTestId(created.id);
+        push({ title: "Тест создан", variant: "success" });
+      }
       setForm({
         title: "",
         description: "",
@@ -687,10 +791,10 @@ const AdminTestsManagerPage = () => {
         competitionId: "",
       });
       setIsModalOpen(false);
-      push({ title: "Тест создан", variant: "success" });
+      setEditingTestId(null);
     } catch (error) {
       push({
-        title: error instanceof Error ? error.message : "Не удалось создать тест",
+        title: error instanceof Error ? error.message : "Не удалось сохранить тест",
         variant: "error",
       });
     } finally {
@@ -734,6 +838,186 @@ const AdminTestsManagerPage = () => {
     }
   };
 
+  // Quiz Question Constructor handlers
+  const handleOpenQuestionsConstructor = (test: CtfTest) => {
+    setConstructorTest(test);
+    setQuestions([]);
+    setSelectedQuestionId(null);
+    setIsQuestionsLoading(true);
+    setIsConstructorOpen(true);
+
+    void adminTestsApi.getAdminQuestions(test.id)
+      .then((data) => {
+        setQuestions(data);
+        if (data.length > 0) {
+          setSelectedQuestionId(data[0].id);
+        }
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить вопросы теста",
+          variant: "error",
+        });
+      })
+      .finally(() => {
+        setIsQuestionsLoading(false);
+      });
+  };
+
+  const handleStartEditQuestion = (q: QuizQuestion) => {
+    setEditingQuestionId(q.id);
+    setQuestionForm({
+      text: q.text,
+      type: q.type,
+      points: String(q.points),
+    });
+  };
+
+  const handleCancelEditQuestion = () => {
+    setEditingQuestionId(null);
+    setQuestionForm({
+      text: "",
+      type: "RADIO",
+      points: "10",
+    });
+  };
+
+  const handleSaveQuestion = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!constructorTest) return;
+    setIsSaving(true);
+
+    try {
+      if (editingQuestionId) {
+        const updated = await adminTestsApi.updateQuestion(editingQuestionId, {
+          text: questionForm.text,
+          type: questionForm.type,
+          points: Number(questionForm.points),
+          ordering: questions.find(q => q.id === editingQuestionId)?.ordering || 1,
+        });
+        setQuestions(current => current.map(q => q.id === editingQuestionId ? { ...q, ...updated, options: q.options } : q));
+        push({ title: "Вопрос обновлен", variant: "success" });
+      } else {
+        const nextOrdering = questions.reduce((max, q) => Math.max(max, q.ordering), 0) + 1;
+        const created = await adminTestsApi.addQuestion(constructorTest.id, {
+          text: questionForm.text,
+          type: questionForm.type,
+          points: Number(questionForm.points),
+          ordering: nextOrdering,
+        });
+        setQuestions(current => [...current, created]);
+        setSelectedQuestionId(created.id);
+        push({ title: "Вопрос добавлен", variant: "success" });
+      }
+      handleCancelEditQuestion();
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось сохранить вопрос",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteQuestion = async (id: string) => {
+    if (!window.confirm("Вы действительно хотите удалить этот вопрос?")) {
+      return;
+    }
+    try {
+      await adminTestsApi.deleteQuestion(id);
+      setQuestions(current => current.filter(q => q.id !== id));
+      if (selectedQuestionId === id) {
+        setSelectedQuestionId(null);
+      }
+      push({ title: "Вопрос удален", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить вопрос",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleAddOption = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedQuestionId) return;
+    setIsSaving(true);
+
+    try {
+      const created = await adminTestsApi.addOption(selectedQuestionId, {
+        optionText: optionForm.text,
+        isCorrect: optionForm.isCorrect,
+        sequenceOrder: optionForm.sequenceOrder ? Number(optionForm.sequenceOrder) : undefined,
+      });
+      setQuestions(current => current.map(q => {
+        if (q.id === selectedQuestionId) {
+          return { ...q, options: [...q.options, created] };
+        }
+        return q;
+      }));
+      setOptionForm({
+        text: "",
+        isCorrect: false,
+        sequenceOrder: "1",
+      });
+      push({ title: "Вариант ответа добавлен", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось добавить вариант ответа",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteOption = async (optionId: string) => {
+    if (!window.confirm("Вы действительно хотите удалить этот вариант ответа?")) {
+      return;
+    }
+    try {
+      await adminTestsApi.deleteOption(optionId);
+      setQuestions(current => current.map(q => {
+        if (q.id === selectedQuestionId) {
+          return { ...q, options: q.options.filter(o => o.id !== optionId) };
+        }
+        return q;
+      }));
+      push({ title: "Вариант ответа удален", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить вариант ответа",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleToggleOptionCorrect = async (option: QuizOption, isCorrect: boolean) => {
+    try {
+      const updated = await adminTestsApi.updateOption(option.id, {
+        isCorrect,
+      });
+      setQuestions(current => current.map(q => {
+        if (q.id === selectedQuestionId) {
+          return {
+            ...q,
+            options: q.options.map(o => o.id === option.id ? { ...o, isCorrect: updated.isCorrect } : o)
+          };
+        }
+        return q;
+      }));
+      push({ title: "Ответ обновлен", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось обновить вариант ответа",
+        variant: "error",
+      });
+    }
+  };
+
+  const selectedQuestion = questions.find(q => q.id === selectedQuestionId);
+
   if (isLoading) {
     return <Loader label="Загружаем тесты..." />;
   }
@@ -743,7 +1027,7 @@ const AdminTestsManagerPage = () => {
       <PageHeader
         title="Тесты"
         subtitle="Предварительные тесты допуска из backend API."
-        actions={<Button onClick={() => setIsModalOpen(true)}>Создать тест</Button>}
+        actions={<Button onClick={handleCreateClick}>Создать тест</Button>}
       />
 
       <Card>
@@ -765,7 +1049,33 @@ const AdminTestsManagerPage = () => {
             key: "status",
             title: "Статус",
             render: (test) => (
-              <Badge tone={test.status === "published" ? "success" : "info"}>{testStatusLabels[test.status]}</Badge>
+              <select
+                className="ui-input"
+                style={{ padding: "0.25rem 0.5rem", height: "auto", fontSize: "0.85rem", width: "auto", minWidth: "120px" }}
+                value={test.status}
+                onChange={(e) => void handleStatusChange(test, e.target.value as CtfTest["status"])}
+              >
+                <option value="draft">Черновик</option>
+                <option value="published">Опубликовано</option>
+                <option value="archived">Архив</option>
+              </select>
+            ),
+          },
+          {
+            key: "actions",
+            title: "Действия",
+            render: (test) => (
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Button variant="secondary" onClick={() => handleEditTest(test)}>
+                  Редактировать
+                </Button>
+                <Button onClick={() => handleOpenQuestionsConstructor(test)}>
+                  Вопросы
+                </Button>
+                <Button variant="danger" onClick={() => void handleDeleteTest(test.id)}>
+                  Удалить
+                </Button>
+              </div>
             ),
           },
         ]}
@@ -812,7 +1122,14 @@ const AdminTestsManagerPage = () => {
             columns={[
               { key: "title", title: "Задание" },
               { key: "points", title: "Баллы" },
-              { key: "competitionId", title: "Соревнование" },
+              {
+                key: "competitionId",
+                title: "Соревнование",
+                render: (challenge) => {
+                  const comp = competitions.find((c) => c.id === challenge.competitionId);
+                  return comp ? comp.title : challenge.competitionId;
+                },
+              },
               {
                 key: "actions",
                 title: "Действия",
@@ -828,8 +1145,8 @@ const AdminTestsManagerPage = () => {
         </div>
       </Card>
 
-      <Modal open={isModalOpen} title="Новый тест" onClose={() => setIsModalOpen(false)}>
-        <form className="admin-form" onSubmit={handleCreate}>
+      <Modal open={isModalOpen} title={editingTestId ? "Редактировать тест" : "Новый тест"} onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleSubmit}>
           <Input
             label="Название"
             value={form.title}
@@ -906,13 +1223,256 @@ const AdminTestsManagerPage = () => {
           </div>
 
           <Button type="submit" disabled={isSaving}>
-            {isSaving ? "Сохраняем..." : "Создать"}
+            {isSaving ? "Сохраняем..." : (editingTestId ? "Сохранить" : "Создать")}
           </Button>
         </form>
+      </Modal>
+
+      {/* Quiz Question Constructor Modal */}
+      <Modal
+        open={isConstructorOpen}
+        title={`Конструктор вопросов: ${constructorTest?.title || ""}`}
+        onClose={() => {
+          setIsConstructorOpen(false);
+          setConstructorTest(null);
+          setQuestions([]);
+          setSelectedQuestionId(null);
+        }}
+      >
+        <div className="constructor-layout" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", minHeight: "480px", maxHeight: "650px", overflow: "hidden" }}>
+          {/* Left Column: Questions List & Add/Edit Question */}
+          <div style={{ display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)", paddingRight: "1.5rem", overflowY: "auto" }}>
+            <h4>Вопросы ({questions.length})</h4>
+            {isQuestionsLoading ? (
+              <Loader label="Загрузка вопросов..." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                {questions.map((q) => (
+                  <div
+                    key={q.id}
+                    onClick={() => setSelectedQuestionId(q.id)}
+                    style={{
+                      padding: "0.75rem",
+                      borderRadius: "var(--radius)",
+                      border: q.id === selectedQuestionId ? "2px solid var(--primary)" : "1px solid var(--border)",
+                      background: q.id === selectedQuestionId ? "rgba(var(--primary-rgb, 79, 70, 229), 0.08)" : "var(--card-bg)",
+                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary)", fontWeight: "bold" }}>
+                        {q.type} · {q.points} баллов · Порядок: {q.ordering}
+                      </div>
+                      <div style={{ fontWeight: "500", marginTop: "0.25rem" }}>{q.text}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button
+                        type="button"
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEditQuestion(q);
+                        }}
+                        title="Редактировать вопрос"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleDeleteQuestion(q.id);
+                        }}
+                        title="Удалить вопрос"
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {questions.length === 0 && <div className="muted" style={{ padding: "1rem 0" }}>Вопросов пока нет. Добавьте первый вопрос ниже.</div>}
+              </div>
+            )}
+
+            {/* Add/Edit Question Form */}
+            <form onSubmit={handleSaveQuestion} style={{ marginTop: "auto", paddingTop: "1.5rem", borderTop: "1px dashed var(--border)" }}>
+              <h5>{editingQuestionId ? "Редактировать вопрос" : "Добавить вопрос"}</h5>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
+                <label className="ui-field">
+                  <span className="ui-field__label" style={{ fontSize: "0.8rem" }}>Текст вопроса</span>
+                  <input
+                    type="text"
+                    className="ui-input"
+                    value={questionForm.text}
+                    onChange={(e) => setQuestionForm(c => ({ ...c, text: e.target.value }))}
+                    required
+                  />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                  <label className="ui-field">
+                    <span className="ui-field__label" style={{ fontSize: "0.8rem" }}>Тип</span>
+                    <select
+                      className="ui-input"
+                      value={questionForm.type}
+                      onChange={(e) => setQuestionForm(c => ({ ...c, type: e.target.value as any }))}
+                    >
+                      <option value="RADIO">Один выбор (Radio)</option>
+                      <option value="CHECKBOX">Множ. выбор (Checkbox)</option>
+                      <option value="SEQUENCE">Последовательность</option>
+                    </select>
+                  </label>
+                  <label className="ui-field">
+                    <span className="ui-field__label" style={{ fontSize: "0.8rem" }}>Баллы</span>
+                    <input
+                      type="number"
+                      className="ui-input"
+                      min={0}
+                      value={questionForm.points}
+                      onChange={(e) => setQuestionForm(c => ({ ...c, points: e.target.value }))}
+                      required
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
+                  <Button type="submit" disabled={isSaving}>
+                    {editingQuestionId ? "Сохранить" : "Добавить"}
+                  </Button>
+                  {editingQuestionId && (
+                    <Button type="button" variant="secondary" onClick={handleCancelEditQuestion}>
+                      Отмена
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </form>
+          </div>
+
+          {/* Right Column: Selected Question Options */}
+          <div style={{ display: "flex", flexDirection: "column", overflowY: "auto" }}>
+            {selectedQuestion ? (
+              <>
+                <h4>Варианты ответов</h4>
+                <div style={{ fontSize: "0.85rem", color: "var(--muted-color, #666)", marginBottom: "0.5rem" }}>
+                  Вопрос: <strong>{selectedQuestion.text}</strong>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                  {selectedQuestion.options.map((o) => (
+                    <div
+                      key={o.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "0.5rem 0.75rem",
+                        borderRadius: "var(--radius)",
+                        border: "1px solid var(--border)",
+                        background: "var(--card-bg)",
+                        gap: "0.5rem"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
+                        {selectedQuestion.type !== "SEQUENCE" ? (
+                          <input
+                            type="checkbox"
+                            checked={o.isCorrect}
+                            onChange={(e) => void handleToggleOptionCorrect(o, e.target.checked)}
+                            title="Правильный ответ"
+                          />
+                        ) : (
+                          <span style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: "20px",
+                            height: "20px",
+                            borderRadius: "50%",
+                            background: "var(--primary)",
+                            color: "white",
+                            fontSize: "0.75rem",
+                            fontWeight: "bold"
+                          }}>
+                            {o.sequenceOrder ?? 0}
+                          </span>
+                        )}
+                        <span style={{ fontSize: "0.95rem" }}>{o.text}</span>
+                      </div>
+                      <button
+                        type="button"
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
+                        onClick={() => void handleDeleteOption(o.id)}
+                        title="Удалить вариант ответа"
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  ))}
+                  {selectedQuestion.options.length === 0 && (
+                    <div className="muted" style={{ padding: "1rem 0" }}>Вариантов ответов нет. Создайте первый вариант ниже.</div>
+                  )}
+                </div>
+
+                {/* Add Option Form */}
+                <form onSubmit={handleAddOption} style={{ marginTop: "auto", paddingTop: "1.5rem", borderTop: "1px dashed var(--border)" }}>
+                  <h5>Добавить вариант ответа</h5>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
+                    <label className="ui-field">
+                      <span className="ui-field__label" style={{ fontSize: "0.8rem" }}>Текст варианта</span>
+                      <input
+                        type="text"
+                        className="ui-input"
+                        value={optionForm.text}
+                        onChange={(e) => setOptionForm(c => ({ ...c, text: e.target.value }))}
+                        required
+                      />
+                    </label>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      {selectedQuestion.type !== "SEQUENCE" ? (
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={optionForm.isCorrect}
+                            onChange={(e) => setOptionForm(c => ({ ...c, isCorrect: e.target.checked }))}
+                          />
+                          <span style={{ fontSize: "0.85rem" }}>Правильный ответ</span>
+                        </label>
+                      ) : (
+                        <label className="ui-field" style={{ width: "120px" }}>
+                          <span className="ui-field__label" style={{ fontSize: "0.8rem" }}>Порядок (1, 2, ...)</span>
+                          <input
+                            type="number"
+                            className="ui-input"
+                            min={0}
+                            value={optionForm.sequenceOrder}
+                            onChange={(e) => setOptionForm(c => ({ ...c, sequenceOrder: e.target.value }))}
+                            required
+                        />
+                        </label>
+                      )}
+                      <Button type="submit" disabled={isSaving}>
+                        Добавить
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--muted-color)", minHeight: "200px" }}>
+                Выберите вопрос слева, чтобы просмотреть варианты ответов.
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   );
 };
+
 
 const AdminPromoCodesManagerPage = () => {
   const { push } = useToastStore();
@@ -923,13 +1483,8 @@ const AdminPromoCodesManagerPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({
     code: "",
-    title: "",
-    description: "",
-    bonusPoints: "50",
-    bonusAttempts: "",
-    maxUses: "30",
-    status: "active" as PromoCode["status"],
-    expiresAt: "",
+    modifierType: "FIXED_ADD" as PromoCode["modifierType"],
+    value: "50",
   });
 
   useEffect(() => {
@@ -948,7 +1503,7 @@ const AdminPromoCodesManagerPage = () => {
   const filteredPromoCodes = useMemo(
     () =>
       promoCodes.filter((promoCode) =>
-        [promoCode.code, promoCode.title, promoCode.description, promoCode.status]
+        [promoCode.code, promoCode.modifierType, promoCode.usedByStudentName || ""]
           .join(" ")
           .toLowerCase()
           .includes(search.toLowerCase()),
@@ -963,31 +1518,40 @@ const AdminPromoCodesManagerPage = () => {
     try {
       const created = await adminPromoCodesApi.create({
         code: form.code,
-        title: form.title,
-        description: form.description || undefined,
-        bonusPoints: optionalNumber(form.bonusPoints),
-        bonusAttempts: optionalNumber(form.bonusAttempts),
-        maxUses: optionalNumber(form.maxUses),
-        status: form.status,
-        expiresAt: toIsoDateTime(form.expiresAt),
+        modifierType: form.modifierType,
+        value: Number(form.value) || 0,
       });
 
       setPromoCodes((current) => [created, ...current]);
       setForm({
         code: "",
-        title: "",
-        description: "",
-        bonusPoints: "50",
-        bonusAttempts: "",
-        maxUses: "30",
-        status: "active",
-        expiresAt: "",
+        modifierType: "FIXED_ADD",
+        value: "50",
       });
       setIsModalOpen(false);
       push({ title: "Промокод создан", variant: "success" });
     } catch (error) {
       push({
         title: error instanceof Error ? error.message : "Не удалось создать промокод",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить этот промокод?")) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await adminPromoCodesApi.delete(id);
+      setPromoCodes((current) => current.filter((item) => item.id !== id));
+      push({ title: "Промокод удален", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить промокод",
         variant: "error",
       });
     } finally {
@@ -1010,7 +1574,7 @@ const AdminPromoCodesManagerPage = () => {
       <Card>
         <Input
           label="Поиск"
-          placeholder="Код, название, описание"
+          placeholder="Код, тип, имя студента"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -1019,36 +1583,49 @@ const AdminPromoCodesManagerPage = () => {
       <DataTable
         columns={[
           { key: "code", title: "Код" },
-          { key: "title", title: "Название" },
           {
-            key: "bonus",
-            title: "Бонус",
+            key: "modifierType",
+            title: "Тип бонуса",
             render: (promoCode) => {
-              const parts = [
-                promoCode.bonusPoints > 0 ? `+${promoCode.bonusPoints} баллов` : "",
-                promoCode.bonusAttempts > 0 ? `+${promoCode.bonusAttempts} попыток` : "",
-              ].filter(Boolean);
-
-              return parts.join(", ") || "Без бонуса";
+              switch (promoCode.modifierType) {
+                case "FIXED_ADD":
+                  return "Добавить баллы";
+                case "FIXED_SUB":
+                  return "Вычесть баллы";
+                case "DOUBLE_COEFF":
+                  return "Умножить (x2)";
+                default:
+                  return promoCode.modifierType;
+              }
+            },
+          },
+          { key: "value", title: "Значение" },
+          {
+            key: "usedByStudentName",
+            title: "Кем использован",
+            render: (promoCode) => {
+              if (promoCode.isUsed) {
+                return (
+                  <span>
+                    👤 {promoCode.usedByStudentName || promoCode.usedByStudentId || "Студент"}{" "}
+                    {promoCode.usedAt ? `(${formatDateTime(promoCode.usedAt)})` : ""}
+                  </span>
+                );
+              }
+              return <span className="muted">Не использован</span>;
             },
           },
           {
-            key: "uses",
-            title: "Использовано",
-            render: (promoCode) => `${promoCode.usedCount}/${promoCode.maxUses ?? "∞"}`,
-          },
-          {
-            key: "expiresAt",
-            title: "Истекает",
-            render: (promoCode) => formatDateTime(promoCode.expiresAt),
-          },
-          {
-            key: "status",
-            title: "Статус",
+            key: "actions",
+            title: "Действия",
             render: (promoCode) => (
-              <Badge tone={promoCode.status === "active" ? "success" : "danger"}>
-                {promoStatusLabels[promoCode.status]}
-              </Badge>
+              <Button
+                variant="danger"
+                onClick={() => handleDelete(promoCode.id)}
+                disabled={isSaving}
+              >
+                Удалить
+              </Button>
             ),
           },
         ]}
@@ -1064,65 +1641,28 @@ const AdminPromoCodesManagerPage = () => {
               onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))}
               required
             />
-            <Input
-              label="Название"
-              value={form.title}
-              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-              required
-            />
-          </div>
-
-          <label className="ui-field">
-            <span className="ui-field__label">Описание</span>
-            <textarea
-              className="ui-input ui-textarea"
-              value={form.description}
-              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-            />
-          </label>
-
-          <div className="admin-form-grid">
-            <Input
-              label="Бонусные баллы"
-              type="number"
-              min={0}
-              value={form.bonusPoints}
-              onChange={(event) => setForm((current) => ({ ...current, bonusPoints: event.target.value }))}
-            />
-            <Input
-              label="Бонусные попытки"
-              type="number"
-              min={0}
-              value={form.bonusAttempts}
-              onChange={(event) => setForm((current) => ({ ...current, bonusAttempts: event.target.value }))}
-            />
-            <Input
-              label="Максимум использований"
-              type="number"
-              min={1}
-              value={form.maxUses}
-              onChange={(event) => setForm((current) => ({ ...current, maxUses: event.target.value }))}
-            />
-            <Input
-              label="Истекает"
-              type="datetime-local"
-              value={form.expiresAt}
-              onChange={(event) => setForm((current) => ({ ...current, expiresAt: event.target.value }))}
-            />
             <label className="ui-field">
-              <span className="ui-field__label">Статус</span>
+              <span className="ui-field__label">Тип бонуса</span>
               <select
                 className="ui-input"
-                value={form.status}
+                value={form.modifierType}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, status: event.target.value as PromoCode["status"] }))
+                  setForm((current) => ({ ...current, modifierType: event.target.value as PromoCode["modifierType"] }))
                 }
+                required
               >
-                <option value="active">Активно</option>
-                <option value="disabled">Отключено</option>
-                <option value="expired">Просрочено</option>
+                <option value="FIXED_ADD">Добавить баллы</option>
+                <option value="FIXED_SUB">Вычесть баллы</option>
+                <option value="DOUBLE_COEFF">Умножить (x2)</option>
               </select>
             </label>
+            <Input
+              label="Значение"
+              type="number"
+              value={form.value}
+              onChange={(event) => setForm((current) => ({ ...current, value: event.target.value }))}
+              required
+            />
           </div>
 
           <Button type="submit" disabled={isSaving}>

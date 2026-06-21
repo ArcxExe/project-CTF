@@ -1,14 +1,9 @@
 package com.arcx.ctfplatform.modifiers.dto;
 
-import java.time.Instant;
+import com.arcx.ctfplatform.modifiers.entity.PromoModifierType;
 
 public record PromoCodeCreateRequest(
     String code,
-    String title,
-    String description,
-    Integer bonusPoints,
-    Integer bonusAttempts,
-    Integer maxUses,
-    String status,
-    Instant expiresAt
+    PromoModifierType modifierType,
+    Integer value
 ) {}

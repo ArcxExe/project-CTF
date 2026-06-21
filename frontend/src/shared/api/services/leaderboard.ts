@@ -12,7 +12,7 @@ interface BackendLeaderboardEntry {
   studentId: string;
   username: string;
   groupName?: string;
-  totalScore: number;
+  score: number;
   solvedCount: number;
 }
 
@@ -24,7 +24,7 @@ export const leaderboardApi = {
       place: index + 1,
       participant: entry.username,
       group: entry.groupName ?? "Без группы",
-      score: entry.totalScore,
+      score: entry.score,
       solved: entry.solvedCount,
     }));
   },

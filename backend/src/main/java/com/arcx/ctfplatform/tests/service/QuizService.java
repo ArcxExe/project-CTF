@@ -37,8 +37,9 @@ public class QuizService {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
 
-        if (submissionRepository.findByTestIdAndStudentIdAndIsActiveTrue(testId, student.getId()).isPresent()) {
-            throw new IllegalStateException("Active quiz submission already exists");
+        Optional<QuizSubmission> activeSubmission = submissionRepository.findByTestIdAndStudentIdAndIsActiveTrue(testId, student.getId());
+        if (activeSubmission.isPresent()) {
+            return activeSubmission.get();
         }
 
         QuizSubmission submission = QuizSubmission.builder()

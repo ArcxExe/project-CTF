@@ -120,7 +120,22 @@ export const testsApi = {
   },
 
   async getQuestions(testId: string): Promise<QuizQuestion[]> {
-    return apiRequest<QuizQuestion[]>(`/api/tests/${testId}/questions`);
+    const response = await apiRequest<any[]>(`/api/quizzes/${testId}/questions`);
+    return response.map(item => ({
+      id: item.question.id,
+      testId: item.question.testId,
+      type: item.question.type,
+      text: item.question.text,
+      points: item.question.points,
+      ordering: item.question.ordering,
+      options: (item.options || []).map((opt: any) => ({
+        id: opt.id,
+        questionId: opt.questionId,
+        text: opt.optionText,
+        sequenceOrder: opt.sequenceOrder,
+        isCorrect: opt.isCorrect
+      }))
+    }));
   },
 
   async startQuiz(testId: string): Promise<QuizSubmission> {
@@ -169,5 +184,116 @@ export const adminTestsApi = {
       method: "DELETE",
     });
     return toTest(response);
+  },
+
+  async update(id: string, payload: CtfTestPayload): Promise<CtfTest> {
+    const response = await apiRequest<BackendTestResponse>(`/api/admin/tests/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(toBackendPayload(payload)),
+    });
+    return toTest(response);
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/tests/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async getAdminQuestions(testId: string): Promise<QuizQuestion[]> {
+    const response = await apiRequest<any[]>(`/api/admin/quizzes/tests/${testId}/questions`);
+    return response.map((entry) => ({
+      id: entry.question.id,
+      testId: entry.question.testId,
+      type: entry.question.type,
+      text: entry.question.text,
+      points: entry.question.points,
+      ordering: entry.question.ordering,
+      options: (entry.options || []).map((o: any) => ({
+        id: o.id,
+        questionId: o.questionId,
+        text: o.optionText || "",
+        isCorrect: o.correct !== undefined ? o.correct : o.isCorrect,
+        sequenceOrder: o.sequenceOrder,
+      })),
+    }));
+  },
+
+  async addQuestion(testId: string, payload: { type: string, text: string, points: number, ordering: number }): Promise<QuizQuestion> {
+    const response = await apiRequest<any>(`/api/admin/quizzes/tests/${testId}/questions`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return {
+      id: response.id,
+      testId: response.testId,
+      type: response.type,
+      text: response.text,
+      points: response.points,
+      ordering: response.ordering,
+      options: [],
+    };
+  },
+
+  async updateQuestion(id: string, payload: Partial<QuizQuestion>): Promise<QuizQuestion> {
+    const response = await apiRequest<any>(`/api/admin/quizzes/questions/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return {
+      id: response.id,
+      testId: response.testId,
+      type: response.type,
+      text: response.text,
+      points: response.points,
+      ordering: response.ordering,
+      options: [],
+    };
+  },
+
+  async deleteQuestion(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/quizzes/questions/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async addOption(questionId: string, payload: { optionText: string, isCorrect: boolean, sequenceOrder?: number }): Promise<QuizOption> {
+    const response = await apiRequest<any>(`/api/admin/quizzes/questions/${questionId}/options`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return {
+      id: response.id,
+      questionId: response.questionId,
+      text: response.optionText || "",
+      isCorrect: response.correct !== undefined ? response.correct : response.isCorrect,
+      sequenceOrder: response.sequenceOrder,
+    };
+  },
+
+  async updateOption(id: string, payload: Partial<QuizOption>): Promise<QuizOption> {
+    const body: any = {};
+    if (payload.text !== undefined) body.optionText = payload.text;
+    if (payload.isCorrect !== undefined) body.correct = payload.isCorrect;
+    if (payload.sequenceOrder !== undefined) body.sequenceOrder = payload.sequenceOrder;
+    if (payload.questionId !== undefined) body.questionId = payload.questionId;
+
+    const response = await apiRequest<any>(`/api/admin/quizzes/options/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return {
+      id: response.id,
+      questionId: response.questionId,
+      text: response.optionText || "",
+      isCorrect: response.correct !== undefined ? response.correct : response.isCorrect,
+      sequenceOrder: response.sequenceOrder,
+    };
+  },
+
+  async deleteOption(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/quizzes/options/${id}`, {
+      method: "DELETE",
+    });
   },
 };

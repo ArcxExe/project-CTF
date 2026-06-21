@@ -2,11 +2,15 @@ package com.arcx.ctfplatform.modifiers.controller;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,8 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 import com.arcx.ctfplatform.modifiers.dto.PromoCodeCreateRequest;
 import com.arcx.ctfplatform.modifiers.dto.PromoCodeResponse;
 import com.arcx.ctfplatform.modifiers.entity.PromoCode;
-import com.arcx.ctfplatform.modifiers.entity.PromoModifierType;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
+import com.arcx.ctfplatform.students.entity.Student;
+import com.arcx.ctfplatform.students.repository.StudentRepository;
+import com.arcx.ctfplatform.users.entity.User;
+import com.arcx.ctfplatform.users.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,46 +34,60 @@ import lombok.RequiredArgsConstructor;
 public class AdminPromoCodeController {
 
     private final PromoCodeRepository promoCodeRepository;
+    private final StudentRepository studentRepository;
+    private final UserRepository userRepository;
 
     @GetMapping
     public ResponseEntity<List<PromoCodeResponse>> getAllPromoCodes() {
+        List<Student> students = studentRepository.findAll();
+        List<User> users = userRepository.findAll();
+        Map<UUID, String> userIdToUsername = users.stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername, (u1, u2) -> u1));
+        Map<UUID, String> studentIdToUsername = students.stream()
+                .collect(Collectors.toMap(
+                        Student::getId,
+                        s -> userIdToUsername.getOrDefault(s.getUserId(), "Unknown"),
+                        (s1, s2) -> s1
+                ));
+
         List<PromoCodeResponse> responseList = promoCodeRepository.findAll().stream()
-                .map(this::toResponse)
+                .map(promo -> toResponse(promo, studentIdToUsername.getOrDefault(promo.getUsedByStudentId(), null)))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responseList);
     }
 
     @PostMapping
     public ResponseEntity<PromoCodeResponse> createPromoCode(@RequestBody PromoCodeCreateRequest request) {
-        PromoModifierType modifierType = PromoModifierType.FIXED_ADD;
-        int value = request.bonusPoints() != null ? request.bonusPoints() : 0;
-
         PromoCode promo = PromoCode.builder()
                 .code(request.code().trim().toUpperCase())
-                .modifierType(modifierType)
-                .value(value)
+                .modifierType(request.modifierType())
+                .value(request.value() != null ? request.value() : 0)
                 .isUsed(false)
                 .build();
 
         PromoCode saved = promoCodeRepository.save(promo);
-        return ResponseEntity.ok(toResponse(saved));
+        return ResponseEntity.ok(toResponse(saved, null));
     }
 
-    private PromoCodeResponse toResponse(PromoCode promo) {
-        int bonusPoints = (promo.getModifierType() == PromoModifierType.FIXED_ADD) ? promo.getValue() : 0;
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deletePromoCode(@PathVariable UUID id) {
+        if (!promoCodeRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        promoCodeRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    private PromoCodeResponse toResponse(PromoCode promo, String usedByStudentName) {
         return new PromoCodeResponse(
                 promo.getId(),
                 promo.getCode(),
-                promo.getCode(), // title
-                "Modifier: " + promo.getModifierType().name(), // description
-                bonusPoints,
-                0, // bonusAttempts
-                1, // maxUses
-                promo.isUsed() ? 1 : 0, // usedCount
-                promo.isUsed() ? "EXPIRED" : "ACTIVE", // status
-                null, // expiresAt
-                promo.getUsedAt() != null ? promo.getUsedAt() : Instant.now(), // createdAt
-                Instant.now() // updatedAt
+                promo.getModifierType(),
+                promo.getValue(),
+                promo.isUsed(),
+                promo.getUsedByStudentId(),
+                usedByStudentName,
+                promo.getUsedAt()
         );
     }
 }

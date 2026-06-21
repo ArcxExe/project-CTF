@@ -42,6 +42,17 @@ public class AdminTestController {
         return ResponseEntity.status(HttpStatus.CREATED).body(testService.createTest(request));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<TestResponse> updateTest(@PathVariable UUID id, @Valid @RequestBody TestRequest request) {
+        return ResponseEntity.ok(testService.updateTest(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteTest(@PathVariable UUID id) {
+        testService.deleteTest(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{testId}/challenges")
     public ResponseEntity<List<ChallengeResponse>> getChallengesForTest(@PathVariable UUID testId) {
         return ResponseEntity.ok(testService.getChallengesForTest(testId));

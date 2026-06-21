@@ -9,6 +9,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.arcx.ctfplatform.tests.service.QuizService;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -19,6 +22,7 @@ public class AdminQuizController {
 
     private final QuizQuestionRepository questionRepository;
     private final QuizOptionRepository optionRepository;
+    private final QuizService quizService;
 
     @PostMapping("/tests/{testId}/questions")
     public ResponseEntity<QuizQuestion> addQuestion(@PathVariable UUID testId, @RequestBody QuizQuestion question) {
@@ -69,5 +73,10 @@ public class AdminQuizController {
     public ResponseEntity<Void> deleteOption(@PathVariable UUID optionId) {
         optionRepository.deleteById(optionId);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/tests/{testId}/questions")
+    public ResponseEntity<List<Map<String, Object>>> getTestQuestionsAdmin(@PathVariable UUID testId) {
+        return ResponseEntity.ok(quizService.getQuestionsWithOptions(testId));
     }
 }

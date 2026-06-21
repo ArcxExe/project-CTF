@@ -1,10 +1,10 @@
-FROM gradle:8.14.4-jdk21-alpine AS build
+FROM gradle:8.14.4-jdk21 AS build
 
 WORKDIR /workspace
 
 COPY --chown=gradle:gradle build.gradle settings.gradle ./
 
-RUN gradle resolveRuntimeClasspath --no-daemon
+RUN gradle resolveDependencies --no-daemon
 
 COPY --chown=gradle:gradle src ./src
 
