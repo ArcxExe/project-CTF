@@ -551,6 +551,10 @@ export const ParticipantRatingPage = () => {
             { key: "group", title: "Группа" },
             { key: "score", title: "Баллы" },
             { key: "solved", title: "Решено" },
+          { key: "v1", title: "v1" },
+          { key: "v2", title: "v2" },
+          { key: "sCoefficient", title: "S" },
+          { key: "recommendedGrade", title: "Рекомендованная оценка" },
           ]}
           rows={rows}
         />

@@ -56,14 +56,6 @@ CREATE TABLE manual_submissions (
     status VARCHAR(30)
 );
 
-CREATE TABLE grading_scales (
-    id UUID PRIMARY KEY,
-    min_coefficient NUMERIC(3,2) NOT NULL,
-    max_coefficient NUMERIC(3,2) NOT NULL,
-    grade INTEGER NOT NULL,
-    description VARCHAR(150)
-);
-
 CREATE TABLE audit_logs (
     id UUID PRIMARY KEY,
     timestamp TIMESTAMP NOT NULL,

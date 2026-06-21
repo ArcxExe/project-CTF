@@ -28,7 +28,7 @@ public class MetricsController {
     @GetMapping("/v2")
     @PreAuthorize("hasRole('INSTRUCTOR') or hasRole('ADMIN')")
     public ResponseEntity<String> exportV2Metrics() {
-        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot();
+        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(null, null);
         List<Student> students = studentRepository.findAll();
         
         Map<UUID, Student> studentMap = students.stream().collect(Collectors.toMap(Student::getId, s -> s));
