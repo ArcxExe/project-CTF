@@ -20,11 +20,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.arcx.ctfplatform.academic.dto.StudentResponse;
 import com.arcx.ctfplatform.academic.dto.StudentStatusUpdateRequest;
+import com.arcx.ctfplatform.academic.dto.StudentCreateRequest;
 import com.arcx.ctfplatform.academic.service.StudentImportService;
 import com.arcx.ctfplatform.academic.service.StudentService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
 
 @RestController
 @RequestMapping("/api/admin/students")
@@ -34,6 +36,11 @@ public class AdminStudentController {
 
     private final StudentImportService studentImportService;
     private final StudentService studentService;
+
+    @PostMapping
+    public ResponseEntity<StudentResponse> createStudent(@Valid @RequestBody StudentCreateRequest request) {
+        return ResponseEntity.ok(studentService.createStudent(request));
+    }
 
     @PostMapping("/import")
     public ResponseEntity<Void> importStudents(@RequestParam("file") MultipartFile file) throws IOException {

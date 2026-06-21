@@ -8,9 +8,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.arcx.ctfplatform.academic.dto.StudentResponse;
+import com.arcx.ctfplatform.academic.dto.StudentCreateRequest;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.entity.StudentStatus;
+import com.arcx.ctfplatform.academic.entity.AcademicGroup;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.common.config.IMapping;
 
 import lombok.RequiredArgsConstructor;
@@ -22,8 +25,31 @@ import com.arcx.ctfplatform.users.repository.UserRepository;
 public class StudentService {
 
     private final StudentRepository studentRepository;
+    private final AcademicGroupRepository groupRepository;
     private final UserRepository userRepository;
     private final IMapping<Student, StudentResponse> studentMapper;
+
+    @Transactional
+    public StudentResponse createStudent(StudentCreateRequest request) {
+        if (studentRepository.findByStudentCode(request.studentCode()).isPresent()) {
+            throw new IllegalArgumentException("Student code already exists");
+        }
+        AcademicGroup group = null;
+        if (request.groupId() != null) {
+            group = groupRepository.findById(request.groupId())
+                    .orElseThrow(() -> new IllegalArgumentException("Group not found"));
+        }
+        Student student = Student.builder()
+                .firstName(request.firstName())
+                .lastName(request.lastName())
+                .middleName(request.middleName())
+                .studentCode(request.studentCode())
+                .academicGroup(group)
+                .status(StudentStatus.ACTIVE)
+                .build();
+        return studentMapper.mapping(studentRepository.save(student));
+    }
+
 
     @Transactional(readOnly = true)
     public Page<StudentResponse> getStudents(String firstName, String lastName, String studentCode, Pageable pageable) {
