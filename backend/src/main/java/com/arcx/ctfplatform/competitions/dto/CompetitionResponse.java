@@ -1,6 +1,7 @@
 package com.arcx.ctfplatform.competitions.dto;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -16,7 +17,10 @@ public record CompetitionResponse(
         Instant startsAt,
         Instant endsAt,
         CompetitionStatus status,
-        Instant createdAt
+        Instant createdAt,
+        boolean sumTestPoints,
+        boolean leaderboardHidden,
+        List<UUID> hiddenStudentIds
 ) {
     @Component
     public static class Mapper implements IMapping<Competition, CompetitionResponse> {
@@ -32,7 +36,10 @@ public record CompetitionResponse(
                     from.getStartsAt(),
                     from.getEndsAt(),
                     from.getStatus(),
-                    from.getCreatedAt()
+                    from.getCreatedAt(),
+                    from.isSumTestPoints(),
+                    from.isLeaderboardHidden(),
+                    from.getHiddenStudentIds()
             );
         }
     }

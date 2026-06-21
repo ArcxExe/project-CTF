@@ -49,6 +49,9 @@ public class CompetitionService {
                 .startsAt(request.startsAt())
                 .endsAt(request.endsAt())
                 .status(request.status())
+                .sumTestPoints(request.sumTestPoints())
+                .leaderboardHidden(request.leaderboardHidden())
+                .hiddenStudentIds(request.hiddenStudentIds() != null ? request.hiddenStudentIds() : new java.util.ArrayList<>())
                 .build();
 
         Competition saved = competitionRepository.save(competition);
@@ -67,6 +70,9 @@ public class CompetitionService {
         competition.setStartsAt(request.startsAt());
         competition.setEndsAt(request.endsAt());
         competition.setStatus(request.status());
+        competition.setSumTestPoints(request.sumTestPoints());
+        competition.setLeaderboardHidden(request.leaderboardHidden());
+        competition.setHiddenStudentIds(request.hiddenStudentIds() != null ? request.hiddenStudentIds() : new java.util.ArrayList<>());
 
         Competition updated = competitionRepository.save(competition);
         return competitionMapper.mapping(updated);

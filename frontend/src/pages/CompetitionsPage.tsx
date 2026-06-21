@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { adminCompetitionsApi } from "@/shared/api/services/competitions";
 import type { CompetitionPayload } from "@/shared/api/services/competitions";
+import { studentsApi } from "@/shared/api/services/students";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
@@ -11,12 +12,25 @@ import { Loader } from "@/shared/ui/Loader/Loader";
 import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import type { Competition } from "@/shared/types/competition";
+import type { Student } from "@/shared/types/education";
 import "./pages.css";
 
 const statusLabels: Record<Competition["status"], string> = {
   draft: "Черновик",
   published: "Опубликовано",
   archived: "Архив",
+};
+
+const formatToLocalTime = (isoString?: string) => {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const date = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${date}T${hours}:${minutes}`;
 };
 
 const toIsoDateTime = (value: string) => (value ? new Date(value).toISOString() : undefined);
@@ -27,26 +41,35 @@ const initialForm = {
   startsAt: "",
   endsAt: "",
   status: "draft" as Competition["status"],
+  sumTestPoints: false,
+  leaderboardHidden: false,
+  hiddenStudentIds: [] as string[],
 };
 
 export const CompetitionsPage = () => {
   const [items, setItems] = useState<Competition[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(initialForm);
   const { push } = useToastStore();
 
-  const loadCompetitions = async () => {
-    const response = await adminCompetitionsApi.getAll();
-    setItems(response);
+  const loadData = async () => {
+    const [comps, studs] = await Promise.all([
+      adminCompetitionsApi.getAll(),
+      studentsApi.getAll().catch(() => [] as Student[]),
+    ]);
+    setItems(comps);
+    setStudents(studs);
   };
 
   useEffect(() => {
-    void loadCompetitions()
+    void loadData()
       .catch((error: unknown) => {
         push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить соревнования",
+          title: error instanceof Error ? error.message : "Не удалось загрузить данные",
           variant: "error",
         });
       })
@@ -54,6 +77,44 @@ export const CompetitionsPage = () => {
         setIsLoading(false);
       });
   }, [push]);
+
+  const handleCreateClick = () => {
+    setEditingId(null);
+    setForm(initialForm);
+    setIsModalOpen(true);
+  };
+
+  const handleEditClick = (competition: Competition) => {
+    setEditingId(competition.id);
+    setForm({
+      title: competition.title,
+      description: competition.description || "",
+      startsAt: formatToLocalTime(competition.startsAt),
+      endsAt: formatToLocalTime(competition.endsAt),
+      status: competition.status,
+      sumTestPoints: competition.sumTestPoints || false,
+      leaderboardHidden: competition.leaderboardHidden || false,
+      hiddenStudentIds: competition.hiddenStudentIds || [],
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteClick = async (id: string) => {
+    if (!window.confirm("Вы действительно хотите удалить соревнование?")) {
+      return;
+    }
+
+    try {
+      await adminCompetitionsApi.delete(id);
+      setItems((current) => current.filter((item) => item.id !== id));
+      push({ title: "Соревнование удалено", variant: "success" });
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось удалить соревнование",
+        variant: "error",
+      });
+    }
+  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -65,17 +126,27 @@ export const CompetitionsPage = () => {
       startsAt: toIsoDateTime(form.startsAt),
       endsAt: toIsoDateTime(form.endsAt),
       status: form.status,
+      sumTestPoints: form.sumTestPoints,
+      leaderboardHidden: form.leaderboardHidden,
+      hiddenStudentIds: form.hiddenStudentIds,
     };
 
     try {
-      const created = await adminCompetitionsApi.create(payload);
-      setItems((current) => [created, ...current]);
+      if (editingId) {
+        const updated = await adminCompetitionsApi.update(editingId, payload);
+        setItems((current) => current.map((item) => (item.id === editingId ? updated : item)));
+        push({ title: "Соревнование обновлено", variant: "success" });
+      } else {
+        const created = await adminCompetitionsApi.create(payload);
+        setItems((current) => [created, ...current]);
+        push({ title: "Соревнование создано", variant: "success" });
+      }
       setForm(initialForm);
       setIsModalOpen(false);
-      push({ title: "Соревнование создано", variant: "success" });
+      setEditingId(null);
     } catch (error) {
       push({
-        title: error instanceof Error ? error.message : "Не удалось создать соревнование",
+        title: error instanceof Error ? error.message : "Не удалось сохранить соревнование",
         variant: "error",
       });
     } finally {
@@ -92,27 +163,35 @@ export const CompetitionsPage = () => {
       <PageHeader
         title="Соревнования"
         subtitle="Список соревнований из backend API и создание новых записей."
-        actions={<Button onClick={() => setIsModalOpen(true)}>Создать соревнование</Button>}
+        actions={<Button onClick={handleCreateClick}>Создать соревнование</Button>}
       />
 
       {items.length > 0 ? (
         <div className="grid">
           {items.map((competition) => (
             <Card key={competition.id}>
-              <div className="competition-card">
+              <div className="competition-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%" }}>
                 <div>
-                  <h3>{competition.title}</h3>
-                  <p className="muted">{competition.description || "Описание не указано"}</p>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+                    <h3>{competition.title}</h3>
+                    <Badge tone={competition.status === "published" ? "success" : "info"}>
+                      {statusLabels[competition.status]}
+                    </Badge>
+                  </div>
+                  <p className="muted" style={{ margin: "0.5rem 0" }}>{competition.description || "Описание не указано"}</p>
                 </div>
 
-                <div className="competition-card__meta">
-                  <Badge tone={competition.status === "published" ? "success" : "info"}>
-                    {statusLabels[competition.status]}
-                  </Badge>
-                  <span>Старт: {new Date(competition.startsAt).toLocaleString("ru-RU")}</span>
-                  <span>Финиш: {new Date(competition.endsAt).toLocaleString("ru-RU")}</span>
-                  <span>Рейтинг: {competition.ratingVisible ? "вкл" : "выкл"}</span>
-                  <span>Промокоды: {competition.promoCodesEnabled ? "вкл" : "выкл"}</span>
+                <div className="competition-card__meta" style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.85rem", marginTop: "1rem" }}>
+                  <span>📅 Старт: {new Date(competition.startsAt).toLocaleString("ru-RU")}</span>
+                  <span>📅 Финиш: {new Date(competition.endsAt).toLocaleString("ru-RU")}</span>
+                  <span>📝 Тесты: {competition.sumTestPoints ? "Суммировать баллы" : "Не суммировать"}</span>
+                  <span>📊 Лидерборд: {competition.leaderboardHidden ? "Скрыт" : "Показан"}</span>
+                  <span>👥 Скрытых студентов: {competition.hiddenStudentIds?.length || 0}</span>
+                  
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                    <Button variant="secondary" onClick={() => handleEditClick(competition)}>Редактировать</Button>
+                    <Button variant="danger" onClick={() => void handleDeleteClick(competition.id)}>Удалить</Button>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -124,7 +203,7 @@ export const CompetitionsPage = () => {
         </Card>
       )}
 
-      <Modal open={isModalOpen} title="Новое соревнование" onClose={() => setIsModalOpen(false)}>
+      <Modal open={isModalOpen} title={editingId ? "Редактировать соревнование" : "Новое соревнование"} onClose={() => setIsModalOpen(false)}>
         <form className="admin-form" onSubmit={handleSubmit}>
           <Input
             label="Название"
@@ -166,13 +245,71 @@ export const CompetitionsPage = () => {
               >
                 <option value="draft">Черновик</option>
                 <option value="published">Опубликовано</option>
-                <option value="active">Активно</option>
+                <option value="archived">Архив</option>
               </select>
             </label>
           </div>
 
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? "Сохраняем..." : "Создать"}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", margin: "1rem 0" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.sumTestPoints}
+                onChange={(e) => setForm((current) => ({ ...current, sumTestPoints: e.target.checked }))}
+              />
+              <span>Суммировать баллы за тесты</span>
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.leaderboardHidden}
+                onChange={(e) => setForm((current) => ({ ...current, leaderboardHidden: e.target.checked }))}
+              />
+              <span>Скрыть лидерборд от участников</span>
+            </label>
+          </div>
+
+          <label className="ui-field">
+            <span className="ui-field__label">Скрыть студентов из рейтинга</span>
+            <div className="student-checkbox-list" style={{
+              maxHeight: "150px",
+              overflowY: "auto",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "0.5rem",
+              marginTop: "0.25rem",
+              background: "var(--card-bg)"
+            }}>
+              {students.map((student) => {
+                const isChecked = form.hiddenStudentIds.includes(student.id);
+                return (
+                  <label key={student.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setForm((current) => {
+                          const hiddenIds = checked
+                            ? [...current.hiddenStudentIds, student.id]
+                            : current.hiddenStudentIds.filter((id) => id !== student.id);
+                          return { ...current, hiddenStudentIds: hiddenIds };
+                        });
+                      }}
+                    />
+                    <span>{student.fullName} ({student.nickname})</span>
+                  </label>
+                );
+              })}
+              {students.length === 0 && (
+                <span className="muted">Нет студентов</span>
+              )}
+            </div>
+          </label>
+
+          <Button type="submit" disabled={isSaving} style={{ marginTop: "1rem" }}>
+            {isSaving ? "Сохраняем..." : (editingId ? "Сохранить" : "Создать")}
           </Button>
         </form>
       </Modal>

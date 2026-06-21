@@ -11,20 +11,20 @@
 ### День 1. Spring Boot и структура проекта
 **Цель:** Понять IoC, DI и базовую конфигурацию приложения.
 *Теория к просмотру:*
-- [ ] 3. Inversion of Control. Dependency Injection
-- [ ] 4. IoC Container
-- [ ] 6. Constructor Injection
-- [ ] 18. @Autowired / @Value
-- [ ] 19. Classpath Scanning
-- [ ] 24. Java-based Configuration
-- [ ] 31. Spring Boot. Введение
-- [ ] 33. Spring Boot. Настройка проекта
-- [ ] 34. @SpringBootApplication
-- [ ] 35. Lombok
-- [ ] 36. Properties
-- [ ] 37. Yaml format
-- [ ] 38. @ConfigurationProperties
-- [ ] 40. Logback Configuration
+- [x] 3. Inversion of Control. Dependency Injection
+- [x] 4. IoC Container
+- [x] 6. Constructor Injection
+- [x] 18. @Autowired / @Value
+- [x] 19. Classpath Scanning
+- [x] 24. Java-based Configuration
+- [x] 31. Spring Boot. Введение
+- [x] 33. Spring Boot. Настройка проекта
+- [x] 34. @SpringBootApplication
+- [x] 35. Lombok
+- [x] 36. Properties
+- [x] 37. Yaml format
+- [x] 38. @ConfigurationProperties
+- [x] 40. Logback Configuration
 
 *Что нужно понять:*
 *   Как Spring создает beans.
@@ -32,63 +32,63 @@
 *   Как работает `application.yml`.
 
 *Практика:*
-- [ ] Сгенерировать проект.
-- [ ] Настроить `docker-compose.yml` для PostgreSQL.
-- [ ] Подключить `application.yml`.
-- [ ] Написать миграцию Flyway `V1__init_schema.sql` (таблицы users, challenges, submissions).
-- [ ] Убедиться, что приложение стартует и БД инициализируется.
+- [x] Сгенерировать проект.
+- [x] Настроить `docker-compose.yml` для PostgreSQL.
+- [x] Подключить `application.yml`.
+- [x] Написать миграцию Flyway `V1__init_schema.sql` (таблицы users, challenges, submissions).
+- [x] Убедиться, что приложение стартует и БД инициализируется.
 
 ### День 2. REST и Controller layer
 **Цель:** Создание REST API, маппинг эндпоинтов и DTO.
 *Теория к просмотру:*
-- [ ] 74. Web Starter. Введение
-- [ ] 75. Dispatcher Servlet
-- [ ] 76. @Controller
-- [ ] 77. @RequestMapping
-- [ ] 78. Parameters, Headers, Cookies
-- [ ] 82. CRUD. API Design
-- [ ] 83. CRUD. Service Layer
-- [ ] 94. REST. Введение
-- [ ] 95. REST. Практика
+- [x] 74. Web Starter. Введение
+- [x] 75. Dispatcher Servlet
+- [x] 76. @Controller
+- [x] 77. @RequestMapping
+- [x] 78. Parameters, Headers, Cookies
+- [x] 82. CRUD. API Design
+- [x] 83. CRUD. Service Layer
+- [x] 94. REST. Введение
+- [x] 95. REST. Практика
 
 *Что нужно понять:*
 *   Как создать REST endpoint и принять request DTO.
 *   Почему нельзя отдавать Entity напрямую наружу.
 
 *Практика (Модуль Users/Groups):*
-- [ ] Спроектировать эндпоинты (GET, POST, PUT, DELETE) для базового ресурса (например, User или StudentGroup).
-- [ ] Создать request/response DTO.
-- [ ] Написать Controller (пока без сложной бизнес-логики).
+- [x] Спроектировать эндпоинты (GET, POST, PUT, DELETE) для базового ресурса (например, User или StudentGroup).
+- [x] Создать request/response DTO.
+- [x] Написать Controller (пока без сложной бизнес-логики).
 
 ### День 3. JPA и Service layer
 **Цель:** Доменная модель, миграции и бизнес-логика.
 *Теория к просмотру:*
-- [ ] 46. Data JPA Starter. Введение
-- [ ] 47. Data JPA Starter. Подключение
-- [ ] 48. Hibernate Entities
-- [ ] 53. Repository
-- [ ] 57. @Query
-- [ ] 58. @Modifying
-- [ ] 72. Liquibase. Теория (воспринимать как концепт для Flyway)
-- [ ] 73. Liquibase. Практика
+- [x] 46. Data JPA Starter. Введение
+- [x] 47. Data JPA Starter. Подключение
+- [x] 48. Hibernate Entities
+- [x] 53. Repository
+- [x] 57. @Query
+- [x] 58. @Modifying
+- [x] 72. Liquibase. Теория (воспринимать как концепт для Flyway)
+- [x] 73. Liquibase. Практика
 
 *Что нужно понять:*
 *   Entity — это маппинг на БД, а не объект для передачи клиенту.
 *   Repository — интерфейс для запросов, а не для бизнес-правил.
 
 *Практика:*
-- [ ] Создать `UserEntity` и `ChallengeEntity`.
-- [ ] Создать интерфейсы `UserRepository` и `ChallengeRepository`.
-- [ ] Написать `ChallengeService` (базовый CRUD).
-- [ ] Подключить Controller к Service.
+- [x] Создать `UserEntity` и `ChallengeEntity`.
+- [x] Создать интерфейсы `UserRepository` и `ChallengeRepository`.
+- [x] Написать `ChallengeService` (базовый CRUD).
+- [x] Подключить Controller к Service.
 
 ### День 4. Validation и ошибки
 **Цель:** Глобальная обработка исключений и валидация данных.
 *Теория к просмотру:*
-- [ ] 91. Validation Starter. Введение
-- [ ] 92. Custom validator
-- [ ] 93. @ControllerAdvice / @ExceptionHandler
-- [ ] 96. Swagger. API docs
+- [x] 91. Validation Starter. Введение
+- [x] 92. Custom validator
+- [x] 93. @ControllerAdvice / @ExceptionHandler
+- [x] 96. Swagger. API docs
 
 *Что нужно понять:*
 *   Как провалидировать входные DTO (`@NotNull`, `@NotBlank`).
@@ -96,42 +96,42 @@
 *   Как документировать API.
 
 *Практика:*
-- [ ] Добавить аннотации валидации в DTO.
-- [ ] Создать `GlobalExceptionHandler` (`@RestControllerAdvice`).
-- [ ] Добавить кастомные исключения `NotFoundException` и `BadRequestException`.
-- [ ] Описать эндпоинты в Swagger.
+- [x] Добавить аннотации валидации в DTO.
+- [x] Создать `GlobalExceptionHandler` (`@RestControllerAdvice`).
+- [x] Добавить кастомные исключения `NotFoundException` и `BadRequestException`.
+- [x] Описать эндпоинты в Swagger.
 
 ### День 5. Транзакции и конкурентность
 **Цель:** Атомарность операций и защита от состояния гонки (Race Condition).
 *Теория к просмотру:*
-- [ ] 49. @Transactional. TestContext
-- [ ] 50. TransactionAutoConfiguration
-- [ ] 51. @Transactional Settings
-- [ ] 52. Manual Transactions
-- [ ] 62. @Lock / @QueryHints
+- [x] 49. @Transactional. TestContext
+- [x] 50. TransactionAutoConfiguration
+- [x] 51. @Transactional Settings
+- [x] 52. Manual Transactions
+- [x] 62. @Lock / @QueryHints
 
 *Что нужно понять:*
 *   Где правильно ставить `@Transactional` (на уровне Service).
 *   Как предотвратить ситуацию, когда два студента одновременно отправляют флаг и оба получают статус "первый решивший".
 
 *Практика (Модуль Submissions):*
-- [ ] Создать `SubmissionEntity`.
-- [ ] Написать `SubmissionService.submitFlag()`.
-- [ ] Обеспечить защиту от повторной сдачи задания одним пользователем (атомарная проверка).
+- [x] Создать `SubmissionEntity`.
+- [x] Написать `SubmissionService.submitFlag()`.
+- [x] Обеспечить защиту от повторной сдачи задания одним пользователем (атомарная проверка).
 
 ### День 6. Security basics и GET /api/me
 **Цель:** Аутентификация, авторизация и JWT.
 *Теория к просмотру:*
-- [ ] 99. Security Starter. Введение
-- [ ] 100. Authentication Architecture
-- [ ] 101. DaoAuthenticationProvider
-- [ ] 104. PasswordEncoder
-- [ ] 106. Authorization Architecture
-- [ ] 107. Method Security
-- [ ] 108. Access to authenticated user
-- [ ] 109. CSRF Filter
-- [ ] 114. JWT. JSON Web Token
-- [ ] 115. Swagger Authorization
+- [x] 99. Security Starter. Введение
+- [x] 100. Authentication Architecture
+- [x] 101. DaoAuthenticationProvider
+- [x] 104. PasswordEncoder
+- [x] 106. Authorization Architecture
+- [x] 107. Method Security
+- [x] 108. Access to authenticated user
+- [x] 109. CSRF Filter
+- [x] 114. JWT. JSON Web Token
+- [x] 115. Swagger Authorization
 
 *Что нужно понять:*
 *   Authentication vs Authorization.
@@ -139,30 +139,30 @@
 *   Почему CSRF отключается для JWT.
 
 *Практика:*
-- [ ] Настроить `SecurityConfig` (отключить CSRF, настроить CORS).
-- [ ] Реализовать генерацию и проверку JWT (`JwtService`, `JwtAuthenticationFilter`).
-- [ ] Добавить `AuthController` (`/login`, `/register`).
-- [ ] Реализовать эндпоинт `GET /api/users/me` (получение профиля по токену).
+- [x] Настроить `SecurityConfig` (отключить CSRF, настроить CORS).
+- [x] Реализовать генерацию и проверку JWT (`JwtService`, `JwtAuthenticationFilter`).
+- [x] Добавить `AuthController` (`/login`, `/register`).
+- [x] Реализовать эндпоинт `GET /api/users/me` (получение профиля по токену).
 
 ### День 7. Тесты
 **Цель:** Интеграционное и модульное тестирование.
 *Теория к просмотру:*
-- [ ] 41. Test Starter
-- [ ] 42. Integration Testing. Part 1
-- [ ] 43. Integration Testing. Part 2
-- [ ] 44. Integration Testing. Part 3
-- [ ] 71. Testcontainers
-- [ ] 84. Spring MVC Testing
-- [ ] 110. Security Testing
+- [x] 41. Test Starter
+- [x] 42. Integration Testing. Part 1
+- [x] 43. Integration Testing. Part 2
+- [x] 44. Integration Testing. Part 3
+- [x] 71. Testcontainers
+- [x] 84. Spring MVC Testing
+- [x] 110. Security Testing
 
 *Что нужно понять:*
 *   Как поднять реальную БД для тестов (Testcontainers).
-*   Как тестировать REST API через `MockMvc`.
+*   Как тестить REST API через `MockMvc`.
 
 *Практика:*
-- [ ] Написать Unit-тесты для `ChallengeService` (через Mockito).
-- [ ] Написать интеграционный тест на отправку флага (успешный сабмит и отказ при дубликате).
-- [ ] Написать тест проверки доступа (студент не может удалить задачу).
+- [x] Написать Unit-тесты для `ChallengeService` (через Mockito).
+- [x] Написать интеграционный тест на отправку флага (успешный сабмит и отказ при дубликате).
+- [x] Написать тест проверки доступа (студент не может удалить задачу).
 
 ---
 

@@ -64,6 +64,9 @@ export const mockCompetitions: Competition[] = [
     endsAt: "2026-05-10T14:00:00",
     ratingVisible: true,
     promoCodesEnabled: true,
+    sumTestPoints: false,
+    leaderboardHidden: false,
+    hiddenStudentIds: [],
   },
   {
     id: "c2",
@@ -74,5 +77,8 @@ export const mockCompetitions: Competition[] = [
     endsAt: "2026-06-15T16:00:00",
     ratingVisible: false,
     promoCodesEnabled: false,
+    sumTestPoints: false,
+    leaderboardHidden: false,
+    hiddenStudentIds: [],
   },
 ];

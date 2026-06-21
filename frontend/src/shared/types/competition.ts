@@ -12,4 +12,7 @@ export interface Competition {
   testId?: Identifier;
   createdAt?: ISODateTime;
   updatedAt?: ISODateTime;
+  sumTestPoints: boolean;
+  leaderboardHidden: boolean;
+  hiddenStudentIds: string[];
 }

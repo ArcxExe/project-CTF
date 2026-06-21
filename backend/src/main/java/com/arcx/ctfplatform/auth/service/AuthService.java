@@ -8,6 +8,8 @@ import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.entity.UserStatus;
 import com.arcx.ctfplatform.users.repository.UserRepository;
+import com.arcx.ctfplatform.students.entity.Student;
+import com.arcx.ctfplatform.students.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,6 +23,7 @@ import java.util.Locale;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final StudentRepository studentRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
@@ -45,6 +48,13 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(user);
+        if (savedUser.getRole() == Role.STUDENT) {
+            Student student = Student.builder()
+                    .userId(savedUser.getId())
+                    .studentCode("STU-" + savedUser.getId().toString().substring(0, 8).toUpperCase())
+                    .build();
+            studentRepository.save(student);
+        }
         String token = jwtService.generateAccessToken(savedUser);
 
         return new AuthResponse(

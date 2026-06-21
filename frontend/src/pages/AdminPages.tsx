@@ -9,6 +9,13 @@ import type { PromoCode } from "@/shared/api/services/promoCodes";
 import { adminTestsApi } from "@/shared/api/services/tests";
 import type { CtfTest } from "@/shared/api/services/tests";
 import type { Competition } from "@/shared/types/competition";
+import { adminAttemptsApi } from "@/shared/api/services/attempts";
+import type { Attempt } from "@/shared/api/services/attempts";
+import { studentsApi } from "@/shared/api/services/students";
+import type { Student } from "@/shared/types/education";
+import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
+import { leaderboardApi } from "@/shared/api/services/leaderboard";
+import type { LeaderboardRow } from "@/shared/api/services/leaderboard";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -593,6 +600,7 @@ const AdminTestsManagerPage = () => {
   const [tests, setTests] = useState<CtfTest[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [testChallenges, setTestChallenges] = useState<Challenge[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [selectedTestId, setSelectedTestId] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState("");
   const [search, setSearch] = useState("");
@@ -606,13 +614,15 @@ const AdminTestsManagerPage = () => {
     timeLimitMinutes: "30",
     passingScore: "70",
     questionsCount: "10",
+    competitionId: "",
   });
 
   useEffect(() => {
-    void Promise.all([adminTestsApi.getAll(), adminChallengesApi.getAll()])
-      .then(([testRows, challengeRows]) => {
+    void Promise.all([adminTestsApi.getAll(), adminChallengesApi.getAll(), adminCompetitionsApi.getAll()])
+      .then(([testRows, challengeRows, competitionRows]) => {
         setTests(testRows);
         setChallenges(challengeRows);
+        setCompetitions(competitionRows);
         setSelectedTestId(testRows[0]?.id ?? "");
         setSelectedChallengeId(challengeRows[0]?.id ?? "");
       })
@@ -662,6 +672,7 @@ const AdminTestsManagerPage = () => {
         timeLimitMinutes: Number(form.timeLimitMinutes),
         passingScore: Number(form.passingScore),
         questionsCount: Number(form.questionsCount),
+        competitionId: form.competitionId || undefined,
       });
 
       setTests((current) => [created, ...current]);
@@ -673,6 +684,7 @@ const AdminTestsManagerPage = () => {
         timeLimitMinutes: "30",
         passingScore: "70",
         questionsCount: "10",
+        competitionId: "",
       });
       setIsModalOpen(false);
       push({ title: "Тест создан", variant: "success" });
@@ -832,6 +844,22 @@ const AdminTestsManagerPage = () => {
               value={form.description}
               onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
             />
+          </label>
+
+          <label className="ui-field">
+            <span className="ui-field__label">Соревнование</span>
+            <select
+              className="ui-input"
+              value={form.competitionId}
+              onChange={(event) => setForm((current) => ({ ...current, competitionId: event.target.value }))}
+            >
+              <option value="">Не связано</option>
+              {competitions.map((comp) => (
+                <option key={comp.id} value={comp.id}>
+                  {comp.title}
+                </option>
+              ))}
+            </select>
           </label>
 
           <div className="admin-form-grid">
@@ -1112,8 +1140,397 @@ export const AdminLabScoresPage = () => <AdminSectionPage config={sectionConfigs
 export const AdminTestsPage = () => <AdminTestsManagerPage />;
 export const AdminCategoriesPage = () => <AdminSectionPage config={sectionConfigs.categories} />;
 export const AdminTasksPage = () => <AdminTasksManagerPage />;
-export const AdminManualReviewsPage = () => <AdminSectionPage config={sectionConfigs.manualReviews} />;
-export const AdminRatingPage = () => <AdminSectionPage config={sectionConfigs.rating} />;
+export const AdminManualReviewsPage = () => {
+  const { push } = useToastStore();
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState<Attempt | null>(null);
+  
+  const [score, setScore] = useState(0);
+  const [multiplier, setMultiplier] = useState(1.0);
+
+  const loadData = async () => {
+    try {
+      const [pending, studs, chals] = await Promise.all([
+        adminAttemptsApi.getPendingReviews(),
+        studentsApi.getAll().catch(() => [] as Student[]),
+        adminChallengesApi.getAll().catch(() => [] as Challenge[]),
+      ]);
+      setAttempts(pending);
+      setStudents(studs);
+      setChallenges(chals);
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось загрузить данные для ручной проверки",
+        variant: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [push]);
+
+  const handleGradeClick = (attempt: Attempt) => {
+    setSelectedAttempt(attempt);
+    const chal = challenges.find(c => c.id === attempt.challengeId);
+    setScore(chal ? chal.points : 100);
+    setMultiplier(1.0);
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedAttempt) return;
+    setIsSaving(true);
+
+    try {
+      await adminAttemptsApi.gradeAttempt(selectedAttempt.id, {
+        score,
+        manualPercentMultiplier: multiplier,
+      });
+      push({ title: "Попытка успешно оценена", variant: "success" });
+      setIsModalOpen(false);
+      setSelectedAttempt(null);
+      void loadData();
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось сохранить оценку",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return <Loader label="Загружаем очередь проверок..." />;
+  }
+
+  const studentMap = new Map(students.map(s => [s.id, s]));
+  const challengeMap = new Map(challenges.map(c => [c.id, c]));
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Ручные проверки"
+        subtitle="Очередь решений (файлов), требующих ручной оценки и подтверждения администратора."
+      />
+
+      <div className="metric-grid">
+        <Card>
+          <div className="metric-card">
+            <span className="muted">В очереди</span>
+            <strong>{attempts.length}</strong>
+          </div>
+        </Card>
+      </div>
+
+      {attempts.length > 0 ? (
+        <DataTable
+          columns={[
+            {
+              key: "challenge",
+              title: "Задание",
+              render: (attempt) => {
+                const chal = challengeMap.get(attempt.challengeId);
+                return chal ? `${chal.title} (${chal.points} pts)` : attempt.challengeId;
+              }
+            },
+            {
+              key: "student",
+              title: "Студент",
+              render: (attempt) => {
+                const stud = studentMap.get(attempt.studentId);
+                return stud ? `${stud.fullName} (${stud.nickname})` : attempt.studentId;
+              }
+            },
+            {
+              key: "submittedAt",
+              title: "Дата отправки",
+              render: (attempt) => new Date(attempt.submittedAt).toLocaleString("ru-RU")
+            },
+            {
+              key: "actions",
+              title: "Действие",
+              render: (attempt) => (
+                <Button onClick={() => handleGradeClick(attempt)}>Оценить</Button>
+              )
+            }
+          ]}
+          rows={attempts}
+        />
+      ) : (
+        <Card>
+          <p className="muted">Очередь проверок пуста. Все файлы успешно оценены.</p>
+        </Card>
+      )}
+
+      <Modal
+        open={isModalOpen}
+        title="Оценить решение"
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedAttempt(null);
+        }}
+      >
+        {selectedAttempt && (
+          <form className="admin-form" onSubmit={handleSubmit}>
+            <div style={{ marginBottom: "1rem" }}>
+              <strong>Студент:</strong> {studentMap.get(selectedAttempt.studentId)?.fullName || selectedAttempt.studentId}
+            </div>
+            <div style={{ marginBottom: "1rem" }}>
+              <strong>Задание:</strong> {challengeMap.get(selectedAttempt.challengeId)?.title || selectedAttempt.challengeId}
+            </div>
+            
+            <div style={{ marginBottom: "1rem", padding: "0.75rem", border: "1px solid var(--border)", borderRadius: "var(--radius)", background: "var(--card-bg)" }}>
+              <strong>Файл решения:</strong>{" "}
+              {selectedAttempt.filePath ? (
+                <a
+                  href={`/api/admin/attempts/download?path=${encodeURIComponent(selectedAttempt.filePath)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: "underline", color: "var(--primary)" }}
+                >
+                  Скачать файл ({selectedAttempt.filePath.split("/").pop()})
+                </a>
+              ) : (
+                <span className="muted">Путь к файлу не указан</span>
+              )}
+            </div>
+
+            <Input
+              label="Базовый балл за решение"
+              type="number"
+              min={0}
+              value={String(score)}
+              onChange={(e) => setScore(Number(e.target.value))}
+              required
+            />
+
+            <label className="ui-field">
+              <span className="ui-field__label">Штрафной/Поощрительный коэффициент</span>
+              <select
+                className="ui-input"
+                value={String(multiplier)}
+                onChange={(e) => setMultiplier(Number(e.target.value))}
+              >
+                <option value="1.0">1.0 (Полный балл)</option>
+                <option value="0.5">0.5 (Штраф 50%)</option>
+                <option value="0.1">0.1 (Штраф 90%)</option>
+              </select>
+            </label>
+
+            <div style={{ margin: "1rem 0", fontSize: "1.1rem" }}>
+              <strong>Итоговый балл (до учета времени сдачи):</strong>{" "}
+              <span style={{ color: "var(--primary)", fontWeight: "bold" }}>{Math.round(score * multiplier)}</span>
+            </div>
+
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Сохраняем..." : "Подтвердить оценку"}
+            </Button>
+          </form>
+        )}
+      </Modal>
+    </div>
+  );
+};
+export const AdminRatingPage = () => {
+  const { push } = useToastStore();
+  const [rows, setRows] = useState<LeaderboardRow[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const [form, setForm] = useState({
+    studentId: "",
+    competitionId: "",
+    points: "0",
+    reason: "",
+  });
+
+  const loadData = async () => {
+    try {
+      const [leaderboardRows, studs, comps] = await Promise.all([
+        leaderboardApi.getAll(),
+        studentsApi.getAll().catch(() => [] as Student[]),
+        adminCompetitionsApi.getAll().catch(() => [] as Competition[]),
+      ]);
+      setRows(leaderboardRows);
+      setStudents(studs);
+      setCompetitions(comps);
+      
+      setForm((current) => ({
+        ...current,
+        studentId: current.studentId || studs[0]?.id || "",
+        competitionId: current.competitionId || comps[0]?.id || "",
+      }));
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось загрузить данные рейтинга",
+        variant: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [push]);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!form.studentId) {
+      push({ title: "Выберите студента", variant: "error" });
+      return;
+    }
+    if (!form.reason.trim()) {
+      push({ title: "Укажите причину корректировки", variant: "error" });
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await scoreAdjustmentsApi.createAdjustment({
+        studentId: form.studentId,
+        competitionId: form.competitionId || undefined,
+        points: Number(form.points),
+        reason: form.reason,
+      });
+
+      push({ title: "Баллы успешно скорректированы", variant: "success" });
+      setIsModalOpen(false);
+      setForm({
+        studentId: students[0]?.id || "",
+        competitionId: competitions[0]?.id || "",
+        points: "0",
+        reason: "",
+      });
+      void loadData();
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось скорректировать баллы",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return <Loader label="Загружаем рейтинг..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Рейтинг"
+        subtitle="Административный вид рейтинга с возможностью ручной корректировки баллов участников."
+        actions={<Button onClick={() => setIsModalOpen(true)}>Корректировка баллов</Button>}
+      />
+
+      <div className="metric-grid">
+        <Card>
+          <div className="metric-card">
+            <span className="muted">Участников</span>
+            <strong>{rows.length}</strong>
+          </div>
+        </Card>
+        <Card>
+          <div className="metric-card">
+            <span className="muted">Средний балл</span>
+            <strong>
+              {rows.length > 0
+                ? Math.round(rows.reduce((sum, r) => sum + r.score, 0) / rows.length)
+                : 0}
+            </strong>
+          </div>
+        </Card>
+      </div>
+
+      <DataTable
+        columns={[
+          { key: "place", title: "Место" },
+          { key: "participant", title: "Студент" },
+          { key: "group", title: "Группа" },
+          { key: "score", title: "Баллы" },
+          { key: "solved", title: "Решено задач" },
+        ]}
+        rows={rows}
+      />
+
+      <Modal open={isModalOpen} title="Корректировка баллов" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleSubmit}>
+          <label className="ui-field">
+            <span className="ui-field__label">Студент</span>
+            <select
+              className="ui-input"
+              value={form.studentId}
+              onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
+              required
+            >
+              <option value="" disabled>-- Выберите студента --</option>
+              {students.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.fullName} ({student.nickname})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="ui-field">
+            <span className="ui-field__label">Соревнование</span>
+            <select
+              className="ui-input"
+              value={form.competitionId}
+              onChange={(e) => setForm((current) => ({ ...current, competitionId: e.target.value }))}
+            >
+              <option value="">Не связано с соревнованием</option>
+              {competitions.map((comp) => (
+                <option key={comp.id} value={comp.id}>
+                  {comp.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <Input
+            label="Баллы (положительное или отрицательное число)"
+            type="number"
+            value={form.points}
+            onChange={(e) => setForm((current) => ({ ...current, points: e.target.value }))}
+            required
+          />
+
+          <label className="ui-field">
+            <span className="ui-field__label">Причина корректировки</span>
+            <textarea
+              className="ui-input ui-textarea"
+              value={form.reason}
+              onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))}
+              placeholder="Укажите причину начисления/списания баллов..."
+              required
+            />
+          </label>
+
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Сохраняем..." : "Сохранить"}
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
 export const AdminPromoCodesPage = () => <AdminPromoCodesManagerPage />;
 export const AdminSanctionsPage = () => <AdminSectionPage config={sectionConfigs.sanctions} />;
 export const AdminActionLogPage = () => <AdminSectionPage config={sectionConfigs.actionLog} />;

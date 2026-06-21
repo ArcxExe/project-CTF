@@ -1,6 +1,8 @@
 package com.arcx.ctfplatform.competitions.dto;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -12,6 +14,9 @@ public record CompetitionRequest(
         String description,
         Instant startsAt,
         Instant endsAt,
-        @NotNull CompetitionStatus status
+        @NotNull CompetitionStatus status,
+        boolean sumTestPoints,
+        boolean leaderboardHidden,
+        List<UUID> hiddenStudentIds
 ) {
 }

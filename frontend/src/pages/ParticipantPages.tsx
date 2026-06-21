@@ -448,8 +448,28 @@ export const ParticipantRatingPage = () => {
   const { push } = useToastStore();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [leaderboardHidden, setLeaderboardHidden] = useState(false);
 
   useEffect(() => {
+    // Check if leaderboard is hidden
+    void competitionsApi.getAll()
+      .then((comps) => {
+        const now = new Date();
+        const active = comps.find(comp => {
+          const start = new Date(comp.startsAt);
+          const end = new Date(comp.endsAt);
+          return start <= now && now <= end;
+        }) || comps[0];
+        
+        if (active?.leaderboardHidden) {
+          setLeaderboardHidden(true);
+          setIsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load competitions", err);
+      });
+
     setIsLoading(true);
     const eventSource = new EventSource("/api/leaderboard/live");
 
@@ -507,16 +527,33 @@ export const ParticipantRatingPage = () => {
   return (
     <div className="page-stack">
       <PageHeader title="Рейтинг" subtitle="Таблица результатов участников текущего соревнования." />
-      <DataTable
-        columns={[
-          { key: "place", title: "Место" },
-          { key: "participant", title: "Участник" },
-          { key: "group", title: "Группа" },
-          { key: "score", title: "Баллы" },
-          { key: "solved", title: "Решено" },
-        ]}
-        rows={rows}
-      />
+      {leaderboardHidden ? (
+        <Card>
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "3rem 1.5rem",
+            textAlign: "center",
+          }}>
+            <span style={{ fontSize: "3rem", marginBottom: "1rem" }}>❄️</span>
+            <h3 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Рейтинг временно заморожен организаторами</h3>
+            <p className="muted">Результаты соревнования скрыты. Продолжайте решать задачи!</p>
+          </div>
+        </Card>
+      ) : (
+        <DataTable
+          columns={[
+            { key: "place", title: "Место" },
+            { key: "participant", title: "Участник" },
+            { key: "group", title: "Группа" },
+            { key: "score", title: "Баллы" },
+            { key: "solved", title: "Решено" },
+          ]}
+          rows={rows}
+        />
+      )}
     </div>
   );
 };

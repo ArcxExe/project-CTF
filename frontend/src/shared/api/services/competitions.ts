@@ -13,6 +13,9 @@ interface BackendCompetitionResponse {
   endsAt: string | null;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   createdAt: string | null;
+  sumTestPoints: boolean;
+  leaderboardHidden: boolean;
+  hiddenStudentIds: string[];
 }
 
 /**
@@ -25,6 +28,9 @@ export interface CompetitionPayload {
   startsAt?: string;
   endsAt?: string;
   status: Competition["status"];
+  sumTestPoints: boolean;
+  leaderboardHidden: boolean;
+  hiddenStudentIds: string[];
 }
 
 const statusMap: Record<BackendCompetitionResponse["status"], Competition["status"]> = {
@@ -49,6 +55,9 @@ const toCompetition = (response: BackendCompetitionResponse): Competition => ({
   ratingVisible: true,
   promoCodesEnabled: false,
   createdAt: response.createdAt ?? undefined,
+  sumTestPoints: response.sumTestPoints,
+  leaderboardHidden: response.leaderboardHidden,
+  hiddenStudentIds: response.hiddenStudentIds || [],
 });
 
 const toBackendPayload = (payload: CompetitionPayload) => ({
@@ -57,6 +66,9 @@ const toBackendPayload = (payload: CompetitionPayload) => ({
   startsAt: payload.startsAt,
   endsAt: payload.endsAt,
   status: backendStatusMap[payload.status],
+  sumTestPoints: payload.sumTestPoints,
+  leaderboardHidden: payload.leaderboardHidden,
+  hiddenStudentIds: payload.hiddenStudentIds,
 });
 
 /**

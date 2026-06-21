@@ -5,6 +5,7 @@ import com.arcx.ctfplatform.tests.service.QuizService;
 import com.arcx.ctfplatform.users.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,6 +35,7 @@ public class QuizController {
     }
 
     @PutMapping("/questions/{questionId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<com.arcx.ctfplatform.tests.entity.QuizQuestion> updateQuestion(
             @PathVariable UUID questionId,
             @RequestBody com.arcx.ctfplatform.tests.entity.QuizQuestion questionUpdates) {
@@ -41,12 +43,14 @@ public class QuizController {
     }
 
     @DeleteMapping("/questions/{questionId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteQuestion(@PathVariable UUID questionId) {
         quizService.deleteQuestion(questionId);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/options/{optionId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<com.arcx.ctfplatform.tests.entity.QuizOption> updateOption(
             @PathVariable UUID optionId,
             @RequestBody com.arcx.ctfplatform.tests.entity.QuizOption optionUpdates) {
@@ -54,6 +58,7 @@ public class QuizController {
     }
 
     @DeleteMapping("/options/{optionId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteOption(@PathVariable UUID optionId) {
         quizService.deleteOption(optionId);
         return ResponseEntity.noContent().build();
