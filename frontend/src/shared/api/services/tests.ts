@@ -122,18 +122,17 @@ export const testsApi = {
   async getQuestions(testId: string): Promise<QuizQuestion[]> {
     const response = await apiRequest<any[]>(`/api/quizzes/${testId}/questions`);
     return response.map(item => ({
-      id: item.question.id,
-      testId: item.question.testId,
-      type: item.question.type,
-      text: item.question.text,
-      points: item.question.points,
-      ordering: item.question.ordering,
+      id: item.id,
+      testId: item.testId,
+      type: item.type,
+      text: item.text,
+      points: item.points,
+      ordering: item.ordering,
       options: (item.options || []).map((opt: any) => ({
         id: opt.id,
         questionId: opt.questionId,
         text: opt.optionText,
-        sequenceOrder: opt.sequenceOrder,
-        isCorrect: opt.isCorrect
+        sequenceOrder: opt.sequenceOrder
       }))
     }));
   },

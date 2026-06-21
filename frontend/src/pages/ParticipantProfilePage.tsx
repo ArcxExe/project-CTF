@@ -39,7 +39,7 @@ export const ParticipantProfilePage = () => {
   let myScore = 0;
   
   if (currentUser) {
-    const myEntry = leaderboard.find(r => r.participant === currentUser.email || r.participant === currentUser.fullName || r.participant === currentUser.id); // Or whatever username maps to
+    const myEntry = leaderboard.find(r => r.participant === currentUser.username || r.participant === currentUser.email || r.participant === currentUser.fullName || r.participant === currentUser.id);
     if (myEntry) {
       myScore = myEntry.score;
       const myGroup = myEntry.group;
