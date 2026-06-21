@@ -31,7 +31,7 @@ import { streamsApi } from "@/shared/api/services/streams";
 import { labScoresApi } from "@/shared/api/services/labScores";
 import { auditLogsApi } from "@/shared/api/services/auditLogs";
 import { reportsApi } from "@/shared/api/services/reports";
-
+import { gradingScalesApi, GradingScale, CreateGradingScaleRequest } from "@/shared/api/services/gradingScales";
 
 type AdminRow = Record<string, string | number | boolean>;
 
@@ -2264,6 +2264,10 @@ export const AdminRatingPage = () => {
           { key: "group", title: "Группа" },
           { key: "score", title: "Баллы" },
           { key: "solved", title: "Решено задач" },
+          { key: "v1", title: "v1" },
+          { key: "v2", title: "v2" },
+          { key: "sCoefficient", title: "S" },
+          { key: "recommendedGrade", title: "Рекомендованная оценка" },
         ]}
         rows={rows}
       />
@@ -2477,3 +2481,179 @@ export const AdminAnalyticsPage = () => (
     </div>
   </div>
 );
+
+export const AdminGradingScalePage = () => {
+  const { push } = useToastStore();
+  const [scales, setScales] = useState<GradingScale[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [form, setForm] = useState<CreateGradingScaleRequest>({
+    minCoefficient: 0,
+    maxCoefficient: 0,
+    grade: 2,
+    description: "",
+  });
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const data = await gradingScalesApi.getAll();
+      setScales(data.sort((a, b) => a.minCoefficient - b.minCoefficient));
+    } catch (error) {
+      push({ title: "Ошибка загрузки шкал оценок", variant: "error" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, [push]);
+
+  const validateScale = (currentForm: CreateGradingScaleRequest, skipId: string | null): boolean => {
+    if (currentForm.minCoefficient >= currentForm.maxCoefficient) {
+      push({ title: "Минимальный коэффициент должен быть меньше максимального", variant: "error" });
+      return false;
+    }
+
+    const overlap = scales.find((scale) => {
+      if (skipId && scale.id === skipId) return false;
+      return (
+        (currentForm.minCoefficient >= scale.minCoefficient && currentForm.minCoefficient <= scale.maxCoefficient) ||
+        (currentForm.maxCoefficient >= scale.minCoefficient && currentForm.maxCoefficient <= scale.maxCoefficient) ||
+        (currentForm.minCoefficient <= scale.minCoefficient && currentForm.maxCoefficient >= scale.maxCoefficient)
+      );
+    });
+
+    if (overlap) {
+      push({ title: "Интервалы коэффициентов не должны пересекаться", variant: "error" });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!validateScale(form, editingId)) return;
+
+    setIsSaving(true);
+    try {
+      if (editingId) {
+        await gradingScalesApi.update(editingId, form);
+        push({ title: "Шкала успешно обновлена", variant: "success" });
+      } else {
+        await gradingScalesApi.create(form);
+        push({ title: "Шкала успешно создана", variant: "success" });
+      }
+      setIsModalOpen(false);
+      void loadData();
+    } catch (error) {
+      push({ title: "Ошибка сохранения шкалы", variant: "error" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEdit = (scale: GradingScale) => {
+    setEditingId(scale.id);
+    setForm({
+      minCoefficient: scale.minCoefficient,
+      maxCoefficient: scale.maxCoefficient,
+      grade: scale.grade,
+      description: scale.description || "",
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите удалить эту шкалу?")) return;
+    try {
+      await gradingScalesApi.delete(id);
+      push({ title: "Шкала удалена", variant: "success" });
+      void loadData();
+    } catch (error) {
+      push({ title: "Ошибка удаления шкалы", variant: "error" });
+    }
+  };
+
+  const openCreateModal = () => {
+    setEditingId(null);
+    setForm({ minCoefficient: 0, maxCoefficient: 0, grade: 2, description: "" });
+    setIsModalOpen(true);
+  };
+
+  if (isLoading) return <Loader label="Загружаем шкалы оценок..." />;
+
+  const tableRows = scales.map((scale) => ({
+    ...scale,
+    actions: (
+      <div className="table-actions">
+        <Button onClick={() => handleEdit(scale)} variant="ghost">Редактировать</Button>
+        <Button onClick={() => handleDelete(scale.id)} variant="danger">Удалить</Button>
+      </div>
+    ),
+  }));
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Шкала оценок"
+        subtitle="Настройка интервалов для перевода S-коэффициента в оценку"
+        actions={<Button onClick={openCreateModal}>Создать интервал</Button>}
+      />
+
+      <DataTable
+        columns={[
+          { key: "minCoefficient", title: "Min S" },
+          { key: "maxCoefficient", title: "Max S" },
+          { key: "grade", title: "Оценка" },
+          { key: "description", title: "Описание" },
+          { key: "actions", title: "Действия" },
+        ]}
+        rows={tableRows}
+      />
+
+      <Modal open={isModalOpen} title={editingId ? "Редактирование интервала" : "Создание интервала"} onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleSubmit}>
+          <Input
+            label="Мин. S"
+            type="number"
+            step="0.01"
+            value={form.minCoefficient}
+            onChange={(e) => setForm((curr) => ({ ...curr, minCoefficient: parseFloat(e.target.value) }))}
+            required
+          />
+          <Input
+            label="Макс. S"
+            type="number"
+            step="0.01"
+            value={form.maxCoefficient}
+            onChange={(e) => setForm((curr) => ({ ...curr, maxCoefficient: parseFloat(e.target.value) }))}
+            required
+          />
+          <Input
+            label="Оценка (например, 2, 3, 4, 5)"
+            type="number"
+            value={form.grade}
+            onChange={(e) => setForm((curr) => ({ ...curr, grade: parseInt(e.target.value, 10) }))}
+            required
+          />
+          <Input
+            label="Описание"
+            type="text"
+            value={form.description}
+            onChange={(e) => setForm((curr) => ({ ...curr, description: e.target.value }))}
+          />
+
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Сохранение..." : "Сохранить"}
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
