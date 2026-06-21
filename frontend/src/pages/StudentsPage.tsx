@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { studentsApi } from "@/shared/api/services/students";
+import { groupsApi } from "@/shared/api/services/groups";
+import type { Group } from "@/shared/types/education";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
@@ -7,6 +9,7 @@ import { Card } from "@/shared/ui/Card/Card";
 import { DataTable } from "@/shared/ui/DataTable/DataTable";
 import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
+import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import type { Student } from "@/shared/types/education";
 import "./pages.css";
@@ -14,19 +17,30 @@ import "./pages.css";
 export const StudentsPage = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+
+  // Create Student Modal State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [middleName, setMiddleName] = useState("");
+  const [studentCode, setStudentCode] = useState("");
+  const [groupId, setGroupId] = useState("");
   const { push } = useToastStore();
 
   const loadData = () => {
     Promise.all([
       studentsApi.getAll(),
-      studentsApi.getPending()
+      studentsApi.getPending(),
+      groupsApi.getAll(),
     ])
-    .then(([allStudents, pending]) => {
+    .then(([allStudents, pending, fetchedGroups]) => {
       setStudents(allStudents);
       setPendingStudents(pending);
+      setAllGroups(fetchedGroups);
     })
     .catch((error: unknown) => {
       push({
@@ -60,6 +74,45 @@ export const StudentsPage = () => {
       loadData();
     } catch (e) {
       push({ title: "Ошибка", variant: "error" });
+    }
+  };
+
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await studentsApi.importStudents(file);
+      push({ title: "Импорт успешно завершен", variant: "success" });
+      loadData();
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : "Ошибка при импорте студентов";
+      push({ title: errorMsg, variant: "error" });
+    } finally {
+      // Clear the input so the same file can be selected again
+      event.target.value = "";
+    }
+  };
+
+  const handleCreateStudent = async () => {
+    try {
+      await studentsApi.createStudent({
+        firstName,
+        lastName,
+        middleName,
+        studentCode,
+        groupId,
+      });
+      push({ title: "Студент успешно создан", variant: "success" });
+      setIsCreateModalOpen(false);
+      setFirstName("");
+      setLastName("");
+      setMiddleName("");
+      setStudentCode("");
+      setGroupId("");
+      loadData();
+    } catch (e: unknown) {
+      push({ title: "Ошибка при создании студента", variant: "error" });
     }
   };
 
@@ -97,7 +150,81 @@ export const StudentsPage = () => {
       <PageHeader
         title="Студенты"
         subtitle="Управление студентами, регистрациями и статусами."
+        actions={
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              type="file"
+              accept=".csv,.xlsx"
+              id="student-import-input"
+              style={{ display: "none" }}
+              onChange={handleFileImport}
+            />
+            <Button onClick={() => document.getElementById("student-import-input")?.click()} variant="secondary">
+              Импорт
+            </Button>
+            <Button onClick={() => setIsCreateModalOpen(true)}>
+              Добавить студента
+            </Button>
+          </div>
+        }
       />
+
+      <Modal
+        open={isCreateModalOpen}
+        title="Создание студента"
+        onClose={() => setIsCreateModalOpen(false)}
+      >
+        <div className="page-stack">
+          <Input
+            label="Имя"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+          />
+          <Input
+            label="Фамилия"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+          />
+          <Input
+            label="Отчество"
+            value={middleName}
+            onChange={(e) => setMiddleName(e.target.value)}
+          />
+          <Input
+            label="Код студента (ИСУ и т.п.)"
+            value={studentCode}
+            onChange={(e) => setStudentCode(e.target.value)}
+          />
+          <label className="ui-field">
+            <span className="ui-field__label">Академическая группа</span>
+            <select
+              className="ui-input"
+              value={groupId}
+              onChange={(e) => setGroupId(e.target.value)}
+            >
+              <option value="" disabled>
+                Выберите группу
+              </option>
+              {allGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", marginTop: "1rem" }}>
+            <Button variant="secondary" onClick={() => setIsCreateModalOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleCreateStudent}
+              disabled={!firstName || !lastName || !studentCode || !groupId}
+            >
+              Создать
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {pendingStudents.length > 0 && (
         <Card>
