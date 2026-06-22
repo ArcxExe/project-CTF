@@ -28,7 +28,7 @@ public class PromoCodeService {
         Student student = studentRepository.findByUserIdWithLock(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
-        PromoCode promo = promoCodeRepository.findByCode(code)
+        PromoCode promo = promoCodeRepository.findByCodeWithLock(code)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid promo code"));
 
         if (promoCodeClaimRepository.existsByPromoCodeIdAndStudentId(promo.getId(), student.getId())) {

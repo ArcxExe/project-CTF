@@ -33,7 +33,7 @@ interface BackendPromoCodeResponse {
   usedCount: number;
 }
 
-interface RedeemPromoCodeResponse {
+export interface RedeemPromoCodeResponse {
   accepted: boolean;
   message: string;
   bonusPoints: number;

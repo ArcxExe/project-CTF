@@ -13,6 +13,7 @@ interface AuthState {
   loginAsMockUser: (role: Role) => Promise<void>;
   logout: () => void;
   restoreSession: () => Promise<void>;
+  updateUserScore: (scoreOffset: number) => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -56,6 +57,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     authTokenStorage.clear();
     set({ currentUser: null, isSessionHydrated: true });
+  },
+
+  updateUserScore: (_scoreOffset) => {
+    // Left unimplemented as we now refetch the leaderboard dynamically instead of saving it on the user object
+    // Kept here for potential backward compatibility if other places call it, but no-op.
   },
 
   restoreSession: async () => {
