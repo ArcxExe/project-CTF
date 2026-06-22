@@ -39,6 +39,18 @@ export const ParticipantTestRunnerPage = () => {
         const newSubmission = await testsApi.startQuiz(testId);
         setSubmission(newSubmission);
 
+        // Load saved answers from local storage if available
+        if (newSubmission && newSubmission.isActive) {
+          const savedAnswers = localStorage.getItem(`quiz_answers_${newSubmission.id}`);
+          if (savedAnswers) {
+            try {
+              setAnswers(JSON.parse(savedAnswers));
+            } catch (e) {
+              console.error("Failed to parse saved answers", e);
+            }
+          }
+        }
+
       } catch (error) {
         push({
           title: error instanceof Error ? error.message : "Ошибка загрузки теста",
@@ -79,6 +91,7 @@ export const ParticipantTestRunnerPage = () => {
     try {
       const result = await testsApi.submitAnswers(submission.id, answers);
       setSubmission(result);
+      localStorage.removeItem(`quiz_answers_${submission.id}`);
       push({
         title: `Ответы ${isAuto ? 'автоматически отправлены' : 'сохранены'}!`,
         variant: "success",
@@ -97,17 +110,26 @@ export const ParticipantTestRunnerPage = () => {
     await handleSubmit(true);
   }, [submission, answers, isSubmitting]);
 
+  // Save answers to local storage whenever they change
+  useEffect(() => {
+    if (submission && submission.isActive) {
+      localStorage.setItem(`quiz_answers_${submission.id}`, JSON.stringify(answers));
+    }
+  }, [answers, submission]);
+
   const handleAnswerChange = (questionId: string, value: string, type: "RADIO" | "CHECKBOX" | "SEQUENCE") => {
     setAnswers(prev => {
+      let newAnswers;
       if (type === "RADIO") {
-        return { ...prev, [questionId]: [value] };
-      }
-      if (type === "CHECKBOX") {
+        newAnswers = { ...prev, [questionId]: [value] };
+      } else if (type === "CHECKBOX") {
         const current = prev[questionId] || [];
         const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
-        return { ...prev, [questionId]: next };
+        newAnswers = { ...prev, [questionId]: next };
+      } else {
+        newAnswers = prev;
       }
-      return prev;
+      return newAnswers;
     });
   };
 
