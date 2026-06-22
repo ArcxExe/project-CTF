@@ -2157,12 +2157,10 @@ export const AdminRatingPage = () => {
 
   const loadData = async () => {
     try {
-      const [leaderboardRows, studs, comps] = await Promise.all([
-        leaderboardApi.getAll(),
+      const [studs, comps] = await Promise.all([
         studentsApi.getAll().catch(() => [] as Student[]),
         adminCompetitionsApi.getAll().catch(() => [] as Competition[]),
       ]);
-      setRows(leaderboardRows);
       setStudents(studs);
       setCompetitions(comps);
       
@@ -2173,16 +2171,67 @@ export const AdminRatingPage = () => {
       }));
     } catch (error) {
       push({
-        title: error instanceof Error ? error.message : "Не удалось загрузить данные рейтинга",
+        title: error instanceof Error ? error.message : "Не удалось загрузить данные",
         variant: "error",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     void loadData();
+
+    setIsLoading(true);
+    const eventSource = new EventSource("/api/leaderboard/live");
+
+    const parseAndSetRows = (data: string) => {
+      try {
+        const raw = JSON.parse(data);
+        const newRows = raw.map((entry: any, index: number) => ({
+          place: index + 1,
+          participant: entry.username || entry.participant,
+          group: entry.groupName ?? "Без группы",
+          score: entry.score ?? entry.totalScore ?? 0,
+          solved: entry.solvedCount ?? 0,
+          v1: entry.v1 ?? 0,
+          v2: entry.v2 ?? 0,
+          sCoefficient: entry.sCoefficient ?? 0,
+          recommendedGrade: entry.recommendedGrade ?? 2,
+        }));
+        setRows(newRows);
+        setIsLoading(false);
+      } catch (err) {
+        console.error("Failed to parse leaderboard data", err);
+      }
+    };
+
+    eventSource.addEventListener("INIT", (event) => {
+      parseAndSetRows((event as MessageEvent).data);
+    });
+
+    eventSource.addEventListener("UPDATE", (event) => {
+      parseAndSetRows((event as MessageEvent).data);
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("Leaderboard SSE error", error);
+      eventSource.close();
+
+      // Fallback to static fetch if SSE fails
+      void leaderboardApi
+        .getAll()
+        .then(setRows)
+        .catch((error: unknown) => {
+          push({
+            title: error instanceof Error ? error.message : "Не удалось загрузить рейтинг",
+            variant: "error",
+          });
+        })
+        .finally(() => setIsLoading(false));
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, [push]);
 
   const handleSubmit = async (event: FormEvent) => {

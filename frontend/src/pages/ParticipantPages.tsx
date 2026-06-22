@@ -483,6 +483,10 @@ export const ParticipantRatingPage = () => {
           group: entry.groupName ?? "Без группы",
           score: entry.score ?? entry.totalScore ?? 0,
           solved: entry.solvedCount ?? 0,
+          v1: entry.v1,
+          v2: entry.v2,
+          sCoefficient: entry.sCoefficient,
+          recommendedGrade: entry.recommendedGrade,
         }));
         setRows(newRows);
         setIsLoading(false);
