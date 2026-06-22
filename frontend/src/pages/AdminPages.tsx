@@ -1710,19 +1710,23 @@ export const AdminGroupsPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ name: "", streamId: "" });
 
-  useEffect(() => {
-    Promise.all([
-      groupsApi.getAll(),
-      streamsApi.getAll().catch(() => [])
-    ])
-    .then(([groupsData, streamsData]) => {
+  const loadData = async () => {
+    try {
+      const [groupsData, streamsData] = await Promise.all([
+        groupsApi.getAll(),
+        streamsApi.getAll().catch(() => [])
+      ]);
       setGroups(groupsData);
       setStreams(streamsData);
-    })
-    .catch((error) => {
+    } catch (error) {
       push({ title: error instanceof Error ? error.message : "Ошибка загрузки", variant: "error" });
-    })
-    .finally(() => setIsLoading(false));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
   }, [push]);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -1730,11 +1734,11 @@ export const AdminGroupsPage = () => {
     setIsSaving(true);
     try {
 
-      const created = await groupsApi.create({
+      await groupsApi.create({
         name: form.name,
         streamId: form.streamId || undefined,
       });
-      setGroups((curr) => [created, ...curr]);
+      await loadData();
       setIsModalOpen(false);
       setForm({ name: "", streamId: "" });
       push({ title: "Группа создана", variant: "success" });
@@ -1761,7 +1765,7 @@ export const AdminGroupsPage = () => {
             if(!confirm("Удалить?")) return;
 
             await groupsApi.delete(g.id);
-            setGroups(groups.filter(gr => gr.id !== g.id));
+            await loadData();
           }}>Удалить</Button> }
         ]}
         rows={filtered}
@@ -1793,11 +1797,19 @@ export const AdminStreamsPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ name: "" });
 
+  const loadData = async () => {
+    try {
+      const data = await streamsApi.getAll();
+      setStreams(data);
+    } catch (error) {
+      push({ title: "Ошибка загрузки", variant: "error" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    streamsApi.getAll()
-      .then(setStreams)
-      .catch(() => push({ title: "Ошибка загрузки", variant: "error" }))
-      .finally(() => setIsLoading(false));
+    loadData();
   }, [push]);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -1805,8 +1817,8 @@ export const AdminStreamsPage = () => {
     setIsSaving(true);
     try {
 
-      const created = await streamsApi.create(form);
-      setStreams(curr => [created, ...curr]);
+      await streamsApi.create(form);
+      await loadData();
       setIsModalOpen(false);
       setForm({ name: "" });
       push({ title: "Поток создан", variant: "success" });
@@ -1834,7 +1846,7 @@ export const AdminStreamsPage = () => {
             if(!confirm("Удалить?")) return;
 
             await streamsApi.delete(s.id);
-            setStreams(streams.filter(st => st.id !== s.id));
+            await loadData();
           }}>Удалить</Button> }
         ]}
         rows={filtered}
