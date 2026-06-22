@@ -2,22 +2,28 @@ import { apiRequest } from "@/shared/api/client";
 
 export interface GradingScale {
   id: string;
-  minCoefficient: number;
-  maxCoefficient: number;
-  grade: number;
-  description?: string;
+  flowId?: string;
+  gradeName: string;
+  minScore: number;
+  maxScore: number;
 }
 
 export interface GradingScalePayload {
-  minCoefficient: number;
-  maxCoefficient: number;
-  grade: number;
-  description?: string;
+  flowId?: string;
+  gradeName: string;
+  minScore: number;
+  maxScore: number;
 }
 
 export const gradingScalesApi = {
-  async getAll(): Promise<GradingScale[]> {
-    return apiRequest<GradingScale[]>("/api/admin/grading-scales");
+  async getAll(flowId?: string): Promise<GradingScale[]> {
+    const params = new URLSearchParams();
+    if (flowId) params.append("flowId", flowId);
+
+    const queryString = params.toString();
+    const url = `/api/admin/grading-scales${queryString ? "?" + queryString : ""}`;
+
+    return apiRequest<GradingScale[]>(url);
   },
 
   async create(payload: GradingScalePayload): Promise<GradingScale> {
