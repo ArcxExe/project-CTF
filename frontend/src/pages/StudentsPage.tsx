@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { studentsApi } from "@/shared/api/services/students";
 import { groupsApi } from "@/shared/api/services/groups";
-import type { Group } from "@/shared/types/education";
+import { streamsApi } from "@/shared/api/services/streams";
+import type { Group, Student, Stream } from "@/shared/types/education";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
@@ -11,13 +12,13 @@ import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
-import type { Student } from "@/shared/types/education";
 import "./pages.css";
 
 export const StudentsPage = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
   const [allGroups, setAllGroups] = useState<Group[]>([]);
+  const [allStreams, setAllStreams] = useState<Stream[]>([]);
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -33,14 +34,16 @@ export const StudentsPage = () => {
 
   const loadData = () => {
     Promise.all([
-      studentsApi.getAll(),
-      studentsApi.getPending(),
-      groupsApi.getAll(),
+      studentsApi.getAll().catch(() => [] as Student[]),
+      studentsApi.getPending().catch(() => [] as Student[]),
+      groupsApi.getAll().catch(() => [] as Group[]),
+      streamsApi.getAll().catch(() => [] as Stream[]),
     ])
-    .then(([allStudents, pending, fetchedGroups]) => {
+    .then(([allStudents, pending, fetchedGroups, fetchedStreams]) => {
       setStudents(allStudents);
       setPendingStudents(pending);
       setAllGroups(fetchedGroups);
+      setAllStreams(fetchedStreams);
     })
     .catch((error: unknown) => {
       push({
@@ -126,6 +129,50 @@ export const StudentsPage = () => {
     }
   };
 
+  const groupedGroups = useMemo(() => {
+    const streamMap = new Map<string, string>();
+    allStreams.forEach((s) => {
+      streamMap.set(s.id, s.name);
+    });
+
+    const groupsByStream: Record<string, Group[]> = {};
+    const ungrouped: Group[] = [];
+
+    allGroups.forEach((group) => {
+      if (group.streamId && streamMap.has(group.streamId)) {
+        if (!groupsByStream[group.streamId]) {
+          groupsByStream[group.streamId] = [];
+        }
+        groupsByStream[group.streamId].push(group);
+      } else {
+        ungrouped.push(group);
+      }
+    });
+
+    const result: { streamId: string | null; streamName: string; groups: Group[] }[] = [];
+
+    allStreams.forEach((stream) => {
+      const groups = groupsByStream[stream.id] || [];
+      if (groups.length > 0) {
+        result.push({
+          streamId: stream.id,
+          streamName: stream.name,
+          groups: groups.sort((a, b) => a.name.localeCompare(b.name)),
+        });
+      }
+    });
+
+    if (ungrouped.length > 0) {
+      result.push({
+        streamId: null,
+        streamName: "Без потока",
+        groups: ungrouped.sort((a, b) => a.name.localeCompare(b.name)),
+      });
+    }
+
+    return result;
+  }, [allGroups, allStreams]);
+
   const groups = useMemo(() => Array.from(new Set(students.map(s => s.group))), [students]);
 
   const filteredStudents = useMemo(
@@ -202,13 +249,17 @@ export const StudentsPage = () => {
               value={groupId}
               onChange={(e) => setGroupId(e.target.value)}
             >
-              <option value="" disabled>
+              <option value="">
                 Выберите группу
               </option>
-              {allGroups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
+              {groupedGroups.map((grouping) => (
+                <optgroup key={grouping.streamId || "no-stream"} label={grouping.streamName}>
+                  {grouping.groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
