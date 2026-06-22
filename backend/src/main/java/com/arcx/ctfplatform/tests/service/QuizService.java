@@ -1,12 +1,14 @@
 package com.arcx.ctfplatform.tests.service;
 
+import com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO;
+import com.arcx.ctfplatform.tests.entity.QuizAttempt;
+import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
 import com.arcx.ctfplatform.tests.entity.QuizOption;
 import com.arcx.ctfplatform.tests.entity.QuizQuestion;
-import com.arcx.ctfplatform.tests.entity.QuizSubmission;
 import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.repository.QuizOptionRepository;
 import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
-import com.arcx.ctfplatform.tests.repository.QuizSubmissionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
@@ -23,61 +25,60 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class QuizService {
 
-    private final QuizSubmissionRepository submissionRepository;
+    private final QuizAttemptRepository attemptRepository;
     private final QuizQuestionRepository questionRepository;
     private final QuizOptionRepository optionRepository;
     private final TestRepository testRepository;
     private final StudentRepository studentRepository;
 
     @Transactional
-    public QuizSubmission startQuiz(UUID testId, UUID userId) {
+    public QuizAttempt startQuiz(UUID quizId, UUID userId) {
         Student student = studentRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
         
-        Test test = testRepository.findById(testId)
-                .orElseThrow(() -> new IllegalArgumentException("Test not found"));
+        Test test = testRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
 
-        Optional<QuizSubmission> activeSubmission = submissionRepository.findByTestIdAndStudentIdAndIsActiveTrue(testId, student.getId());
-        if (activeSubmission.isPresent()) {
-            return activeSubmission.get();
+        Optional<QuizAttempt> activeAttempt = attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, student.getId(), QuizAttemptStatus.IN_PROGRESS);
+        if (activeAttempt.isPresent()) {
+            return activeAttempt.get();
         }
 
-        QuizSubmission submission = QuizSubmission.builder()
-                .testId(testId)
+        QuizAttempt attempt = QuizAttempt.builder()
+                .quizId(quizId)
                 .studentId(student.getId())
                 .startedAt(Instant.now())
-                .isActive(true)
+                .status(QuizAttemptStatus.IN_PROGRESS)
                 .score(0)
                 .build();
 
-        return submissionRepository.save(submission);
+        return attemptRepository.save(attempt);
     }
 
     @Transactional
-    public QuizSubmission submitAnswers(UUID submissionId, Map<UUID, List<String>> answers) {
-        QuizSubmission submission = submissionRepository.findById(submissionId)
-                .orElseThrow(() -> new IllegalArgumentException("Submission not found"));
+    public QuizAttempt submitAnswers(UUID quizId, UUID userId, List<QuestionAnswerDTO> answers) {
+        Student student = studentRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
-        if (!submission.isActive()) {
-            throw new IllegalStateException("Submission is already completed");
-        }
+        QuizAttempt attempt = attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, student.getId(), QuizAttemptStatus.IN_PROGRESS)
+                .orElseThrow(() -> new IllegalStateException("No active attempt found for this quiz"));
 
-        Test test = testRepository.findById(submission.getTestId())
-                .orElseThrow(() -> new IllegalArgumentException("Test not found"));
+        Test test = testRepository.findById(attempt.getQuizId())
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
 
         Instant now = Instant.now();
-        Instant deadline = submission.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES);
-        
-        // Even if past deadline, we grade whatever was submitted up to this point
         
         List<QuizQuestion> questions = questionRepository.findAllByTestIdOrderByOrderingAsc(test.getId());
         List<UUID> questionIds = questions.stream().map(QuizQuestion::getId).collect(Collectors.toList());
         List<QuizOption> options = optionRepository.findAllByQuestionIdIn(questionIds);
 
+        Map<UUID, List<String>> answerMap = answers.stream()
+                .collect(Collectors.toMap(QuestionAnswerDTO::questionId, QuestionAnswerDTO::answers));
+
         int totalScore = 0;
 
         for (QuizQuestion q : questions) {
-            List<String> studentAnswer = answers.getOrDefault(q.getId(), Collections.emptyList());
+            List<String> studentAnswer = answerMap.getOrDefault(q.getId(), Collections.emptyList());
             List<QuizOption> qOptions = options.stream()
                     .filter(o -> o.getQuestionId().equals(q.getId()))
                     .collect(Collectors.toList());
@@ -103,11 +104,11 @@ public class QuizService {
             }
         }
 
-        submission.setScore(totalScore);
-        submission.setSubmittedAt(now);
-        submission.setActive(false);
+        attempt.setScore(totalScore);
+        attempt.setCompletedAt(now);
+        attempt.setStatus(QuizAttemptStatus.COMPLETED);
 
-        return submissionRepository.save(submission);
+        return attemptRepository.save(attempt);
     }
 
     @Transactional
@@ -165,21 +166,22 @@ public class QuizService {
 
     @Transactional
     public void autoSubmitExpired() {
-        List<QuizSubmission> activeSubmissions = submissionRepository.findAllByIsActiveTrue();
+        List<QuizAttempt> activeAttempts = attemptRepository.findAllByStatus(QuizAttemptStatus.IN_PROGRESS);
         Instant now = Instant.now();
 
-        for (QuizSubmission submission : activeSubmissions) {
-            testRepository.findById(submission.getTestId()).ifPresent(test -> {
-                Instant deadline = submission.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
+        for (QuizAttempt attempt : activeAttempts) {
+            testRepository.findById(attempt.getQuizId()).ifPresent(test -> {
+                Instant deadline = attempt.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
                 if (now.isAfter(deadline)) {
-                    // Force submit with empty answers to grade anything that might have been partially answered
-                    // But wait, the frontend currently submits answers explicitly. If we force submit from backend with empty map, it will just get 0 for unanswered ones.
-                    // This is expected if they didn't submit. If they did submit, it would already be inactive.
-                    try {
-                        submitAnswers(submission.getId(), Collections.emptyMap());
-                    } catch (Exception e) {
-                        // In case of error (like already submitted concurrently), ignore
-                    }
+                    studentRepository.findById(attempt.getStudentId()).ifPresent(student -> {
+                        if (student.getUserId() != null) {
+                            try {
+                                submitAnswers(attempt.getQuizId(), student.getUserId(), Collections.emptyList());
+                            } catch (Exception e) {
+                                // In case of error (like already submitted concurrently), ignore
+                            }
+                        }
+                    });
                 }
             });
         }

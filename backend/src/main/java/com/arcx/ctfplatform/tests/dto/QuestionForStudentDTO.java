@@ -3,13 +3,13 @@ package com.arcx.ctfplatform.tests.dto;
 import java.util.List;
 import java.util.UUID;
 
-public record QuizQuestionStudentResponse(
+public record QuestionForStudentDTO(
         UUID id,
-        UUID testId,
+        UUID quizId,
         String type,
         String text,
         Integer points,
         Integer ordering,
-        List<QuizOptionStudentResponse> options
+        List<OptionForStudentDTO> options
 ) {
 }

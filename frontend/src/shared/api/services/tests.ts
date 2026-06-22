@@ -33,14 +33,14 @@ export interface QuizQuestion {
   options: QuizOption[];
 }
 
-export interface QuizSubmission {
+export interface QuizAttempt {
   id: string;
-  testId: string;
+  quizId: string;
   studentId: string;
   startedAt: string;
-  submittedAt?: string;
+  completedAt?: string;
   score: number;
-  isActive: boolean;
+  status: "IN_PROGRESS" | "COMPLETED";
 }
 
 export interface CtfTestPayload {
@@ -137,16 +137,22 @@ export const testsApi = {
     }));
   },
 
-  async startQuiz(testId: string): Promise<QuizSubmission> {
-    return apiRequest<QuizSubmission>(`/api/quizzes/${testId}/start`, {
+  async startQuiz(testId: string): Promise<QuizAttempt> {
+    return apiRequest<QuizAttempt>(`/api/quizzes/${testId}/start`, {
       method: "POST"
     });
   },
 
-  async submitAnswers(submissionId: string, answers: Record<string, string[]>): Promise<QuizSubmission> {
-    return apiRequest<QuizSubmission>(`/api/quizzes/submissions/${submissionId}/submit`, {
+  async submitAnswers(quizId: string, answers: Record<string, string[]>): Promise<QuizAttempt> {
+    // Transform Record<string, string[]> to List<QuestionAnswerDTO> expected by the backend
+    const payload = Object.entries(answers).map(([questionId, ans]) => ({
+      questionId,
+      answers: ans
+    }));
+
+    return apiRequest<QuizAttempt>(`/api/quizzes/${quizId}/submit`, {
       method: "POST",
-      body: JSON.stringify(answers)
+      body: JSON.stringify(payload)
     });
   }
 };
