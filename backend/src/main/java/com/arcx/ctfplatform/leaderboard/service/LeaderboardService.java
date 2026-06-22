@@ -14,8 +14,8 @@ import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
-import com.arcx.ctfplatform.tests.entity.QuizSubmission;
-import com.arcx.ctfplatform.tests.repository.QuizSubmissionRepository;
+import com.arcx.ctfplatform.tests.entity.QuizAttempt;
+import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +40,7 @@ public class LeaderboardService {
     private final LabScoreService labScoreService;
     private final GradingService gradingService;
     private final AttemptRepository attemptRepository;
-    private final QuizSubmissionRepository quizSubmissionRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
     private final PromoCodeRepository promoCodeRepository;
     private final PromoCodeClaimRepository promoCodeClaimRepository;
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
@@ -148,10 +148,10 @@ public class LeaderboardService {
             // 2. Tests (if sumTestPoints is true)
             for (Competition comp : competitions) {
                 if (comp.isSumTestPoints()) {
-                    List<QuizSubmission> quizzes = quizSubmissionRepository.findAll().stream()
+                    List<QuizAttempt> quizzes = quizAttemptRepository.findAll().stream()
                         .filter(q -> q.getStudentId().equals(student.getId()))
                         .toList();
-                    score += quizzes.stream().mapToInt(QuizSubmission::getScore).sum();
+                    score += quizzes.stream().mapToInt(QuizAttempt::getScore).sum();
                 }
             }
 

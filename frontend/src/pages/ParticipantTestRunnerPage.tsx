@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { testsApi } from "@/shared/api/services/tests";
-import type { QuizQuestion, QuizSubmission, CtfTest } from "@/shared/api/services/tests";
+import type { QuizQuestion, QuizAttempt, CtfTest } from "@/shared/api/services/tests";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
 import { Loader } from "@/shared/ui/Loader/Loader";
@@ -15,7 +15,7 @@ export const ParticipantTestRunnerPage = () => {
   const { push } = useToastStore();
 
   const [test, setTest] = useState<CtfTest | null>(null);
-  const [submission, setSubmission] = useState<QuizSubmission | null>(null);
+  const [attempt, setAttempt] = useState<QuizAttempt | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   
@@ -36,8 +36,8 @@ export const ParticipantTestRunnerPage = () => {
         const loadedQuestions = await testsApi.getQuestions(testId);
         setQuestions(loadedQuestions);
 
-        const newSubmission = await testsApi.startQuiz(testId);
-        setSubmission(newSubmission);
+        const newAttempt = await testsApi.startQuiz(testId);
+        setAttempt(newAttempt);
 
       } catch (error) {
         push({
@@ -55,9 +55,9 @@ export const ParticipantTestRunnerPage = () => {
 
   // Timer effect
   useEffect(() => {
-    if (!submission || !test || !submission.isActive) return;
+    if (!attempt || !test || attempt.status === "COMPLETED") return;
 
-    const endTime = new Date(submission.startedAt).getTime() + test.timeLimitMinutes * 60000;
+    const endTime = new Date(attempt.startedAt).getTime() + test.timeLimitMinutes * 60000;
 
     const updateTimer = () => {
       const remaining = Math.max(0, endTime - Date.now());
@@ -70,15 +70,15 @@ export const ParticipantTestRunnerPage = () => {
     updateTimer(); // Initial call
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [submission, test]);
+  }, [attempt, test]);
 
   const handleSubmit = async (isAuto = false) => {
-    if (!submission || !submission.isActive || isSubmitting) return;
+    if (!attempt || attempt.status === "COMPLETED" || isSubmitting || !testId) return;
 
     setIsSubmitting(true);
     try {
-      const result = await testsApi.submitAnswers(submission.id, answers);
-      setSubmission(result);
+      const result = await testsApi.submitAnswers(testId, answers);
+      setAttempt(result);
       push({
         title: `Ответы ${isAuto ? 'автоматически отправлены' : 'сохранены'}!`,
         variant: "success",
@@ -95,7 +95,7 @@ export const ParticipantTestRunnerPage = () => {
 
   const handleAutoSubmit = useCallback(async () => {
     await handleSubmit(true);
-  }, [submission, answers, isSubmitting]);
+  }, [attempt, answers, isSubmitting]);
 
   const handleAnswerChange = (questionId: string, value: string, type: "RADIO" | "CHECKBOX" | "SEQUENCE") => {
     setAnswers(prev => {
@@ -127,18 +127,18 @@ export const ParticipantTestRunnerPage = () => {
     <div className="page-stack">
       <div className="test-runner-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <PageHeader title={test.title} subtitle={test.description} />
-        {submission?.isActive && timeLeft !== null && (
+        {attempt?.status === "IN_PROGRESS" && timeLeft !== null && (
           <div className={`test-timer ${isTimerDanger ? 'danger pulse' : ''}`} style={{ fontSize: '1.5rem', fontWeight: 'bold', color: isTimerDanger ? 'red' : 'inherit' }}>
             Осталось: {formatTime(timeLeft)}
           </div>
         )}
       </div>
 
-      {!submission?.isActive ? (
+      {attempt?.status === "COMPLETED" ? (
         <Card>
           <div className="page-stack">
             <h2>Тест завершен</h2>
-            <p>Ваш результат: <strong>{submission?.score} баллов</strong></p>
+            <p>Ваш результат: <strong>{attempt?.score} баллов</strong></p>
             <Button onClick={() => navigate("/participant/test")}>Вернуться к списку тестов</Button>
           </div>
         </Card>

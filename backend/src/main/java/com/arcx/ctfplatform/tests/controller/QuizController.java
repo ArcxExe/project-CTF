@@ -1,8 +1,9 @@
 package com.arcx.ctfplatform.tests.controller;
 
-import com.arcx.ctfplatform.tests.dto.QuizOptionStudentResponse;
-import com.arcx.ctfplatform.tests.dto.QuizQuestionStudentResponse;
-import com.arcx.ctfplatform.tests.entity.QuizSubmission;
+import com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO;
+import com.arcx.ctfplatform.tests.dto.OptionForStudentDTO;
+import com.arcx.ctfplatform.tests.dto.QuestionForStudentDTO;
+import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.service.QuizService;
 import com.arcx.ctfplatform.users.entity.User;
 import lombok.RequiredArgsConstructor;
@@ -22,18 +23,21 @@ public class QuizController {
 
     private final QuizService quizService;
 
-    @PostMapping("/{testId}/start")
-    public ResponseEntity<QuizSubmission> startQuiz(
-            @PathVariable UUID testId,
+    @PostMapping("/{quizId}/start")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<QuizAttempt> startQuiz(
+            @PathVariable UUID quizId,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(quizService.startQuiz(testId, user.getId()));
+        return ResponseEntity.ok(quizService.startQuiz(quizId, user.getId()));
     }
 
-    @PostMapping("/submissions/{submissionId}/submit")
-    public ResponseEntity<QuizSubmission> submitAnswers(
-            @PathVariable UUID submissionId,
-            @RequestBody Map<UUID, List<String>> answers) {
-        return ResponseEntity.ok(quizService.submitAnswers(submissionId, answers));
+    @PostMapping("/{quizId}/submit")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<QuizAttempt> submitAnswers(
+            @PathVariable UUID quizId,
+            @AuthenticationPrincipal User user,
+            @RequestBody List<QuestionAnswerDTO> answers) {
+        return ResponseEntity.ok(quizService.submitAnswers(quizId, user.getId(), answers));
     }
 
     @PutMapping("/questions/{questionId}")
@@ -66,20 +70,21 @@ public class QuizController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/{testId}/questions")
-    public ResponseEntity<List<QuizQuestionStudentResponse>> getTestQuestions(@PathVariable UUID testId) {
-        List<Map<String, Object>> data = quizService.getQuestionsWithOptions(testId);
+    @GetMapping("/{quizId}/questions")
+    @PreAuthorize("hasAnyRole('STUDENT', 'TEACHER', 'ADMIN')")
+    public ResponseEntity<List<QuestionForStudentDTO>> getTestQuestions(@PathVariable UUID quizId) {
+        List<Map<String, Object>> data = quizService.getQuestionsWithOptions(quizId);
         
-        List<QuizQuestionStudentResponse> response = data.stream().map(map -> {
+        List<QuestionForStudentDTO> response = data.stream().map(map -> {
             var q = (com.arcx.ctfplatform.tests.entity.QuizQuestion) map.get("question");
             @SuppressWarnings("unchecked")
             var opts = (List<com.arcx.ctfplatform.tests.entity.QuizOption>) map.get("options");
             
-            List<QuizOptionStudentResponse> studentOpts = opts.stream().map(o -> 
-                new QuizOptionStudentResponse(o.getId(), o.getQuestionId(), o.getOptionText(), o.getSequenceOrder())
+            List<OptionForStudentDTO> studentOpts = opts.stream().map(o ->
+                new OptionForStudentDTO(o.getId(), o.getQuestionId(), o.getOptionText(), o.getSequenceOrder())
             ).toList();
             
-            return new QuizQuestionStudentResponse(
+            return new QuestionForStudentDTO(
                 q.getId(),
                 q.getTestId(),
                 q.getType(),
