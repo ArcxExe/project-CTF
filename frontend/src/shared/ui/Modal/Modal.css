@@ -27,3 +27,4 @@
   background: var(--bg-elevated);
   color: var(--text);
 }
+.ui-modal-backdrop { z-index: 9999; }
