@@ -163,4 +163,27 @@ public class QuizService {
             return map;
         }).collect(Collectors.toList());
     }
+
+    @Transactional
+    public void autoSubmitExpired() {
+        List<QuizAttempt> activeAttempts = attemptRepository.findAllByStatus(QuizAttemptStatus.IN_PROGRESS);
+        Instant now = Instant.now();
+
+        for (QuizAttempt attempt : activeAttempts) {
+            testRepository.findById(attempt.getQuizId()).ifPresent(test -> {
+                Instant deadline = attempt.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
+                if (now.isAfter(deadline)) {
+                    studentRepository.findById(attempt.getStudentId()).ifPresent(student -> {
+                        if (student.getUserId() != null) {
+                            try {
+                                submitAnswers(attempt.getQuizId(), student.getUserId(), Collections.emptyList());
+                            } catch (Exception e) {
+                                // In case of error (like already submitted concurrently), ignore
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }
 }

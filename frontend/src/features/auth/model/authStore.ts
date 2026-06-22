@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { authTokenStorage } from "@/shared/api/client";
 import { authApi } from "@/shared/api/services/auth";
-import type { Role } from "@/shared/types/common";
 import type { AuthPayload, User } from "@/shared/types/user";
 
 interface AuthState {
@@ -10,7 +9,6 @@ interface AuthState {
   isSessionHydrated: boolean;
   login: (payload: AuthPayload) => Promise<void>;
   register: (payload: AuthPayload & { studentCode: string }) => Promise<void>;
-  loginAsMockUser: (role: Role) => Promise<void>;
   logout: () => void;
   restoreSession: () => Promise<void>;
 }
@@ -35,17 +33,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const session = await authApi.register(payload);
-      set({ currentUser: session.user, isLoading: false, isSessionHydrated: true });
-    } catch (error) {
-      set({ isLoading: false });
-      throw error;
-    }
-  },
-
-  loginAsMockUser: async (role) => {
-    set({ isLoading: true });
-    try {
-      const session = await authApi.loginAsRole(role);
       set({ currentUser: session.user, isLoading: false, isSessionHydrated: true });
     } catch (error) {
       set({ isLoading: false });

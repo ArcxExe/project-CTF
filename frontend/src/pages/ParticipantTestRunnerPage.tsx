@@ -39,6 +39,18 @@ export const ParticipantTestRunnerPage = () => {
         const newAttempt = await testsApi.startQuiz(testId);
         setAttempt(newAttempt);
 
+        // Load saved answers from local storage if available
+        if (newAttempt && newAttempt.status === "IN_PROGRESS") {
+          const savedAnswers = localStorage.getItem(`quiz_answers_${testId}`);
+          if (savedAnswers) {
+            try {
+              setAnswers(JSON.parse(savedAnswers));
+            } catch (e) {
+              console.error("Failed to parse saved answers", e);
+            }
+          }
+        }
+
       } catch (error) {
         push({
           title: error instanceof Error ? error.message : "Ошибка загрузки теста",
@@ -79,6 +91,9 @@ export const ParticipantTestRunnerPage = () => {
     try {
       const result = await testsApi.submitAnswers(testId, answers);
       setAttempt(result);
+      if (testId) {
+        localStorage.removeItem(`quiz_answers_${testId}`);
+      }
       push({
         title: `Ответы ${isAuto ? 'автоматически отправлены' : 'сохранены'}!`,
         variant: "success",
@@ -97,17 +112,26 @@ export const ParticipantTestRunnerPage = () => {
     await handleSubmit(true);
   }, [attempt, answers, isSubmitting]);
 
+  // Save answers to local storage whenever they change
+  useEffect(() => {
+    if (attempt && attempt.status === "IN_PROGRESS" && testId) {
+      localStorage.setItem(`quiz_answers_${testId}`, JSON.stringify(answers));
+    }
+  }, [answers, attempt, testId]);
+
   const handleAnswerChange = (questionId: string, value: string, type: "RADIO" | "CHECKBOX" | "SEQUENCE") => {
     setAnswers(prev => {
+      let newAnswers;
       if (type === "RADIO") {
-        return { ...prev, [questionId]: [value] };
-      }
-      if (type === "CHECKBOX") {
+        newAnswers = { ...prev, [questionId]: [value] };
+      } else if (type === "CHECKBOX") {
         const current = prev[questionId] || [];
         const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
-        return { ...prev, [questionId]: next };
+        newAnswers = { ...prev, [questionId]: next };
+      } else {
+        newAnswers = prev;
       }
-      return prev;
+      return newAnswers;
     });
   };
 

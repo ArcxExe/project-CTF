@@ -30,6 +30,7 @@ export interface Student {
   stream: string;
   laboratoryScore: number;
   status: "active" | "blocked" | "out_of_rating" | "disqualified";
+  createdBy?: string;
   createdAt?: ISODateTime;
   updatedAt?: ISODateTime;
 }

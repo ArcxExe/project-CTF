@@ -4,6 +4,7 @@ import { groupsApi } from "@/shared/api/services/groups";
 import { streamsApi } from "@/shared/api/services/streams";
 import type { Group, Student, Stream } from "@/shared/types/education";
 import { useToastStore } from "@/entities/notification/model/toastStore";
+import { useAuthStore } from "@/features/auth/model/authStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -31,6 +32,7 @@ export const StudentsPage = () => {
   const [studentCode, setStudentCode] = useState("");
   const [groupId, setGroupId] = useState("");
   const { push } = useToastStore();
+  const { currentUser } = useAuthStore();
 
   const loadData = () => {
     Promise.all([
@@ -287,12 +289,15 @@ export const StudentsPage = () => {
                 { key: "nickname", title: "Ник" },
                 { key: "email", title: "Email" },
                 { key: "group", title: "Группа" },
-                { key: "actions", title: "Действия", render: (s) => (
-                  <div style={{display: "flex", gap: "0.5rem"}}>
-                    <Button onClick={() => handleApprove(s.id)}>Подтвердить</Button>
-                    <Button variant="danger" onClick={() => handleReject(s.id)}>Отклонить</Button>
-                  </div>
-                ) }
+                { key: "actions", title: "Действия", render: (s) => {
+                  const isCreatedByMe = s.createdBy === currentUser?.id;
+                  return (
+                    <div style={{display: "flex", gap: "0.5rem"}}>
+                      <Button onClick={() => handleApprove(s.id)} disabled={isCreatedByMe}>Подтвердить</Button>
+                      <Button variant="danger" onClick={() => handleReject(s.id)} disabled={isCreatedByMe}>Отклонить</Button>
+                    </div>
+                  );
+                } }
               ]}
               rows={pendingStudents}
             />
@@ -340,6 +345,7 @@ export const StudentsPage = () => {
                     style={{ padding: "0.25rem", height: "auto", width: "auto" }}
                     value={student.status}
                     onChange={(e) => handleUpdateStatus(student.id, e.target.value)}
+                    disabled={student.createdBy === currentUser?.id}
                   >
                     <option value="active">Активен</option>
                     <option value="blocked">Заблокирован</option>

@@ -66,11 +66,6 @@ const toUserFromAuth = (response: BackendAuthResponse): User => ({
   status: "active",
 });
 
-const demoCredentials: Record<Role, AuthPayload> = {
-  admin: { email: "admin@ctf.local", password: "password" },
-  participant: { email: "student@ctf.local", password: "password" },
-};
-
 export const authApi = {
   async login(payload: AuthPayload): Promise<AuthSession> {
     const auth = await apiRequest<BackendAuthResponse>("/api/auth/login", {
@@ -119,10 +114,6 @@ export const authApi = {
         user: toUserFromAuth(auth),
       };
     }
-  },
-
-  async loginAsRole(role: Role): Promise<AuthSession> {
-    return this.login(demoCredentials[role]);
   },
 
   async getCurrentUser(): Promise<User> {

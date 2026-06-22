@@ -5,11 +5,10 @@ import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
 import { Input } from "@/shared/ui/Input/Input";
-import type { Role } from "@/shared/types/common";
 import "./pages.css";
 
 export const LoginPage = () => {
-  const { currentUser, login, loginAsMockUser, isLoading } = useAuthStore();
+  const { currentUser, login, isLoading } = useAuthStore();
   const { push } = useToastStore();
   const [email, setEmail] = useState("admin@ctf.local");
   const [password, setPassword] = useState("password");
@@ -28,18 +27,6 @@ export const LoginPage = () => {
     } catch (error) {
       push({
         title: error instanceof Error ? error.message : "Не удалось войти",
-        variant: "error",
-      });
-    }
-  };
-
-  const handleMockLogin = async (role: Role) => {
-    try {
-      await loginAsMockUser(role);
-      push({ title: role === "admin" ? "Вход как админ выполнен" : "Вход как участник выполнен", variant: "success" });
-    } catch (error) {
-      push({
-        title: error instanceof Error ? error.message : "Не удалось войти через mock user",
         variant: "error",
       });
     }
@@ -73,22 +60,6 @@ export const LoginPage = () => {
               {isLoading ? "Входим..." : "Войти"}
             </Button>
           </form>
-
-          <div className="mock-login-panel">
-            <span className="muted">Быстрый вход через backend seed users</span>
-            <div className="mock-login-panel__actions">
-              <Button variant="secondary" onClick={() => void handleMockLogin("admin")} disabled={isLoading}>
-                Войти как admin
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => void handleMockLogin("participant")}
-                disabled={isLoading}
-              >
-                Войти как participant
-              </Button>
-            </div>
-          </div>
 
           <p className="auth-switch">
             Нет аккаунта? <Link to="/register">Зарегистрироваться</Link>
