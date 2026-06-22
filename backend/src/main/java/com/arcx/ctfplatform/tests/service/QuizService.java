@@ -162,4 +162,26 @@ public class QuizService {
             return map;
         }).collect(Collectors.toList());
     }
+
+    @Transactional
+    public void autoSubmitExpired() {
+        List<QuizSubmission> activeSubmissions = submissionRepository.findAllByIsActiveTrue();
+        Instant now = Instant.now();
+
+        for (QuizSubmission submission : activeSubmissions) {
+            testRepository.findById(submission.getTestId()).ifPresent(test -> {
+                Instant deadline = submission.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
+                if (now.isAfter(deadline)) {
+                    // Force submit with empty answers to grade anything that might have been partially answered
+                    // But wait, the frontend currently submits answers explicitly. If we force submit from backend with empty map, it will just get 0 for unanswered ones.
+                    // This is expected if they didn't submit. If they did submit, it would already be inactive.
+                    try {
+                        submitAnswers(submission.getId(), Collections.emptyMap());
+                    } catch (Exception e) {
+                        // In case of error (like already submitted concurrently), ignore
+                    }
+                }
+            });
+        }
+    }
 }

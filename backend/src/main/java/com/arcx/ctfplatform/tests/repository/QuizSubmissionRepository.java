@@ -9,4 +9,5 @@ import java.util.List;
 public interface QuizSubmissionRepository extends JpaRepository<QuizSubmission, UUID> {
     Optional<QuizSubmission> findByTestIdAndStudentIdAndIsActiveTrue(UUID testId, UUID studentId);
     List<QuizSubmission> findAllByTestIdAndStudentId(UUID testId, UUID studentId);
+    List<QuizSubmission> findAllByIsActiveTrue();
 }
