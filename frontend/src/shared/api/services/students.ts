@@ -66,7 +66,7 @@ export interface CreateStudentPayload {
   lastName: string;
   middleName?: string;
   studentCode: string;
-  groupId: string;
+  groupId?: string;
 }
 
 export const studentsApi = {

@@ -101,7 +101,7 @@ export const StudentsPage = () => {
         lastName,
         middleName,
         studentCode,
-        groupId,
+        groupId: groupId || undefined,
       });
       push({ title: "Студент успешно создан", variant: "success" });
       setIsCreateModalOpen(false);
@@ -218,7 +218,7 @@ export const StudentsPage = () => {
             </Button>
             <Button
               onClick={handleCreateStudent}
-              disabled={!firstName || !lastName || !studentCode || !groupId}
+              disabled={!firstName || !lastName || !studentCode}
             >
               Создать
             </Button>
