@@ -20,7 +20,8 @@ public record StudentResponse(
         String flowName,
         StudentStatus status,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        UUID createdBy
 ) {
     @Component
     public static class Mapper implements IMapping<Student, StudentResponse> {
@@ -56,7 +57,8 @@ public record StudentResponse(
                     flowName,
                     from.getStatus(),
                     from.getCreatedAt(),
-                    from.getUpdatedAt()
+                    from.getUpdatedAt(),
+                    from.getCreatedBy()
             );
         }
     }

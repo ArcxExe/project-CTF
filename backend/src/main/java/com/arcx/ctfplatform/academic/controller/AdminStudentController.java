@@ -28,6 +28,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 
+import com.arcx.ctfplatform.users.entity.User;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+
 @RestController
 @RequestMapping("/api/admin/students")
 @PreAuthorize("hasRole('ADMIN')")
@@ -38,13 +41,17 @@ public class AdminStudentController {
     private final StudentService studentService;
 
     @PostMapping
-    public ResponseEntity<StudentResponse> createStudent(@Valid @RequestBody StudentCreateRequest request) {
-        return ResponseEntity.ok(studentService.createStudent(request));
+    public ResponseEntity<StudentResponse> createStudent(
+            @Valid @RequestBody StudentCreateRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(studentService.createStudent(request, user));
     }
 
     @PostMapping("/import")
-    public ResponseEntity<Void> importStudents(@RequestParam("file") MultipartFile file) throws IOException {
-        studentImportService.parseAndImportStudents(file.getInputStream());
+    public ResponseEntity<Void> importStudents(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User user) throws IOException {
+        studentImportService.parseAndImportStudents(file.getInputStream(), user);
         return ResponseEntity.ok().build();
     }
 
@@ -60,8 +67,9 @@ public class AdminStudentController {
     @PatchMapping("/{id}/status")
     public ResponseEntity<StudentResponse> updateStudentStatus(
             @PathVariable UUID id,
-            @Valid @RequestBody StudentStatusUpdateRequest request) {
-        return ResponseEntity.ok(studentService.updateStatus(id, request.status()));
+            @Valid @RequestBody StudentStatusUpdateRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(studentService.updateStatus(id, request.status(), user));
     }
 
     @GetMapping("/pending-bindings")
@@ -71,14 +79,18 @@ public class AdminStudentController {
     }
 
     @PostMapping("/{id}/approve-binding")
-    public ResponseEntity<Void> approveBinding(@PathVariable UUID id) {
-        studentService.approveBinding(id);
+    public ResponseEntity<Void> approveBinding(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user) {
+        studentService.approveBinding(id, user);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{id}/reject-binding")
-    public ResponseEntity<Void> rejectBinding(@PathVariable UUID id) {
-        studentService.rejectBinding(id);
+    public ResponseEntity<Void> rejectBinding(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user) {
+        studentService.rejectBinding(id, user);
         return ResponseEntity.ok().build();
     }
 }

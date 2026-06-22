@@ -14,6 +14,7 @@ interface BackendStudentResponse {
   groupName?: string;
   status?: string;
   laboratoryScore?: number;
+  createdBy?: string;
 }
 
 const statusMap: Record<string, Student["status"]> = {
@@ -46,6 +47,7 @@ const toStudent = (response: BackendStudentResponse): Student => {
     stream: "Не назначен",
     laboratoryScore: response.laboratoryScore ?? 0,
     status: response.status ? (statusMap[response.status] ?? (response.status.toLowerCase() as any)) : "active",
+    createdBy: response.createdBy,
   };
 };
 

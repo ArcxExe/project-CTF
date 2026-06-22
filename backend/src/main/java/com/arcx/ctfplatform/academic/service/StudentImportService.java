@@ -28,7 +28,7 @@ public class StudentImportService {
     private final StudentRepository studentRepository;
 
     @Transactional
-    public void parseAndImportStudents(InputStream csvStream) {
+    public void parseAndImportStudents(InputStream csvStream, com.arcx.ctfplatform.users.entity.User currentUser) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(csvStream, StandardCharsets.UTF_8))) {
             String line;
             boolean isHeader = true;
@@ -85,6 +85,9 @@ public class StudentImportService {
                     student.setLastName(lastName);
                     student.setMiddleName(middleName.isEmpty() ? null : middleName);
                     student.setAcademicGroup(group);
+                    if (student.getCreatedBy() == null) {
+                        student.setCreatedBy(currentUser.getId());
+                    }
                     studentRepository.save(student);
                 } else {
                     Student student = Student.builder()
@@ -94,6 +97,7 @@ public class StudentImportService {
                             .studentCode(studentCode)
                             .academicGroup(group)
                             .status(StudentStatus.ACTIVE)
+                            .createdBy(currentUser.getId())
                             .build();
                     studentRepository.save(student);
                 }

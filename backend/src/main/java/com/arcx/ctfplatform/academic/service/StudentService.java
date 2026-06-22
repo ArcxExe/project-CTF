@@ -18,6 +18,7 @@ import com.arcx.ctfplatform.common.config.IMapping;
 
 import lombok.RequiredArgsConstructor;
 
+import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 
 @Service
@@ -30,7 +31,7 @@ public class StudentService {
     private final IMapping<Student, StudentResponse> studentMapper;
 
     @Transactional
-    public StudentResponse createStudent(StudentCreateRequest request) {
+    public StudentResponse createStudent(StudentCreateRequest request, User currentUser) {
         if (studentRepository.findByStudentCode(request.studentCode()).isPresent()) {
             throw new IllegalArgumentException("Student code already exists");
         }
@@ -46,6 +47,7 @@ public class StudentService {
                 .studentCode(request.studentCode())
                 .academicGroup(group)
                 .status(StudentStatus.ACTIVE)
+                .createdBy(currentUser.getId())
                 .build();
         return studentMapper.mapping(studentRepository.save(student));
     }
@@ -63,9 +65,12 @@ public class StudentService {
     }
 
     @Transactional
-    public StudentResponse updateStatus(UUID id, StudentStatus status) {
+    public StudentResponse updateStatus(UUID id, StudentStatus status, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        if (student.getCreatedBy() != null && student.getCreatedBy().equals(currentUser.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("Вы не можете изменять статус студента, которого создали сами");
+        }
         student.setStatus(status);
         return studentMapper.mapping(studentRepository.save(student));
     }
@@ -77,9 +82,12 @@ public class StudentService {
     }
 
     @Transactional
-    public void approveBinding(UUID id) {
+    public void approveBinding(UUID id, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        if (student.getCreatedBy() != null && student.getCreatedBy().equals(currentUser.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("Вы не можете изменять статус студента, которого создали сами");
+        }
         if (student.getStatus() != StudentStatus.PENDING_BINDING_VERIFICATION) {
             throw new IllegalStateException("Student is not pending binding verification");
         }
@@ -88,9 +96,12 @@ public class StudentService {
     }
 
     @Transactional
-    public void rejectBinding(UUID id) {
+    public void rejectBinding(UUID id, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        if (student.getCreatedBy() != null && student.getCreatedBy().equals(currentUser.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("Вы не можете изменять статус студента, которого создали сами");
+        }
         if (student.getStatus() != StudentStatus.PENDING_BINDING_VERIFICATION) {
             throw new IllegalStateException("Student is not pending binding verification");
         }

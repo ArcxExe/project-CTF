@@ -61,6 +61,9 @@ public class Student {
     @Column(name = "user_id", unique = true)
     private UUID userId;
 
+    @Column(name = "created_by")
+    private UUID createdBy;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default
