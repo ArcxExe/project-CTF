@@ -443,6 +443,7 @@ export const StudentsPage = () => {
           { key: "fullName", title: "ФИО" },
           { key: "nickname", title: "Ник" },
           { key: "group", title: "Группа" },
+          { key: "stream", title: "Поток" },
           {
             key: "status",
             title: "Статус",

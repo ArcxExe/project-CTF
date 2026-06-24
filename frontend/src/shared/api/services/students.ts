@@ -12,6 +12,8 @@ interface BackendStudentResponse {
   studentCode?: string;
   groupId?: string;
   groupName?: string;
+  flowId?: string;
+  flowName?: string;
   status?: string;
   laboratoryScore?: number;
   createdBy?: string;
@@ -47,7 +49,8 @@ const toStudent = (response: BackendStudentResponse): Student => {
     studentCode: response.studentCode,
     groupId: response.groupId,
     group: response.groupName ?? "Без группы",
-    stream: "Не назначен",
+    streamId: response.flowId,
+    stream: response.flowName ?? "Без потока",
     laboratoryScore: response.laboratoryScore ?? 0,
     status: response.status ? (statusMap[response.status] ?? (response.status.toLowerCase() as any)) : "active",
     createdBy: response.createdBy,
