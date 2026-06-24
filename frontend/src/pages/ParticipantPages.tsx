@@ -447,6 +447,7 @@ export const ParticipantTaskPage = () => {
 
 export const ParticipantRatingPage = () => {
   const { push } = useToastStore();
+  const { currentUser } = useAuthStore();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [leaderboardHidden, setLeaderboardHidden] = useState(false);
@@ -555,12 +556,20 @@ export const ParticipantRatingPage = () => {
             { key: "group", title: "Группа" },
             { key: "score", title: "Баллы" },
             { key: "solved", title: "Решено" },
-          { key: "v1", title: "v1" },
-          { key: "v2", title: "v2" },
-          { key: "sCoefficient", title: "S" },
-          { key: "recommendedGrade", title: "Рекомендованная оценка" },
+            { key: "v1", title: "v1" },
+            { key: "v2", title: "v2" },
+            { key: "sCoefficient", title: "S" },
+            { key: "recommendedGrade", title: "Рекомендованная оценка" },
           ]}
           rows={rows}
+          rowClassName={(row) =>
+            currentUser &&
+            (row.participant === currentUser.username ||
+              row.participant === currentUser.email ||
+              row.participant === currentUser.fullName)
+              ? "highlighted-row"
+              : ""
+          }
         />
       )}
     </div>

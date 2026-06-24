@@ -22,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.arcx.ctfplatform.academic.service.GradingService;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -71,9 +73,21 @@ public class LeaderboardService {
     }
 
     public void broadcastUpdate() {
-        // Broadcasts shouldn't send the entire global payload.
-        // As a temporary fix for backwards compatibility, we send the global leaderboard.
-        // A better approach would be for the frontend to re-fetch when it receives an UPDATE event.
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        executeBroadcast();
+                    }
+                }
+            );
+        } else {
+            executeBroadcast();
+        }
+    }
+
+    private void executeBroadcast() {
         List<LeaderboardEntry> snapshot = getLeaderboardSnapshot(null, null);
         List<SseEmitter> deadEmitters = new ArrayList<>();
         
@@ -101,6 +115,7 @@ public class LeaderboardService {
         emitters.removeAll(deadEmitters);
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<LeaderboardEntry> getLeaderboardSnapshot(String scopeType, UUID scopeId) {
         List<Student> allStudents = studentRepository.findAll();
 
@@ -123,8 +138,21 @@ public class LeaderboardService {
         Map<UUID, String> groupIdToGroupName = allGroups.stream()
                 .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName));
 
-        // In a real app we would filter by competition or do group by queries. For now, doing it in memory for simplicity.
+        // Determine active competition
         List<Competition> competitions = competitionRepository.findAll();
+        java.time.Instant now = java.time.Instant.now();
+        Competition activeComp = competitions.stream()
+                .filter(c -> c.getStartsAt() != null && c.getEndsAt() != null &&
+                             !now.isBefore(c.getStartsAt()) && !now.isAfter(c.getEndsAt()))
+                .findFirst()
+                .orElse(competitions.isEmpty() ? null : competitions.get(0));
+
+        boolean leaderboardHiddenGlobally = activeComp != null && activeComp.isLeaderboardHidden();
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ADMIN"));
+        String currentUsername = auth != null ? auth.getName() : null;
 
         List<LeaderboardEntry> entries = new ArrayList<>();
 
@@ -132,8 +160,10 @@ public class LeaderboardService {
         Map<UUID, Integer> studentScores = new HashMap<>();
 
         for (Student student : allStudents) {
-            boolean isHidden = competitions.stream().anyMatch(c -> c.isLeaderboardHidden() || (c.getHiddenStudentIds() != null && c.getHiddenStudentIds().contains(student.getId())));
-            if (isHidden) {
+            // Check if student is individually hidden
+            boolean isIndividuallyHidden = activeComp != null && activeComp.getHiddenStudentIds() != null && 
+                                           activeComp.getHiddenStudentIds().contains(student.getId());
+            if (isIndividuallyHidden && !isAdmin) {
                 continue;
             }
 
@@ -175,7 +205,6 @@ public class LeaderboardService {
                 score = 0;
             }
 
-
             // 4. Adjustments
             List<ScoreAdjustment> adjustments = scoreAdjustmentRepository.findAllByStudentId(student.getId());
             score += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
@@ -187,8 +216,16 @@ public class LeaderboardService {
         }
 
         for (Student student : allStudents) {
-            boolean isHidden = competitions.stream().anyMatch(c -> c.isLeaderboardHidden() || (c.getHiddenStudentIds() != null && c.getHiddenStudentIds().contains(student.getId())));
-            if (isHidden) {
+            // Check if student was skipped in the first loop
+            if (!studentScores.containsKey(student.getId())) {
+                continue;
+            }
+
+            String studentUsername = userIdToUsername.get(student.getUserId());
+            boolean isCurrentUser = studentUsername != null && studentUsername.equalsIgnoreCase(currentUsername);
+
+            // If leaderboard is hidden globally, students can only see their own entry
+            if (leaderboardHiddenGlobally && !isAdmin && !isCurrentUser) {
                 continue;
             }
 

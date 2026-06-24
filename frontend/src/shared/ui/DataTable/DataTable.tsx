@@ -10,9 +10,10 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   rows: T[];
   emptyLabel?: string;
+  rowClassName?: (row: T) => string;
 }
 
-export const DataTable = <T,>({ columns, rows, emptyLabel = "Нет данных" }: DataTableProps<T>) => (
+export const DataTable = <T,>({ columns, rows, emptyLabel = "Нет данных", rowClassName }: DataTableProps<T>) => (
   <div className="ui-table-wrap">
     <table className="ui-table">
       <thead>
@@ -25,7 +26,7 @@ export const DataTable = <T,>({ columns, rows, emptyLabel = "Нет данных
       <tbody>
         {rows.length > 0 ? (
           rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
+            <tr key={rowIndex} className={rowClassName ? rowClassName(row) : undefined}>
               {columns.map((column) => (
                 <td key={String(column.key)}>
                   {column.render

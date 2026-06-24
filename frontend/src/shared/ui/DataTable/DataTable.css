@@ -31,3 +31,12 @@
   text-align: center;
   color: var(--text-secondary);
 }
+
+.ui-table tbody tr.highlighted-row {
+  background: var(--bg-muted);
+  font-weight: 600;
+}
+
+.ui-table tbody tr.highlighted-row td {
+  color: var(--primary);
+}

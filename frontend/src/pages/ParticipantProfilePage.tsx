@@ -46,15 +46,15 @@ export const ParticipantProfilePage = () => {
       const groupScores = leaderboard.filter(r => r.group === myGroup).map(r => r.score);
       const maxScore = Math.max(0, ...groupScores);
       if (maxScore > 0) {
-        v2 = ((myScore / maxScore) * 100).toFixed(1) + "%";
+        v2 = ((myScore / maxScore) * 100).toFixed(1);
       } else {
-        v2 = "0%";
+        v2 = "0";
       }
     } else {
       // Participant not found in leaderboard (maybe hidden or 0 points)
       // Try to find if they are just 0 points but others have points?
       // Since leaderboard returns all, if not found, it's 0.
-      v2 = "0%";
+      v2 = "0";
     }
   }
 
@@ -70,13 +70,11 @@ export const ParticipantProfilePage = () => {
           <div className="page-stack">
             <h3>Личные данные</h3>
             <div className="info-grid">
-              <span>ФИО / Ник:</span>
+              <span>Ник:</span>
               <strong>{currentUser?.fullName || currentUser?.email}</strong>
-              <span>Роль:</span>
-              <strong>{currentUser?.role}</strong>
               <span>Баллы:</span>
               <strong>{myScore}</strong>
-              <span>Оценка (v2):</span>
+              <span>Оценка:</span>
               <strong>{v2}</strong>
             </div>
           </div>
