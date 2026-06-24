@@ -15,18 +15,12 @@ const adminLinks: LayoutLink[] = [
   { to: "/admin/students", label: "Студенты" },
   { to: "/admin/groups", label: "Группы" },
   { to: "/admin/streams", label: "Потоки" },
-  { to: "/admin/lab-scores", label: "Баллы за лабораторные" },
   { to: "/admin/competitions", label: "Соревнования" },
   { to: "/admin/tests", label: "Тесты" },
-  { to: "/admin/categories", label: "Категории" },
   { to: "/admin/tasks", label: "Задания" },
-  { to: "/admin/manual-reviews", label: "Ручные проверки" },
   { to: "/admin/rating", label: "Рейтинг" },
   { to: "/admin/promo-codes", label: "Промокоды" },
-  { to: "/admin/sanctions", label: "Санкции" },
   { to: "/admin/analytics", label: "Аналитика" },
-  { to: "/admin/action-log", label: "Журнал действий" },
-  { to: "/admin/reports", label: "Отчеты" },
 ];
 
 const participantLinks: LayoutLink[] = [
