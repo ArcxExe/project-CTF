@@ -1,4 +1,9 @@
 node_modules
 dist
+build
+.git
+.idea
+.vscode
+*.log
 .vite
 npm-debug.log
