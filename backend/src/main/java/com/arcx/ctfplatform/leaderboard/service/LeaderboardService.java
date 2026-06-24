@@ -156,7 +156,7 @@ public class LeaderboardService {
             }
 
             // 3. Promo Codes
-            List<PromoCodeClaim> claims = promoCodeClaimRepository.findAllByStudentId(student.getId());
+            List<PromoCodeClaim> claims = promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId());
             int additions = 0;
             int subtractions = 0;
             double multiplier = 1.0;
