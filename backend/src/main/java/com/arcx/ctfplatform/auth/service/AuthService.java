@@ -84,6 +84,15 @@ public class AuthService {
             throw new BadCredentialsException("Invalid credentials");
         }
 
+        if (user.getRole() == Role.STUDENT) {
+            studentRepository.findByUserId(user.getId()).ifPresent(student -> {
+                if (student.getStatus() == com.arcx.ctfplatform.academic.entity.StudentStatus.BLOCKED ||
+                    student.getStatus() == com.arcx.ctfplatform.academic.entity.StudentStatus.DISQUALIFIED) {
+                    throw new BadCredentialsException("User is blocked or disqualified");
+                }
+            });
+        }
+
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new IllegalArgumentException("User is not active");
         }

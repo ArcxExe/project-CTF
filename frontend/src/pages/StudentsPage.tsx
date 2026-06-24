@@ -4,7 +4,6 @@ import { groupsApi } from "@/shared/api/services/groups";
 import { streamsApi } from "@/shared/api/services/streams";
 import type { Group, Student, Stream } from "@/shared/types/education";
 import { useToastStore } from "@/entities/notification/model/toastStore";
-import { useAuthStore } from "@/features/auth/model/authStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -31,8 +30,17 @@ export const StudentsPage = () => {
   const [middleName, setMiddleName] = useState("");
   const [studentCode, setStudentCode] = useState("");
   const [groupId, setGroupId] = useState("");
+
+  // Edit Student Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editMiddleName, setEditMiddleName] = useState("");
+  const [editStudentCode, setEditStudentCode] = useState("");
+  const [editGroupId, setEditGroupId] = useState("");
+
   const { push } = useToastStore();
-  const { currentUser } = useAuthStore();
 
   const loadData = () => {
     Promise.all([
@@ -118,6 +126,49 @@ export const StudentsPage = () => {
       loadData();
     } catch (e: unknown) {
       push({ title: "Ошибка при создании студента", variant: "error" });
+    }
+  };
+
+  const handleEditClick = (student: Student) => {
+    setEditingStudentId(student.id);
+    setEditFirstName(student.firstName ?? "");
+    setEditLastName(student.lastName ?? "");
+    setEditMiddleName(student.middleName ?? "");
+    setEditStudentCode(student.studentCode ?? "");
+    setEditGroupId(student.groupId ?? "");
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateStudent = async () => {
+    if (!editingStudentId) return;
+    try {
+      await studentsApi.updateStudent(editingStudentId, {
+        firstName: editFirstName,
+        lastName: editLastName,
+        middleName: editMiddleName,
+        studentCode: editStudentCode,
+        groupId: editGroupId || undefined,
+      });
+      push({ title: "Данные студента успешно обновлены", variant: "success" });
+      setIsEditModalOpen(false);
+      loadData();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : "Ошибка при обновлении данных студента";
+      push({ title: errMsg, variant: "error" });
+    }
+  };
+
+  const handleDeleteStudent = async (id: string) => {
+    if (!window.confirm("Вы уверены, что хотите удалить этого студента?")) {
+      return;
+    }
+    try {
+      await studentsApi.deleteStudent(id);
+      push({ title: "Студент успешно удален", variant: "success" });
+      loadData();
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : "Ошибка при удалении студента";
+      push({ title: errMsg, variant: "error" });
     }
   };
 
@@ -279,6 +330,67 @@ export const StudentsPage = () => {
         </div>
       </Modal>
 
+      <Modal
+        open={isEditModalOpen}
+        title="Редактирование студента"
+        onClose={() => setIsEditModalOpen(false)}
+      >
+        <div className="page-stack">
+          <Input
+            label="Имя"
+            value={editFirstName}
+            onChange={(e) => setEditFirstName(e.target.value)}
+          />
+          <Input
+            label="Фамилия"
+            value={editLastName}
+            onChange={(e) => setEditLastName(e.target.value)}
+          />
+          <Input
+            label="Отчество"
+            value={editMiddleName}
+            onChange={(e) => setEditMiddleName(e.target.value)}
+          />
+          <Input
+            label="Код студента (ИСУ и т.п.)"
+            value={editStudentCode}
+            onChange={(e) => setEditStudentCode(e.target.value)}
+          />
+          <label className="ui-field">
+            <span className="ui-field__label">Академическая группа</span>
+            <select
+              className="ui-input"
+              value={editGroupId}
+              onChange={(e) => setEditGroupId(e.target.value)}
+            >
+              <option value="">
+                Выберите группу
+              </option>
+              {groupedGroups.map((grouping) => (
+                <optgroup key={grouping.streamId || "no-stream"} label={grouping.streamName}>
+                  {grouping.groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", marginTop: "1rem" }}>
+            <Button variant="secondary" onClick={() => setIsEditModalOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleUpdateStudent}
+              disabled={!editFirstName || !editLastName || !editStudentCode || !editGroupId}
+            >
+              Сохранить
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {pendingStudents.length > 0 && (
         <Card>
           <div className="page-stack">
@@ -290,11 +402,10 @@ export const StudentsPage = () => {
                 { key: "email", title: "Email" },
                 { key: "group", title: "Группа" },
                 { key: "actions", title: "Действия", render: (s) => {
-                  const isCreatedByMe = s.createdBy === currentUser?.id;
                   return (
                     <div style={{display: "flex", gap: "0.5rem"}}>
-                      <Button onClick={() => handleApprove(s.id)} disabled={isCreatedByMe}>Подтвердить</Button>
-                      <Button variant="danger" onClick={() => handleReject(s.id)} disabled={isCreatedByMe}>Отклонить</Button>
+                      <Button onClick={() => handleApprove(s.id)}>Подтвердить</Button>
+                      <Button variant="danger" onClick={() => handleReject(s.id)}>Отклонить</Button>
                     </div>
                   );
                 } }
@@ -345,7 +456,6 @@ export const StudentsPage = () => {
                     style={{ padding: "0.25rem", height: "auto", width: "auto" }}
                     value={student.status}
                     onChange={(e) => handleUpdateStatus(student.id, e.target.value)}
-                    disabled={student.createdBy === currentUser?.id}
                   >
                     <option value="active">Активен</option>
                     <option value="blocked">Заблокирован</option>
@@ -355,6 +465,20 @@ export const StudentsPage = () => {
                 </div>
               );
             }
+          },
+          {
+            key: "actions",
+            title: "Действия",
+            render: (student) => (
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Button variant="secondary" onClick={() => handleEditClick(student)}>
+                  Редактировать
+                </Button>
+                <Button variant="danger" onClick={() => handleDeleteStudent(student.id)}>
+                  Удалить
+                </Button>
+              </div>
+            )
           },
         ]}
         rows={filteredStudents}

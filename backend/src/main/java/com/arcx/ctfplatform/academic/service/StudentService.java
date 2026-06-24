@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.arcx.ctfplatform.academic.dto.StudentResponse;
 import com.arcx.ctfplatform.academic.dto.StudentCreateRequest;
+import com.arcx.ctfplatform.academic.dto.StudentUpdateRequest;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
@@ -68,9 +69,6 @@ public class StudentService {
     public StudentResponse updateStatus(UUID id, StudentStatus status, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
-        if (student.getCreatedBy() != null && student.getCreatedBy().equals(currentUser.getId())) {
-            throw new org.springframework.security.access.AccessDeniedException("Вы не можете изменять статус студента, которого создали сами");
-        }
         student.setStatus(status);
         return studentMapper.mapping(studentRepository.save(student));
     }
@@ -85,9 +83,6 @@ public class StudentService {
     public void approveBinding(UUID id, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
-        if (student.getCreatedBy() != null && student.getCreatedBy().equals(currentUser.getId())) {
-            throw new org.springframework.security.access.AccessDeniedException("Вы не можете изменять статус студента, которого создали сами");
-        }
         if (student.getStatus() != StudentStatus.PENDING_BINDING_VERIFICATION) {
             throw new IllegalStateException("Student is not pending binding verification");
         }
@@ -99,9 +94,6 @@ public class StudentService {
     public void rejectBinding(UUID id, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
-        if (student.getCreatedBy() != null && student.getCreatedBy().equals(currentUser.getId())) {
-            throw new org.springframework.security.access.AccessDeniedException("Вы не можете изменять статус студента, которого создали сами");
-        }
         if (student.getStatus() != StudentStatus.PENDING_BINDING_VERIFICATION) {
             throw new IllegalStateException("Student is not pending binding verification");
         }
@@ -111,6 +103,55 @@ public class StudentService {
         student.setStatus(StudentStatus.ACTIVE);
         studentRepository.save(student);
         
+        if (userId != null) {
+            userRepository.deleteById(userId);
+        }
+    }
+
+    @Transactional
+    public StudentResponse updateStudent(UUID id, StudentUpdateRequest request, User currentUser) {
+        Student student = studentRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        
+        if (!student.getStudentCode().equals(request.studentCode()) &&
+            studentRepository.findByStudentCode(request.studentCode()).isPresent()) {
+            throw new IllegalArgumentException("Student code already exists");
+        }
+        
+        AcademicGroup group = null;
+        if (request.groupId() != null) {
+            group = groupRepository.findById(request.groupId())
+                    .orElseThrow(() -> new IllegalArgumentException("Group not found"));
+        }
+        
+        student.setFirstName(request.firstName());
+        student.setLastName(request.lastName());
+        student.setMiddleName(request.middleName());
+        student.setStudentCode(request.studentCode());
+        student.setAcademicGroup(group);
+        
+        return studentMapper.mapping(studentRepository.save(student));
+    }
+
+    @Transactional
+    public void deleteStudent(UUID id) {
+        Student student = studentRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        
+        UUID studentId = student.getId();
+        UUID userId = student.getUserId();
+        
+        // Clean up dependent tables first
+        studentRepository.deleteLabScoreHistoryByStudentId(studentId);
+        studentRepository.deleteLabScoresByStudentId(studentId);
+        studentRepository.deleteManualSubmissionsByStudentId(studentId);
+        studentRepository.deleteQuizAttemptsByStudentId(studentId);
+        studentRepository.deleteScoreAdjustmentsByStudentId(studentId);
+        
+        // Delete student
+        studentRepository.delete(student);
+        
+        // Delete user if exists
         if (userId != null) {
             userRepository.deleteById(userId);
         }

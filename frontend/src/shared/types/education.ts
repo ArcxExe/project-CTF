@@ -21,6 +21,9 @@ export interface Student {
   id: Identifier;
   userId?: Identifier;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
   nickname: string;
   email: string;
   studentCode?: string;

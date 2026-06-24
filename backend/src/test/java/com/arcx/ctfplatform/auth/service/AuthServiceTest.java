@@ -7,6 +7,7 @@ import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.entity.UserStatus;
 import com.arcx.ctfplatform.users.repository.UserRepository;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
@@ -31,6 +32,9 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private StudentRepository studentRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -46,6 +50,7 @@ class AuthServiceTest {
 
         when(userRepository.findByEmail("student1@test.local")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", user.getPasswordHash())).thenReturn(true);
+        when(studentRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
         when(jwtService.generateAccessToken(user)).thenReturn("token-by-email");
         when(jwtService.getAccessTokenTtl()).thenReturn(3_600_000L);
 
@@ -63,6 +68,7 @@ class AuthServiceTest {
         when(userRepository.findByEmail("student1")).thenReturn(Optional.empty());
         when(userRepository.findByUsername("student1")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", user.getPasswordHash())).thenReturn(true);
+        when(studentRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
         when(jwtService.generateAccessToken(user)).thenReturn("token-by-username");
         when(jwtService.getAccessTokenTtl()).thenReturn(3_600_000L);
 

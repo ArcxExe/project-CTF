@@ -39,6 +39,9 @@ const toStudent = (response: BackendStudentResponse): Student => {
   return {
     id: response.id,
     fullName: calculatedFullName || "Студент",
+    firstName: response.firstName,
+    lastName: response.lastName,
+    middleName: response.middleName,
     nickname: response.username ?? "",
     email: response.email ?? "",
     studentCode: response.studentCode,
@@ -76,6 +79,19 @@ export const studentsApi = {
     await apiRequest<void>("/api/admin/students", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+
+  async updateStudent(id: string, payload: CreateStudentPayload): Promise<void> {
+    await apiRequest<void>(`/api/admin/students/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteStudent(id: string): Promise<void> {
+    await apiRequest<void>(`/api/admin/students/${id}`, {
+      method: "DELETE",
     });
   },
 
