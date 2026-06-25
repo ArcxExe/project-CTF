@@ -5,10 +5,12 @@
   display: grid;
   place-items: center;
   padding: 16px;
+  overflow-y: auto;
 }
 
 .ui-modal-content {
   width: min(560px, 100%);
+  margin: auto;
 }
 
 .ui-modal-content--md {
