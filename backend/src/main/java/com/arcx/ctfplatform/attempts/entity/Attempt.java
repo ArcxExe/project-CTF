@@ -30,8 +30,8 @@ public class Attempt {
     @GeneratedValue
     private UUID id;
 
-    @Column(name = "challenge_id", nullable = false)
-    private UUID challengeId;
+    @Column(name = "task_id", nullable = false)
+    private UUID taskId;
 
     @Column(name = "student_id", nullable = false)
     private UUID studentId;

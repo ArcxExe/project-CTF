@@ -2,7 +2,9 @@ package com.arcx.ctfplatform.competitions.entity;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -11,6 +13,9 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -21,11 +26,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import lombok.Builder;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
 
 @Entity
 @Table(name = "competitions")
@@ -47,11 +49,11 @@ public class Competition {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "starts_at")
-    private Instant startsAt;
+    @Column(name = "start_date")
+    private Instant startDate;
 
-    @Column(name = "ends_at")
-    private Instant endsAt;
+    @Column(name = "end_date")
+    private Instant endDate;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
@@ -72,6 +74,15 @@ public class Competition {
     @Column(name = "hidden_student_ids", columnDefinition = "jsonb")
     @Builder.Default
     private List<UUID> hiddenStudentIds = new ArrayList<>();
+
+    @ManyToMany
+    @JoinTable(
+        name = "competition_tasks",
+        joinColumns = @JoinColumn(name = "competition_id"),
+        inverseJoinColumns = @JoinColumn(name = "task_id")
+    )
+    @Builder.Default
+    private Set<CtfTask> tasks = new LinkedHashSet<>();
 
     @PrePersist
     protected void onCreate() {

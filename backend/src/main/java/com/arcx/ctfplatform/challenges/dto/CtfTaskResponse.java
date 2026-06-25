@@ -5,31 +5,33 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
-import com.arcx.ctfplatform.challenges.entity.Challenge;
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
 import com.arcx.ctfplatform.common.config.IMapping;
 
-public record ChallengeResponse(
+public record CtfTaskResponse(
         UUID id,
         String title,
         String description,
-        Integer points,
-        UUID competitionId,
+        String category,
+        String difficulty,
+        Integer baseScore,
         Instant createdAt
 ) {
     @Component
-    public static class Mapper implements IMapping<Challenge, ChallengeResponse> {
+    public static class Mapper implements IMapping<CtfTask, CtfTaskResponse> {
 
         @Override
-        public ChallengeResponse mapping(Challenge from) {
+        public CtfTaskResponse mapping(CtfTask from) {
             if (from == null) {
                 return null;
             }
-            return new ChallengeResponse(
+            return new CtfTaskResponse(
                     from.getId(),
                     from.getTitle(),
                     from.getDescription(),
-                    from.getPoints(),
-                    from.getCompetitionId(),
+                    from.getCategory(),
+                    from.getDifficulty(),
+                    from.getBaseScore(),
                     from.getCreatedAt()
             );
         }

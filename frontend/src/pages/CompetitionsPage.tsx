@@ -3,6 +3,8 @@ import type { FormEvent } from "react";
 import { adminCompetitionsApi } from "@/shared/api/services/competitions";
 import type { CompetitionPayload } from "@/shared/api/services/competitions";
 import { studentsApi } from "@/shared/api/services/students";
+import { challengesApi } from "@/shared/api/services/challenges";
+import type { Challenge } from "@/shared/api/services/challenges";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
@@ -19,6 +21,8 @@ const statusLabels: Record<Competition["status"], string> = {
   draft: "Черновик",
   published: "Опубликовано",
   archived: "Архив",
+  active: "Активно",
+  completed: "Завершено",
 };
 
 const formatToLocalTime = (isoString?: string) => {
@@ -49,6 +53,9 @@ const initialForm = {
 export const CompetitionsPage = () => {
   const [items, setItems] = useState<Competition[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [allTasks, setAllTasks] = useState<Challenge[]>([]);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [taskSearch, setTaskSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,12 +64,14 @@ export const CompetitionsPage = () => {
   const { push } = useToastStore();
 
   const loadData = async () => {
-    const [comps, studs] = await Promise.all([
+    const [comps, studs, tasks] = await Promise.all([
       adminCompetitionsApi.getAll(),
       studentsApi.getAll().catch(() => [] as Student[]),
+      challengesApi.getAll().catch(() => [] as Challenge[]),
     ]);
     setItems(comps);
     setStudents(studs);
+    setAllTasks(tasks);
   };
 
   useEffect(() => {
@@ -80,12 +89,16 @@ export const CompetitionsPage = () => {
 
   const handleCreateClick = () => {
     setEditingId(null);
+    setSelectedTaskIds([]);
+    setTaskSearch("");
     setForm(initialForm);
     setIsModalOpen(true);
   };
 
   const handleEditClick = (competition: Competition) => {
     setEditingId(competition.id);
+    setSelectedTaskIds(competition.tasks?.map((t) => t.id) || []);
+    setTaskSearch("");
     setForm({
       title: competition.title,
       description: competition.description || "",
@@ -133,17 +146,19 @@ export const CompetitionsPage = () => {
 
     try {
       if (editingId) {
-        const updated = await adminCompetitionsApi.update(editingId, payload);
-        setItems((current) => current.map((item) => (item.id === editingId ? updated : item)));
+        await adminCompetitionsApi.update(editingId, payload);
+        await adminCompetitionsApi.linkTasks(editingId, selectedTaskIds);
         push({ title: "Соревнование обновлено", variant: "success" });
       } else {
         const created = await adminCompetitionsApi.create(payload);
-        setItems((current) => [created, ...current]);
+        await adminCompetitionsApi.linkTasks(created.id, selectedTaskIds);
         push({ title: "Соревнование создано", variant: "success" });
       }
+      await loadData();
       setForm(initialForm);
       setIsModalOpen(false);
       setEditingId(null);
+      setSelectedTaskIds([]);
     } catch (error) {
       push({
         title: error instanceof Error ? error.message : "Не удалось сохранить соревнование",
@@ -174,8 +189,8 @@ export const CompetitionsPage = () => {
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
                     <h3>{competition.title}</h3>
-                    <Badge tone={competition.status === "published" ? "success" : "info"}>
-                      {statusLabels[competition.status]}
+                    <Badge tone={competition.status === "published" || competition.status === "active" ? "success" : "info"}>
+                      {statusLabels[competition.status] || competition.status}
                     </Badge>
                   </div>
                   <p className="muted" style={{ margin: "0.5rem 0" }}>{competition.description || "Описание не указано"}</p>
@@ -187,6 +202,7 @@ export const CompetitionsPage = () => {
                   <span>📝 Тесты: {competition.sumTestPoints ? "Суммировать баллы" : "Не суммировать"}</span>
                   <span>📊 Лидерборд: {competition.leaderboardHidden ? "Скрыт" : "Показан"}</span>
                   <span>👥 Скрытых студентов: {competition.hiddenStudentIds?.length || 0}</span>
+                  <span>🎯 Заданий CTF: {competition.tasks?.length || 0}</span>
                   
                   <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
                     <Button variant="secondary" onClick={() => handleEditClick(competition)}>Редактировать</Button>
@@ -244,8 +260,8 @@ export const CompetitionsPage = () => {
                 }
               >
                 <option value="draft">Черновик</option>
-                <option value="published">Опубликовано</option>
-                <option value="archived">Архив</option>
+                <option value="active">Активно</option>
+                <option value="completed">Завершено</option>
               </select>
             </label>
           </div>
@@ -271,6 +287,62 @@ export const CompetitionsPage = () => {
           </div>
 
           <label className="ui-field">
+            <span className="ui-field__label">Задания CTF (выберите из пула)</span>
+            <div style={{ margin: "0.25rem 0" }}>
+              <input
+                type="text"
+                className="ui-input"
+                placeholder="Поиск заданий по названию или категории..."
+                value={taskSearch}
+                onChange={(e) => setTaskSearch(e.target.value)}
+                style={{ fontSize: "0.85rem", padding: "0.4rem" }}
+              />
+            </div>
+            <div className="task-checkbox-list" style={{
+              maxHeight: "180px",
+              overflowY: "auto",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "0.5rem",
+              marginTop: "0.25rem",
+              background: "var(--card-bg)"
+            }}>
+              {allTasks
+                .filter((task) =>
+                  [task.title, task.category]
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(taskSearch.toLowerCase())
+                )
+                .map((task) => {
+                  const isChecked = selectedTaskIds.includes(task.id);
+                  return (
+                    <label key={task.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSelectedTaskIds((current) =>
+                            checked
+                              ? [...current, task.id]
+                              : current.filter((id) => id !== task.id)
+                          );
+                        }}
+                      />
+                      <span>
+                        {task.title} <span className="muted" style={{ fontSize: "0.8rem" }}>({task.category || "без категории"} · {task.points} pts)</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              {allTasks.length === 0 && (
+                <span className="muted">Нет доступных заданий в пуле</span>
+              )}
+            </div>
+          </label>
+
+          <label className="ui-field" style={{ marginTop: "1rem" }}>
             <span className="ui-field__label">Скрыть студентов из рейтинга</span>
             <div className="student-checkbox-list" style={{
               maxHeight: "150px",

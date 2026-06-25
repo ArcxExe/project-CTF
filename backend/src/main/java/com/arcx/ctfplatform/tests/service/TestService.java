@@ -8,9 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.arcx.ctfplatform.attempts.dto.ChallengeSubmitResponse;
 import com.arcx.ctfplatform.attempts.service.AttemptService;
-import com.arcx.ctfplatform.challenges.dto.ChallengeResponse;
-import com.arcx.ctfplatform.challenges.entity.Challenge;
-import com.arcx.ctfplatform.challenges.repository.ChallengeRepository;
+import com.arcx.ctfplatform.challenges.dto.CtfTaskResponse;
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
+import com.arcx.ctfplatform.challenges.repository.CtfTaskRepository;
 import com.arcx.ctfplatform.common.config.IMapping;
 import com.arcx.ctfplatform.tests.dto.TestRequest;
 import com.arcx.ctfplatform.tests.dto.TestResponse;
@@ -27,10 +27,10 @@ import lombok.RequiredArgsConstructor;
 public class TestService {
 
     private final TestRepository testRepository;
-    private final ChallengeRepository challengeRepository;
+    private final CtfTaskRepository ctfTaskRepository;
     private final AttemptService attemptService;
     private final IMapping<Test, TestResponse> testMapper;
-    private final IMapping<Challenge, ChallengeResponse> challengeMapper;
+    private final IMapping<CtfTask, CtfTaskResponse> ctfTaskMapper;
     private final LeaderboardService leaderboardService;
 
     @Transactional(readOnly = true)
@@ -39,10 +39,10 @@ public class TestService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChallengeResponse> getChallengesForTest(UUID testId) {
+    public List<CtfTaskResponse> getChallengesForTest(UUID testId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
-        return challengeMapper.mappingList(test.getChallenges());
+        return ctfTaskMapper.mappingList(test.getTasks());
     }
 
     @Transactional
@@ -50,7 +50,7 @@ public class TestService {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
 
-        boolean hasChallenge = test.getChallenges().stream().anyMatch(c -> c.getId().equals(challengeId));
+        boolean hasChallenge = test.getTasks().stream().anyMatch(c -> c.getId().equals(challengeId));
         if (!hasChallenge) {
             throw new IllegalArgumentException("Challenge not found in this test");
         }
@@ -112,11 +112,11 @@ public class TestService {
     public void addChallengeToTest(UUID testId, UUID challengeId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
-        Challenge challenge = challengeRepository.findById(challengeId)
-                .orElseThrow(() -> new IllegalArgumentException("Challenge not found"));
+        CtfTask task = ctfTaskRepository.findById(challengeId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
-        if (!test.getChallenges().contains(challenge)) {
-            test.getChallenges().add(challenge);
+        if (!test.getTasks().contains(task)) {
+            test.getTasks().add(task);
             testRepository.save(test);
         }
     }
@@ -125,10 +125,10 @@ public class TestService {
     public void removeChallengeFromTest(UUID testId, UUID challengeId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
-        Challenge challenge = challengeRepository.findById(challengeId)
-                .orElseThrow(() -> new IllegalArgumentException("Challenge not found"));
+        CtfTask task = ctfTaskRepository.findById(challengeId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
-        test.getChallenges().remove(challenge);
+        test.getTasks().remove(task);
         testRepository.save(test);
     }
 }

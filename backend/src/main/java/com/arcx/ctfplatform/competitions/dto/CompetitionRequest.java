@@ -12,8 +12,8 @@ import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 public record CompetitionRequest(
         @NotBlank String title,
         String description,
-        Instant startsAt,
-        Instant endsAt,
+        Instant startDate,
+        Instant endDate,
         @NotNull CompetitionStatus status,
         boolean sumTestPoints,
         boolean leaderboardHidden,

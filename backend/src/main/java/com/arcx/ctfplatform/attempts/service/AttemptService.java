@@ -1,6 +1,7 @@
 package com.arcx.ctfplatform.attempts.service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import com.arcx.ctfplatform.challenges.entity.TaskType;
@@ -11,8 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.arcx.ctfplatform.attempts.dto.ChallengeSubmitResponse;
 import com.arcx.ctfplatform.attempts.entity.Attempt;
 import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
-import com.arcx.ctfplatform.challenges.entity.Challenge;
-import com.arcx.ctfplatform.challenges.repository.ChallengeRepository;
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
+import com.arcx.ctfplatform.challenges.repository.CtfTaskRepository;
 import com.arcx.ctfplatform.competitions.entity.Competition;
 import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
@@ -30,7 +31,7 @@ import com.arcx.ctfplatform.users.entity.User;
 public class AttemptService {
 
     private final StudentRepository studentRepository;
-    private final ChallengeRepository challengeRepository;
+    private final CtfTaskRepository ctfTaskRepository;
     private final AttemptRepository attemptRepository;
     private final CompetitionRepository competitionRepository;
     private final FileStorageService fileStorageService;
@@ -38,26 +39,26 @@ public class AttemptService {
     private final LeaderboardService leaderboardService;
 
     @Transactional
-    public ChallengeSubmitResponse submitFlag(UUID userId, UUID challengeId, String submittedFlag) {
+    public ChallengeSubmitResponse submitFlag(UUID userId, UUID taskId, String submittedFlag) {
         Student student = getStudentOrThrow(userId);
-        Challenge challenge = getChallengeOrThrow(challengeId);
+        CtfTask task = getTaskOrThrow(taskId);
 
-        if (challenge.getTaskType() != TaskType.FLAG) {
+        if (task.getTaskType() != TaskType.FLAG) {
             throw new IllegalArgumentException("Invalid task type for this endpoint");
         }
 
-        checkCompetitionStatus(challenge.getCompetitionId());
-        checkIfAlreadySolved(challengeId, student.getId());
+        checkCompetitionStatusForTask(task);
+        checkIfAlreadySolved(taskId, student.getId());
 
-        boolean isCorrect = challenge.getFlag().equals(submittedFlag);
+        boolean isCorrect = task.getFlag().equals(submittedFlag);
         
-        long solves = attemptRepository.countByChallengeIdAndIsCorrect(challenge.getId(), true);
+        long solves = attemptRepository.countByTaskIdAndIsCorrect(task.getId(), true);
         boolean isFirstBlood = isCorrect && solves == 0;
         
-        Integer score = isCorrect ? (challenge.isFirstBloodOnly() ? (isFirstBlood ? challenge.getMaxScore() : 0) : challenge.getPoints()) : 0;
+        Integer score = isCorrect ? (task.isFirstBloodOnly() ? (isFirstBlood ? task.getMaxScore() : 0) : task.getBaseScore()) : 0;
 
         Attempt attempt = Attempt.builder()
-                .challengeId(challenge.getId())
+                .taskId(task.getId())
                 .studentId(student.getId())
                 .submittedFlag(submittedFlag)
                 .isCorrect(isCorrect)
@@ -72,7 +73,7 @@ public class AttemptService {
                 String username = userRepository.findById(student.getUserId())
                     .map(User::getUsername)
                     .orElse(student.getStudentCode() != null ? student.getStudentCode() : "Student");
-                leaderboardService.broadcastFirstBlood(username, challenge.getTitle());
+                leaderboardService.broadcastFirstBlood(username, task.getTitle());
             }
         }
 
@@ -81,24 +82,24 @@ public class AttemptService {
     }
 
     @Transactional
-    public ChallengeSubmitResponse submitFile(UUID userId, UUID challengeId, MultipartFile file) {
+    public ChallengeSubmitResponse submitFile(UUID userId, UUID taskId, MultipartFile file) {
         Student student = getStudentOrThrow(userId);
-        Challenge challenge = getChallengeOrThrow(challengeId);
+        CtfTask task = getTaskOrThrow(taskId);
 
-        if (challenge.getTaskType() != TaskType.FILE_UPLOAD) {
+        if (task.getTaskType() != TaskType.FILE_UPLOAD) {
             throw new IllegalArgumentException("Invalid task type for file upload");
         }
 
-        checkCompetitionStatus(challenge.getCompetitionId());
-        checkIfAlreadySolved(challengeId, student.getId());
+        checkCompetitionStatusForTask(task);
+        checkIfAlreadySolved(taskId, student.getId());
 
         String filePath = fileStorageService.storeFile(file);
 
         Attempt attempt = Attempt.builder()
-                .challengeId(challenge.getId())
+                .taskId(task.getId())
                 .studentId(student.getId())
                 .filePath(filePath)
-                .isCorrect(false) // Needs manual grading
+                .isCorrect(false)
                 .scoreAwarded(0)
                 .build();
 
@@ -112,9 +113,9 @@ public class AttemptService {
         Attempt attempt = attemptRepository.findById(attemptId)
                 .orElseThrow(() -> new IllegalArgumentException("Attempt not found"));
         
-        Challenge challenge = getChallengeOrThrow(attempt.getChallengeId());
+        CtfTask task = getTaskOrThrow(attempt.getTaskId());
         
-        long prevSubmissions = attemptRepository.countByChallengeIdAndSubmittedAtBefore(challenge.getId(), attempt.getSubmittedAt());
+        long prevSubmissions = attemptRepository.countByTaskIdAndSubmittedAtBefore(task.getId(), attempt.getSubmittedAt());
 
         double multiplier = 0.1;
         if (prevSubmissions == 0) {
@@ -123,7 +124,6 @@ public class AttemptService {
             multiplier = 0.5;
         }
 
-        // Apply manual multiplier
         multiplier = multiplier * manualPercentMultiplier;
         int calculatedScore = (int) (score * multiplier);
 
@@ -140,44 +140,41 @@ public class AttemptService {
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
     }
 
-    private Challenge getChallengeOrThrow(UUID challengeId) {
-        // Find with lock for First Blood thread safety
-        return challengeRepository.findByIdWithLock(challengeId)
-                .orElseThrow(() -> new IllegalArgumentException("Challenge not found"));
+    private CtfTask getTaskOrThrow(UUID taskId) {
+        return ctfTaskRepository.findByIdWithLock(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found"));
     }
 
-    private void checkCompetitionStatus(UUID competitionId) {
-        Competition competition = competitionRepository.findById(competitionId)
-                .orElseThrow(() -> new IllegalArgumentException("Competition not found"));
+    private void checkCompetitionStatusForTask(CtfTask task) {
+        List<Competition> competitions = competitionRepository.findAll().stream()
+                .filter(c -> c.getTasks().contains(task))
+                .toList();
 
-        if (competition.getStatus() != CompetitionStatus.PUBLISHED) {
-            throw new IllegalArgumentException("Competition is not active");
+        if (competitions.isEmpty()) {
+            throw new IllegalArgumentException("Task is not associated with any competition");
         }
 
         Instant now = Instant.now();
-        if (competition.getStartsAt() != null && now.isBefore(competition.getStartsAt())) {
-            throw new IllegalArgumentException("Competition is not active");
-        }
-        if (competition.getEndsAt() != null && now.isAfter(competition.getEndsAt())) {
-            throw new IllegalArgumentException("Competition is not active");
-        }
-    }
-
-    private void checkIfAlreadySolved(UUID challengeId, UUID studentId) {
-        if (attemptRepository.existsByChallengeIdAndStudentIdAndIsCorrect(challengeId, studentId, true)) {
-            throw new IllegalArgumentException("Challenge already solved");
-        }
-    }
-
-    private Integer calculateScore(Challenge challenge) {
-        if (challenge.isFirstBloodOnly()) {
-            long solves = attemptRepository.countByChallengeIdAndIsCorrect(challenge.getId(), true);
-            if (solves == 0) {
-                return challenge.getMaxScore();
-            } else {
-                return 0; // First blood already taken
+        boolean hasActive = false;
+        for (Competition comp : competitions) {
+            if (comp.getStatus() == CompetitionStatus.ACTIVE) {
+                boolean startsOk = comp.getStartDate() == null || now.isAfter(comp.getStartDate());
+                boolean endsOk = comp.getEndDate() == null || now.isBefore(comp.getEndDate());
+                if (startsOk && endsOk) {
+                    hasActive = true;
+                    break;
+                }
             }
         }
-        return challenge.getPoints(); // Or some degraded calculation if needed, but for normal flag it's just points
+
+        if (!hasActive) {
+            throw new IllegalArgumentException("Competition is not active");
+        }
+    }
+
+    private void checkIfAlreadySolved(UUID taskId, UUID studentId) {
+        if (attemptRepository.existsByTaskIdAndStudentIdAndIsCorrect(taskId, studentId, true)) {
+            throw new IllegalArgumentException("Challenge already solved");
+        }
     }
 }

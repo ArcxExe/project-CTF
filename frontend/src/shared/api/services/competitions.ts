@@ -1,26 +1,28 @@
 import { apiRequest } from "@/shared/api/client";
 import type { Competition } from "@/shared/types/competition";
+import { toChallenge } from "./challenges";
+import type { BackendChallengeResponse } from "./challenges";
 
 /**
  * Matches backend CompetitionResponse (competitions/dto/CompetitionResponse.java).
- * Status enum: DRAFT | PUBLISHED | ARCHIVED (CompetitionStatus.java).
+ * Status enum: DRAFT | ACTIVE | COMPLETED (CompetitionStatus.java).
  */
 interface BackendCompetitionResponse {
   id: string;
   title: string;
   description: string | null;
-  startsAt: string | null;
-  endsAt: string | null;
-  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  startDate: string | null;
+  endDate: string | null;
+  status: "DRAFT" | "ACTIVE" | "COMPLETED";
   createdAt: string | null;
   sumTestPoints: boolean;
   leaderboardHidden: boolean;
   hiddenStudentIds: string[];
+  tasks: BackendChallengeResponse[];
 }
 
 /**
  * Matches backend CompetitionRequest (competitions/dto/CompetitionRequest.java).
- * title and status are @NotBlank / @NotNull on backend.
  */
 export interface CompetitionPayload {
   title: string;
@@ -35,14 +37,16 @@ export interface CompetitionPayload {
 
 const statusMap: Record<BackendCompetitionResponse["status"], Competition["status"]> = {
   DRAFT: "draft",
-  PUBLISHED: "published",
-  ARCHIVED: "archived",
+  ACTIVE: "active",
+  COMPLETED: "completed",
 };
 
 const backendStatusMap: Record<Competition["status"], BackendCompetitionResponse["status"]> = {
   draft: "DRAFT",
-  published: "PUBLISHED",
-  archived: "ARCHIVED",
+  published: "ACTIVE",
+  archived: "COMPLETED",
+  active: "ACTIVE",
+  completed: "COMPLETED",
 };
 
 const toCompetition = (response: BackendCompetitionResponse): Competition => ({
@@ -50,21 +54,22 @@ const toCompetition = (response: BackendCompetitionResponse): Competition => ({
   title: response.title,
   description: response.description ?? "",
   status: statusMap[response.status],
-  startsAt: response.startsAt ?? response.createdAt ?? new Date().toISOString(),
-  endsAt: response.endsAt ?? response.createdAt ?? new Date().toISOString(),
+  startsAt: response.startDate ?? response.createdAt ?? new Date().toISOString(),
+  endsAt: response.endDate ?? response.createdAt ?? new Date().toISOString(),
   ratingVisible: true,
   promoCodesEnabled: false,
   createdAt: response.createdAt ?? undefined,
   sumTestPoints: response.sumTestPoints,
   leaderboardHidden: response.leaderboardHidden,
   hiddenStudentIds: response.hiddenStudentIds || [],
+  tasks: response.tasks ? response.tasks.map(toChallenge) : [],
 });
 
 const toBackendPayload = (payload: CompetitionPayload) => ({
   title: payload.title,
   description: payload.description,
-  startsAt: payload.startsAt,
-  endsAt: payload.endsAt,
+  startDate: payload.startsAt,
+  endDate: payload.endsAt,
   status: backendStatusMap[payload.status],
   sumTestPoints: payload.sumTestPoints,
   leaderboardHidden: payload.leaderboardHidden,
@@ -72,8 +77,7 @@ const toBackendPayload = (payload: CompetitionPayload) => ({
 });
 
 /**
- * Public Competitions API — GET endpoints accessible to all authenticated users.
- * Backend filters results based on the authenticated user's role.
+ * Public Competitions API — GET endpoints available to all authenticated users.
  */
 export const competitionsApi = {
   async getAll(): Promise<Competition[]> {
@@ -88,17 +92,17 @@ export const competitionsApi = {
 };
 
 /**
- * Admin Competitions API — mutation endpoints protected by @PreAuthorize("hasRole('ADMIN')") on backend.
- * All operations use the same /api/competitions base path (single controller).
+ * Admin Competitions API — mutation endpoints.
+ * Admin actions are routed to /api/admin/competitions.
  */
 export const adminCompetitionsApi = {
   async getAll(): Promise<Competition[]> {
-    const response = await apiRequest<BackendCompetitionResponse[]>("/api/competitions");
+    const response = await apiRequest<BackendCompetitionResponse[]>("/api/admin/competitions");
     return response.map(toCompetition);
   },
 
   async create(payload: CompetitionPayload): Promise<Competition> {
-    const response = await apiRequest<BackendCompetitionResponse>("/api/competitions", {
+    const response = await apiRequest<BackendCompetitionResponse>("/api/admin/competitions", {
       method: "POST",
       body: JSON.stringify(toBackendPayload(payload)),
     });
@@ -106,7 +110,7 @@ export const adminCompetitionsApi = {
   },
 
   async update(id: string, payload: CompetitionPayload): Promise<Competition> {
-    const response = await apiRequest<BackendCompetitionResponse>(`/api/competitions/${id}`, {
+    const response = await apiRequest<BackendCompetitionResponse>(`/api/admin/competitions/${id}`, {
       method: "PUT",
       body: JSON.stringify(toBackendPayload(payload)),
     });
@@ -114,8 +118,15 @@ export const adminCompetitionsApi = {
   },
 
   async delete(id: string): Promise<void> {
-    await apiRequest<void>(`/api/competitions/${id}`, {
+    await apiRequest<void>(`/api/admin/competitions/${id}`, {
       method: "DELETE",
+    });
+  },
+
+  async linkTasks(competitionId: string, taskIds: string[]): Promise<void> {
+    await apiRequest<void>(`/api/admin/competitions/${competitionId}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ taskIds }),
     });
   },
 };

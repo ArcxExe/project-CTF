@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record AttemptHistoryResponse(
     UUID attemptId,
-    UUID challengeId,
+    UUID taskId,
     String challengeTitle,
     boolean correct,
     int earnedPoints,

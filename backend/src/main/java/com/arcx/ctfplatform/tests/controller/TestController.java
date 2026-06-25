@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.arcx.ctfplatform.attempts.dto.ChallengeSubmitResponse;
 import com.arcx.ctfplatform.attempts.dto.SubmitFlagRequest;
-import com.arcx.ctfplatform.challenges.dto.ChallengeResponse;
+import com.arcx.ctfplatform.challenges.dto.CtfTaskResponse;
 import com.arcx.ctfplatform.tests.dto.TestResponse;
 import com.arcx.ctfplatform.tests.service.TestService;
 import com.arcx.ctfplatform.users.entity.User;
@@ -36,7 +36,7 @@ public class TestController {
     }
 
     @GetMapping("/{testId}/challenges")
-    public ResponseEntity<List<ChallengeResponse>> getChallengesForTest(@PathVariable UUID testId) {
+    public ResponseEntity<List<CtfTaskResponse>> getChallengesForTest(@PathVariable UUID testId) {
         return ResponseEntity.ok(testService.getChallengesForTest(testId));
     }
 

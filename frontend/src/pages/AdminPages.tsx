@@ -44,11 +44,12 @@ const AdminTasksManagerPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({
-    competitionId: "",
     title: "",
     description: "",
-    points: "100",
+    baseScore: "100",
     flag: "",
+    category: "",
+    difficulty: "easy",
   });
 
   useEffect(() => {
@@ -56,10 +57,6 @@ const AdminTasksManagerPage = () => {
       .then(([challengeRows, competitionRows]) => {
         setTasks(challengeRows);
         setCompetitions(competitionRows);
-        setForm((current) => ({
-          ...current,
-          competitionId: current.competitionId || competitionRows[0]?.id || "",
-        }));
       })
       .catch((error: unknown) => {
         push({
@@ -73,7 +70,7 @@ const AdminTasksManagerPage = () => {
   const filteredTasks = useMemo(
     () =>
       tasks.filter((task) =>
-        [task.title, task.description]
+        [task.title, task.description, task.category, task.difficulty]
           .join(" ")
           .toLowerCase()
           .includes(search.toLowerCase()),
@@ -87,20 +84,22 @@ const AdminTasksManagerPage = () => {
 
     try {
       const created = await adminChallengesApi.create({
-        competitionId: form.competitionId,
         title: form.title,
         description: form.description || undefined,
-        points: Number(form.points),
+        category: form.category || undefined,
+        difficulty: form.difficulty,
+        baseScore: Number(form.baseScore),
         flag: form.flag,
       });
 
       setTasks((current) => [created, ...current]);
       setForm({
-        competitionId: competitions[0]?.id || "",
         title: "",
         description: "",
-        points: "100",
+        baseScore: "100",
         flag: "",
+        category: "",
+        difficulty: "easy",
       });
       setIsModalOpen(false);
       push({ title: "Задание создано", variant: "success" });
@@ -114,12 +113,6 @@ const AdminTasksManagerPage = () => {
     }
   };
 
-  const handlePublish = async (_task: Challenge) => {
-    push({
-      title: "Публикация через API пока не поддерживается",
-      variant: "info",
-    });
-  };
 
   const handleDelete = async (task: Challenge) => {
     if (!window.confirm(`Удалить задание "${task.title}"?`)) {
@@ -166,7 +159,7 @@ const AdminTasksManagerPage = () => {
         <Card>
           <div className="metric-card">
             <span className="muted">Баллов всего</span>
-            <strong>{tasks.reduce((sum, task) => sum + task.points, 0)}</strong>
+            <strong>{tasks.reduce((sum, task) => sum + task.baseScore, 0)}</strong>
           </div>
         </Card>
       </div>
@@ -183,13 +176,26 @@ const AdminTasksManagerPage = () => {
       <DataTable
         columns={[
           { key: "title", title: "Задание" },
-          { key: "points", title: "Баллы" },
+          { key: "category", title: "Категория", render: (task) => task.category || "—" },
+          {
+            key: "difficulty",
+            title: "Сложность",
+            render: (task) => {
+              const diffLabels: Record<string, string> = {
+                easy: "Легко",
+                medium: "Средне",
+                hard: "Сложно",
+              };
+              return diffLabels[task.difficulty || ""] || task.difficulty || "—";
+            },
+          },
+          { key: "baseScore", title: "Баллы", render: (task) => task.baseScore },
           {
             key: "competitionId",
-            title: "Соревнование",
+            title: "Соревнования",
             render: (task) => {
-              const comp = competitions.find((c) => c.id === task.competitionId);
-              return comp ? comp.title : task.competitionId;
+              const linkedComps = competitions.filter((comp) => comp.tasks?.some((t) => t.id === task.id));
+              return linkedComps.length > 0 ? linkedComps.map((c) => c.title).join(", ") : "—";
             },
           },
           {
@@ -197,11 +203,6 @@ const AdminTasksManagerPage = () => {
             title: "Действия",
             render: (task) => (
               <div className="table-actions">
-                {task.status === "draft" && (
-                  <Button variant="secondary" onClick={() => void handlePublish(task)}>
-                    Опубликовать
-                  </Button>
-                )}
                 <Button variant="danger" onClick={() => void handleDelete(task)}>
                   Удалить
                 </Button>
@@ -214,22 +215,6 @@ const AdminTasksManagerPage = () => {
 
       <Modal open={isModalOpen} title="Новое задание" onClose={() => setIsModalOpen(false)}>
         <form className="admin-form" onSubmit={handleCreate}>
-          <label className="ui-field">
-            <span className="ui-field__label">Соревнование</span>
-            <select
-              className="ui-input"
-              value={form.competitionId}
-              onChange={(event) => setForm((current) => ({ ...current, competitionId: event.target.value }))}
-              required
-            >
-              {competitions.map((competition) => (
-                <option key={competition.id} value={competition.id}>
-                  {competition.title}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <Input
             label="Название"
             value={form.title}
@@ -248,11 +233,33 @@ const AdminTasksManagerPage = () => {
 
           <div className="admin-form-grid">
             <Input
+              label="Категория"
+              placeholder="Web, Crypto, Pwn, Reverse..."
+              value={form.category}
+              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+            />
+
+            <label className="ui-field">
+              <span className="ui-field__label">Сложность</span>
+              <select
+                className="ui-input"
+                value={form.difficulty}
+                onChange={(event) => setForm((current) => ({ ...current, difficulty: event.target.value }))}
+              >
+                <option value="easy">Легко</option>
+                <option value="medium">Средне</option>
+                <option value="hard">Сложно</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="admin-form-grid">
+            <Input
               label="Баллы"
               type="number"
               min={1}
-              value={form.points}
-              onChange={(event) => setForm((current) => ({ ...current, points: event.target.value }))}
+              value={form.baseScore}
+              onChange={(event) => setForm((current) => ({ ...current, baseScore: event.target.value }))}
               required
             />
           </div>
@@ -813,10 +820,10 @@ const AdminTestsManagerPage = () => {
               { key: "points", title: "Баллы" },
               {
                 key: "competitionId",
-                title: "Соревнование",
+                title: "Соревнования",
                 render: (challenge) => {
-                  const comp = competitions.find((c) => c.id === challenge.competitionId);
-                  return comp ? comp.title : challenge.competitionId;
+                  const linkedComps = competitions.filter((comp) => comp.tasks?.some((t) => t.id === challenge.id));
+                  return linkedComps.length > 0 ? linkedComps.map((c) => c.title).join(", ") : "—";
                 },
               },
               {

@@ -8,7 +8,7 @@ import com.arcx.ctfplatform.attempts.entity.Attempt;
 
 public record AttemptResponse(
         UUID id,
-        UUID challengeId,
+        UUID taskId,
         UUID studentId,
         String submittedFlag,
         boolean isCorrect,
@@ -25,7 +25,7 @@ public record AttemptResponse(
             }
             return new AttemptResponse(
                     from.getId(),
-                    from.getChallengeId(),
+                    from.getTaskId(),
                     from.getStudentId(),
                     from.getSubmittedFlag(),
                     from.isCorrect(),

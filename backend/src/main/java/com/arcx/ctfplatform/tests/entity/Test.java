@@ -24,7 +24,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import com.arcx.ctfplatform.challenges.entity.Challenge;
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
 
 @Entity
 @Table(name = "tests")
@@ -55,15 +55,15 @@ public class Test {
 
     @Column(name = "time_limit_minutes", nullable = false)
     @Builder.Default
-    private Integer timeLimitMinutes = 60;
+    private java.lang.Integer timeLimitMinutes = 60;
 
     @Column(name = "passing_score", nullable = false)
     @Builder.Default
-    private Integer passingScore = 50;
+    private java.lang.Integer passingScore = 50;
 
     @Column(name = "questions_count", nullable = false)
     @Builder.Default
-    private Integer questionsCount = 0;
+    private java.lang.Integer questionsCount = 0;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -73,12 +73,12 @@ public class Test {
 
     @ManyToMany
     @JoinTable(
-        name = "test_challenges",
+        name = "test_tasks",
         joinColumns = @JoinColumn(name = "test_id"),
-        inverseJoinColumns = @JoinColumn(name = "challenge_id")
+        inverseJoinColumns = @JoinColumn(name = "task_id")
     )
     @Builder.Default
-    private List<Challenge> challenges = new ArrayList<>();
+    private List<CtfTask> tasks = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {

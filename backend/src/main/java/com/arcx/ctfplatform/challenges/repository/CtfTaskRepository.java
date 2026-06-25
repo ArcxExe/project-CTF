@@ -1,6 +1,6 @@
 package com.arcx.ctfplatform.challenges.repository;
 
-import com.arcx.ctfplatform.challenges.entity.Challenge;
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -13,9 +13,9 @@ import jakarta.persistence.LockModeType;
 import java.util.Optional;
 
 @Repository
-public interface ChallengeRepository extends JpaRepository<Challenge, UUID> {
+public interface CtfTaskRepository extends JpaRepository<CtfTask, UUID> {
     
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT c FROM Challenge c WHERE c.id = :id")
-    Optional<Challenge> findByIdWithLock(@Param("id") UUID id);
+    @Query("SELECT c FROM CtfTask c WHERE c.id = :id")
+    Optional<CtfTask> findByIdWithLock(@Param("id") UUID id);
 }

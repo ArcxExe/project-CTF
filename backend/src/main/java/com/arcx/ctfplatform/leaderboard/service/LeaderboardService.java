@@ -142,8 +142,8 @@ public class LeaderboardService {
         List<Competition> competitions = competitionRepository.findAll();
         java.time.Instant now = java.time.Instant.now();
         Competition activeComp = competitions.stream()
-                .filter(c -> c.getStartsAt() != null && c.getEndsAt() != null &&
-                             !now.isBefore(c.getStartsAt()) && !now.isAfter(c.getEndsAt()))
+                .filter(c -> c.getStartDate() != null && c.getEndDate() != null &&
+                             !now.isBefore(c.getStartDate()) && !now.isAfter(c.getEndDate()))
                 .findFirst()
                 .orElse(competitions.isEmpty() ? null : competitions.get(0));
 

@@ -27,15 +27,12 @@ import org.hibernate.type.SqlTypes;
 @Getter
 @Setter
 @EqualsAndHashCode(of = "id")
-@Table(name = "challenges")
-public class Challenge {
+@Table(name = "ctf_tasks")
+public class CtfTask {
 
   @Id
   @GeneratedValue
   private UUID id;
-
-  @Column(name = "competition_id")
-  private UUID competitionId;
 
   @Column(nullable = false)
   private String title;
@@ -43,14 +40,17 @@ public class Challenge {
   @Column(columnDefinition = "TEXT")
   private String description;
 
-  @Column(nullable = false)
-  private Integer points = 100;
+  @Column(length = 100)
+  private String category;
+
+  @Column(length = 50)
+  private String difficulty;
+
+  @Column(name = "base_score", nullable = false)
+  private Integer baseScore = 100;
 
   @Column(nullable = false)
   private String flag;
-
-  @Column(name = "difficulty_level", length = 30)
-  private String difficultyLevel;
 
   @Column(name = "max_score", nullable = false)
   private Integer maxScore = 100;

@@ -1,41 +1,41 @@
 import { apiRequest } from "@/shared/api/client";
 
 /**
- * Frontend Challenge model.
- * Fields category, difficulty, status are kept optional for UI backward-compatibility
- * but are NOT present in the backend ChallengeResponse.
+ * Frontend CTF Task model (formerly Challenge).
  */
-export interface Challenge {
+export interface CtfTask {
   id: string;
-  competitionId: string;
   title: string;
   description: string;
   category?: string;
-  difficulty?: "easy" | "medium" | "hard";
+  difficulty?: "easy" | "medium" | "hard" | string;
+  baseScore: number;
   points: number;
-  status?: "draft" | "published";
   createdAt: string;
 }
 
+export type Challenge = CtfTask;
+
 /**
- * Payload for creating/updating a challenge.
- * Matches backend ChallengeRequest: title, description, points, flag, competitionId.
+ * Payload for creating/updating a task.
  */
 export interface ChallengePayload {
-  competitionId?: string;
   title: string;
   description?: string;
-  points: number;
+  category?: string;
+  difficulty?: string;
+  baseScore: number;
   flag?: string;
 }
 
-/** Matches backend ChallengeResponse (challenges/dto/ChallengeResponse.java) */
+/** Matches backend CtfTaskResponse (challenges/dto/CtfTaskResponse.java) */
 export interface BackendChallengeResponse {
   id: string;
   title: string;
   description: string | null;
-  points: number;
-  competitionId: string;
+  category: string | null;
+  difficulty: string | null;
+  baseScore: number;
   createdAt: string;
 }
 
@@ -48,19 +48,22 @@ export interface SubmitFlagResponse {
 
 export const toChallenge = (response: BackendChallengeResponse): Challenge => ({
   id: response.id,
-  competitionId: response.competitionId,
   title: response.title,
   description: response.description ?? "",
-  points: response.points,
+  category: response.category ?? undefined,
+  difficulty: response.difficulty ?? undefined,
+  baseScore: response.baseScore,
+  points: response.baseScore,
   createdAt: response.createdAt,
 });
 
 const toBackendPayload = (payload: ChallengePayload) => ({
   title: payload.title,
   description: payload.description,
-  points: payload.points,
+  category: payload.category,
+  difficulty: payload.difficulty,
+  baseScore: payload.baseScore,
   flag: payload.flag,
-  competitionId: payload.competitionId,
 });
 
 /**
@@ -86,8 +89,7 @@ export const challengesApi = {
 };
 
 /**
- * Admin Challenges API — mutation endpoints protected by @PreAuthorize("hasRole('ADMIN')") on backend.
- * Uses the same /api/challenges base path (single controller in backend).
+ * Admin Challenges API — mutation endpoints protected on backend.
  */
 export const adminChallengesApi = {
   async getAll(): Promise<Challenge[]> {
