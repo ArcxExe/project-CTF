@@ -684,7 +684,14 @@ const AdminTestsManagerPage = () => {
         if (q.id === selectedQuestionId) {
           return {
             ...q,
-            options: q.options.map(o => o.id === option.id ? { ...o, isCorrect: updated.isCorrect } : o)
+            options: q.options.map(o => {
+              if (o.id === option.id) {
+                return { ...o, isCorrect: updated.isCorrect };
+              } else if (q.type === "RADIO" && updated.isCorrect) {
+                return { ...o, isCorrect: false };
+              }
+              return o;
+            })
           };
         }
         return q;
@@ -920,69 +927,72 @@ const AdminTestsManagerPage = () => {
           setQuestions([]);
           setSelectedQuestionId(null);
         }}
+        size="lg"
       >
-        <div className="constructor-layout" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", minHeight: "480px", maxHeight: "650px", overflow: "hidden" }}>
+        <div className="constructor-layout" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", height: "580px", overflow: "hidden" }}>
           {/* Left Column: Questions List & Add/Edit Question */}
-          <div style={{ display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)", paddingRight: "1.5rem", overflowY: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)", paddingRight: "1.5rem", height: "100%", minHeight: 0 }}>
             <h4>Вопросы ({questions.length})</h4>
-            {isQuestionsLoading ? (
-              <Loader label="Загрузка вопросов..." />
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
-                {questions.map((q) => (
-                  <div
-                    key={q.id}
-                    onClick={() => setSelectedQuestionId(q.id)}
-                    style={{
-                      padding: "0.75rem",
-                      borderRadius: "var(--radius)",
-                      border: q.id === selectedQuestionId ? "2px solid var(--primary)" : "1px solid var(--border)",
-                      background: q.id === selectedQuestionId ? "rgba(var(--primary-rgb, 79, 70, 229), 0.08)" : "var(--card-bg)",
-                      cursor: "pointer",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: "0.5rem"
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary)", fontWeight: "bold" }}>
-                        {q.type} · {q.points} баллов · Порядок: {q.ordering}
+            <div style={{ flex: 1, overflowY: "auto", minHeight: 0, marginBottom: "1rem" }}>
+              {isQuestionsLoading ? (
+                <Loader label="Загрузка вопросов..." />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                  {questions.map((q) => (
+                    <div
+                      key={q.id}
+                      onClick={() => setSelectedQuestionId(q.id)}
+                      style={{
+                        padding: "0.75rem",
+                        borderRadius: "var(--radius)",
+                        border: q.id === selectedQuestionId ? "2px solid var(--primary)" : "1px solid var(--border)",
+                        background: q.id === selectedQuestionId ? "rgba(var(--primary-rgb, 79, 70, 229), 0.08)" : "var(--card-bg)",
+                        cursor: "pointer",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "0.5rem"
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--primary)", fontWeight: "bold" }}>
+                          {q.type} · {q.points} баллов · Порядок: {q.ordering}
+                        </div>
+                        <div style={{ fontWeight: "500", marginTop: "0.25rem" }}>{q.text}</div>
                       </div>
-                      <div style={{ fontWeight: "500", marginTop: "0.25rem" }}>{q.text}</div>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button
+                          type="button"
+                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartEditQuestion(q);
+                          }}
+                          title="Редактировать вопрос"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDeleteQuestion(q.id);
+                          }}
+                          title="Удалить вопрос"
+                        >
+                          ❌
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <button
-                        type="button"
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartEditQuestion(q);
-                        }}
-                        title="Редактировать вопрос"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        type="button"
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.95rem" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleDeleteQuestion(q.id);
-                        }}
-                        title="Удалить вопрос"
-                      >
-                        ❌
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {questions.length === 0 && <div className="muted" style={{ padding: "1rem 0" }}>Вопросов пока нет. Добавьте первый вопрос ниже.</div>}
-              </div>
-            )}
+                  ))}
+                  {questions.length === 0 && <div className="muted" style={{ padding: "1rem 0" }}>Вопросов пока нет. Добавьте первый вопрос ниже.</div>}
+                </div>
+              )}
+            </div>
 
             {/* Add/Edit Question Form */}
-            <form onSubmit={handleSaveQuestion} style={{ marginTop: "auto", paddingTop: "1.5rem", borderTop: "1px dashed var(--border)" }}>
+            <form onSubmit={handleSaveQuestion} style={{ borderTop: "1px dashed var(--border)", paddingTop: "1rem", flexShrink: 0 }}>
               <h5>{editingQuestionId ? "Редактировать вопрос" : "Добавить вопрос"}</h5>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
                 <label className="ui-field">
@@ -1022,7 +1032,7 @@ const AdminTestsManagerPage = () => {
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
                   <Button type="submit" disabled={isSaving}>
-                    {editingQuestionId ? "Сохранить" : "Добавить"}
+                    {isSaving ? "Сохранение..." : (editingQuestionId ? "Сохранить" : "Добавить")}
                   </Button>
                   {editingQuestionId && (
                     <Button type="button" variant="secondary" onClick={handleCancelEditQuestion}>
@@ -1035,15 +1045,15 @@ const AdminTestsManagerPage = () => {
           </div>
 
           {/* Right Column: Selected Question Options */}
-          <div style={{ display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
             {selectedQuestion ? (
               <>
                 <h4>Варианты ответов</h4>
-                <div style={{ fontSize: "0.85rem", color: "var(--muted-color, #666)", marginBottom: "0.5rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--muted-color, #666)", marginBottom: "0.5rem", flexShrink: 0 }}>
                   Вопрос: <strong>{selectedQuestion.text}</strong>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <div style={{ flex: 1, overflowY: "auto", minHeight: 0, marginBottom: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {selectedQuestion.options.map((o) => (
                     <div
                       key={o.id}
@@ -1053,8 +1063,8 @@ const AdminTestsManagerPage = () => {
                         justifyContent: "space-between",
                         padding: "0.5rem 0.75rem",
                         borderRadius: "var(--radius)",
-                        border: "1px solid var(--border)",
-                        background: "var(--card-bg)",
+                        border: o.isCorrect ? "1px solid #10b981" : "1px solid var(--border)",
+                        background: o.isCorrect ? "rgba(16, 185, 129, 0.05)" : "var(--card-bg)",
                         gap: "0.5rem"
                       }}
                     >
@@ -1083,6 +1093,19 @@ const AdminTestsManagerPage = () => {
                           </span>
                         )}
                         <span style={{ fontSize: "0.95rem" }}>{o.text}</span>
+                        {o.isCorrect && (
+                          <span style={{
+                            marginLeft: "0.5rem",
+                            fontSize: "0.75rem",
+                            color: "#10b981",
+                            background: "rgba(16, 185, 129, 0.12)",
+                            padding: "0.15rem 0.45rem",
+                            borderRadius: "4px",
+                            fontWeight: "600"
+                          }}>
+                            Правильный
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -1100,7 +1123,7 @@ const AdminTestsManagerPage = () => {
                 </div>
 
                 {/* Add Option Form */}
-                <form onSubmit={handleAddOption} style={{ marginTop: "auto", paddingTop: "1.5rem", borderTop: "1px dashed var(--border)" }}>
+                <form onSubmit={handleAddOption} style={{ borderTop: "1px dashed var(--border)", paddingTop: "1rem", flexShrink: 0 }}>
                   <h5>Добавить вариант ответа</h5>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
                     <label className="ui-field">
@@ -1114,16 +1137,7 @@ const AdminTestsManagerPage = () => {
                       />
                     </label>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      {selectedQuestion.type !== "SEQUENCE" ? (
-                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={optionForm.isCorrect}
-                            onChange={(e) => setOptionForm(c => ({ ...c, isCorrect: e.target.checked }))}
-                          />
-                          <span style={{ fontSize: "0.85rem" }}>Правильный ответ</span>
-                        </label>
-                      ) : (
+                      {selectedQuestion.type === "SEQUENCE" ? (
                         <label className="ui-field" style={{ width: "120px" }}>
                           <span className="ui-field__label" style={{ fontSize: "0.8rem" }}>Порядок (1, 2, ...)</span>
                           <input
@@ -1135,9 +1149,9 @@ const AdminTestsManagerPage = () => {
                             required
                         />
                         </label>
-                      )}
+                      ) : <div />}
                       <Button type="submit" disabled={isSaving}>
-                        Добавить
+                        {isSaving ? "Добавление..." : "Добавить"}
                       </Button>
                     </div>
                   </div>

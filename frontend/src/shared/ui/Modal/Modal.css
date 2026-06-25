@@ -11,6 +11,18 @@
   width: min(560px, 100%);
 }
 
+.ui-modal-content--md {
+  width: min(560px, 100%);
+}
+
+.ui-modal-content--lg {
+  width: min(840px, 100%);
+}
+
+.ui-modal-content--xl {
+  width: min(1120px, 100%);
+}
+
 .ui-modal-head {
   display: flex;
   align-items: center;

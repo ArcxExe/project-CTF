@@ -57,15 +57,41 @@ public class AdminQuizController {
     }
 
     @PutMapping("/options/{optionId}")
-    public ResponseEntity<QuizOption> updateOption(@PathVariable UUID optionId, @RequestBody QuizOption optionDetails) {
+    public ResponseEntity<QuizOption> updateOption(@PathVariable UUID optionId, @RequestBody Map<String, Object> payload) {
         QuizOption option = optionRepository.findById(optionId)
                 .orElseThrow(() -> new IllegalArgumentException("Option not found"));
-        option.setOptionText(optionDetails.getOptionText());
-        option.setCorrect(optionDetails.isCorrect());
-        option.setSequenceOrder(optionDetails.getSequenceOrder());
-        if (optionDetails.getQuestionId() != null) {
-            option.setQuestionId(optionDetails.getQuestionId());
+        
+        if (payload.containsKey("optionText")) {
+            option.setOptionText((String) payload.get("optionText"));
         }
+        if (payload.containsKey("correct")) {
+            boolean newCorrect = (Boolean) payload.get("correct");
+            option.setCorrect(newCorrect);
+            
+            if (newCorrect) {
+                // If this is a RADIO question, set all other options of this question to correct = false
+                QuizQuestion question = questionRepository.findById(option.getQuestionId())
+                        .orElseThrow(() -> new IllegalArgumentException("Question not found"));
+                if ("RADIO".equalsIgnoreCase(question.getType())) {
+                    List<QuizOption> otherOptions = optionRepository.findAllByQuestionIdOrderBySequenceOrderAsc(option.getQuestionId());
+                    for (QuizOption other : otherOptions) {
+                        if (!other.getId().equals(option.getId()) && other.isCorrect()) {
+                            other.setCorrect(false);
+                            optionRepository.save(other);
+                        }
+                    }
+                }
+            }
+        }
+        if (payload.containsKey("sequenceOrder")) {
+            Object seq = payload.get("sequenceOrder");
+            option.setSequenceOrder(seq != null ? ((Number) seq).intValue() : null);
+        }
+        if (payload.containsKey("questionId")) {
+            Object qId = payload.get("questionId");
+            option.setQuestionId(qId != null ? UUID.fromString(qId.toString()) : null);
+        }
+        
         return ResponseEntity.ok(optionRepository.save(option));
     }
 

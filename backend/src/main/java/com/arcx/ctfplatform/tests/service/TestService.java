@@ -104,6 +104,7 @@ public class TestService {
 
     @Transactional
     public void deleteTest(UUID id) {
+        testRepository.deleteQuizAttemptsByTestId(id);
         testRepository.deleteById(id);
     }
 
