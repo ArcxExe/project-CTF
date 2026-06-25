@@ -7,6 +7,17 @@ export interface ScoreAdjustmentPayload {
   reason: string;
 }
 
+export interface ScoreAdjustmentResponse {
+  id: string;
+  studentId: string;
+  studentName: string;
+  username: string;
+  competitionId: string | null;
+  points: number;
+  reason: string;
+  createdAt: string;
+}
+
 export const scoreAdjustmentsApi = {
   async createAdjustment(payload: ScoreAdjustmentPayload): Promise<void> {
     await apiRequest<void>("/api/admin/score-adjustments", {
@@ -18,5 +29,9 @@ export const scoreAdjustmentsApi = {
         reason: payload.reason,
       }),
     });
+  },
+
+  async getAll(): Promise<ScoreAdjustmentResponse[]> {
+    return await apiRequest<ScoreAdjustmentResponse[]>("/api/score-adjustments");
   },
 };

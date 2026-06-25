@@ -1,5 +1,6 @@
 package com.arcx.ctfplatform.modifiers.service;
 
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,5 +27,10 @@ public class ScoreAdjustmentService {
         ScoreAdjustment saved = scoreAdjustmentRepository.save(adjustment);
         leaderboardService.broadcastUpdate();
         return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ScoreAdjustment> getAllAdjustments() {
+        return scoreAdjustmentRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
     }
 }

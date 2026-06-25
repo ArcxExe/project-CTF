@@ -12,6 +12,7 @@ import type { Competition } from "@/shared/types/competition";
 import { studentsApi } from "@/shared/api/services/students";
 import type { Student } from "@/shared/types/education";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
+import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
 import { leaderboardApi } from "@/shared/api/services/leaderboard";
 import type { LeaderboardRow } from "@/shared/api/services/leaderboard";
 import { Button } from "@/shared/ui/Button/Button";
@@ -1614,6 +1615,7 @@ export const AdminRatingPage = () => {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [adjustments, setAdjustments] = useState<ScoreAdjustmentResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1624,6 +1626,15 @@ export const AdminRatingPage = () => {
     points: "0",
     reason: "",
   });
+
+  const loadAdjustments = async () => {
+    try {
+      const list = await scoreAdjustmentsApi.getAll();
+      setAdjustments(list);
+    } catch (error) {
+      console.error("Failed to load score adjustments history", error);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -1649,6 +1660,7 @@ export const AdminRatingPage = () => {
 
   useEffect(() => {
     void loadData();
+    void loadAdjustments();
 
     setIsLoading(true);
     const eventSource = new EventSource("/api/leaderboard/live");
@@ -1734,6 +1746,8 @@ export const AdminRatingPage = () => {
         reason: "",
       });
       void loadData();
+      void loadAdjustments();
+      void leaderboardApi.getAll().then(setRows).catch(console.error);
     } catch (error) {
       push({
         title: error instanceof Error ? error.message : "Не удалось скорректировать баллы",
@@ -1789,6 +1803,41 @@ export const AdminRatingPage = () => {
         ]}
         rows={rows}
       />
+
+      <div style={{ marginTop: "2.5rem" }}>
+        <PageHeader
+          title="История корректировок баллов"
+          subtitle="Записи о ручном изменении баллов участников преподавателями."
+        />
+        <div style={{ marginTop: "1rem" }}>
+          <DataTable
+            columns={[
+              { key: "participant", title: "Участник" },
+              { key: "date", title: "Когда" },
+              { key: "reason", title: "За что" },
+              {
+                key: "amount",
+                title: "Сколько",
+                render: (row: any) => {
+                  const isNegative = row.amount.startsWith("-");
+                  return (
+                    <span style={{ color: isNegative ? "var(--danger)" : "var(--success)", fontWeight: "bold" }}>
+                      {row.amount}
+                    </span>
+                  );
+                }
+              },
+            ]}
+            rows={adjustments.map((adj) => ({
+              id: adj.id,
+              participant: `${adj.studentName} (${adj.username})`,
+              date: new Date(adj.createdAt).toLocaleString("ru-RU"),
+              reason: adj.reason,
+              amount: adj.points > 0 ? `+${adj.points}` : adj.points.toString(),
+            }))}
+          />
+        </div>
+      </div>
 
       <Modal open={isModalOpen} title="Корректировка баллов" onClose={() => setIsModalOpen(false)}>
         <form className="admin-form" onSubmit={handleSubmit}>

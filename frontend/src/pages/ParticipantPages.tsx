@@ -14,6 +14,8 @@ import { testsApi } from "@/shared/api/services/tests";
 import type { CtfTest } from "@/shared/api/services/tests";
 import { competitionsApi } from "@/shared/api/services/competitions";
 import type { Competition } from "@/shared/types/competition";
+import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
+import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -449,6 +451,7 @@ export const ParticipantRatingPage = () => {
   const { push } = useToastStore();
   const { currentUser } = useAuthStore();
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
+  const [adjustments, setAdjustments] = useState<ScoreAdjustmentResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [leaderboardHidden, setLeaderboardHidden] = useState(false);
 
@@ -471,6 +474,10 @@ export const ParticipantRatingPage = () => {
       .catch((err) => {
         console.error("Failed to load competitions", err);
       });
+
+    void scoreAdjustmentsApi.getAll()
+      .then(setAdjustments)
+      .catch((err) => console.error("Failed to load score adjustments", err));
 
     setIsLoading(true);
     const eventSource = new EventSource("/api/leaderboard/live");
@@ -572,6 +579,41 @@ export const ParticipantRatingPage = () => {
           }
         />
       )}
+
+      <div style={{ marginTop: "2.5rem" }}>
+        <PageHeader
+          title="История корректировок баллов"
+          subtitle="Записи о ручном изменении баллов участников преподавателями."
+        />
+        <div style={{ marginTop: "1rem" }}>
+          <DataTable
+            columns={[
+              { key: "participant", title: "Участник" },
+              { key: "date", title: "Когда" },
+              { key: "reason", title: "За что" },
+              {
+                key: "amount",
+                title: "Сколько",
+                render: (row: any) => {
+                  const isNegative = row.amount.startsWith("-");
+                  return (
+                    <span style={{ color: isNegative ? "var(--danger)" : "var(--success)", fontWeight: "bold" }}>
+                      {row.amount}
+                    </span>
+                  );
+                }
+              },
+            ]}
+            rows={adjustments.map((adj) => ({
+              id: adj.id,
+              participant: `${adj.studentName} (${adj.username})`,
+              date: new Date(adj.createdAt).toLocaleString("ru-RU"),
+              reason: adj.reason,
+              amount: adj.points > 0 ? `+${adj.points}` : adj.points.toString(),
+            }))}
+          />
+        </div>
+      </div>
     </div>
   );
 };
