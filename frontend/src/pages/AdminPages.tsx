@@ -43,6 +43,7 @@ const AdminTasksManagerPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Challenge | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -83,16 +84,25 @@ const AdminTasksManagerPage = () => {
     setIsSaving(true);
 
     try {
-      const created = await adminChallengesApi.create({
+      const payload = {
         title: form.title,
         description: form.description || undefined,
         category: form.category || undefined,
         difficulty: form.difficulty,
         baseScore: Number(form.baseScore),
         flag: form.flag,
-      });
+      };
 
-      setTasks((current) => [created, ...current]);
+      if (editingTask) {
+        const updated = await adminChallengesApi.update(editingTask.id, payload);
+        setTasks((current) => current.map((item) => (item.id === editingTask.id ? updated : item)));
+        push({ title: "Задание обновлено", variant: "success" });
+      } else {
+        const created = await adminChallengesApi.create(payload);
+        setTasks((current) => [created, ...current]);
+        push({ title: "Задание создано", variant: "success" });
+      }
+
       setForm({
         title: "",
         description: "",
@@ -101,11 +111,11 @@ const AdminTasksManagerPage = () => {
         category: "",
         difficulty: "easy",
       });
+      setEditingTask(null);
       setIsModalOpen(false);
-      push({ title: "Задание создано", variant: "success" });
     } catch (error) {
       push({
-        title: error instanceof Error ? error.message : "Не удалось создать задание",
+        title: error instanceof Error ? error.message : "Не удалось сохранить задание",
         variant: "error",
       });
     } finally {
@@ -113,6 +123,18 @@ const AdminTasksManagerPage = () => {
     }
   };
 
+  const handleEditClick = (task: Challenge) => {
+    setEditingTask(task);
+    setForm({
+      title: task.title,
+      description: task.description || "",
+      baseScore: String(task.baseScore),
+      flag: "",
+      category: task.category || "",
+      difficulty: task.difficulty || "easy",
+    });
+    setIsModalOpen(true);
+  };
 
   const handleDelete = async (task: Challenge) => {
     if (!window.confirm(`Удалить задание "${task.title}"?`)) {
@@ -140,7 +162,24 @@ const AdminTasksManagerPage = () => {
       <PageHeader
         title="Задания"
         subtitle="Банк CTF-заданий из backend API: создание, публикация и удаление."
-        actions={<Button onClick={() => setIsModalOpen(true)}>Создать задание</Button>}
+        actions={
+          <Button
+            onClick={() => {
+              setEditingTask(null);
+              setForm({
+                title: "",
+                description: "",
+                baseScore: "100",
+                flag: "",
+                category: "",
+                difficulty: "easy",
+              });
+              setIsModalOpen(true);
+            }}
+          >
+            Создать задание
+          </Button>
+        }
       />
 
       <div className="metric-grid">
@@ -203,6 +242,9 @@ const AdminTasksManagerPage = () => {
             title: "Действия",
             render: (task) => (
               <div className="table-actions">
+                <Button variant="secondary" onClick={() => handleEditClick(task)}>
+                  Редактировать
+                </Button>
                 <Button variant="danger" onClick={() => void handleDelete(task)}>
                   Удалить
                 </Button>
@@ -213,7 +255,14 @@ const AdminTasksManagerPage = () => {
         rows={filteredTasks}
       />
 
-      <Modal open={isModalOpen} title="Новое задание" onClose={() => setIsModalOpen(false)}>
+      <Modal
+        open={isModalOpen}
+        title={editingTask ? "Редактировать задание" : "Новое задание"}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTask(null);
+        }}
+      >
         <form className="admin-form" onSubmit={handleCreate}>
           <Input
             label="Название"
@@ -266,14 +315,14 @@ const AdminTasksManagerPage = () => {
 
           <Input
             label="Флаг"
-            placeholder="CTF{example}"
+            placeholder={editingTask ? "Введите флаг повторно для сохранения изменений" : "CTF{example}"}
             value={form.flag}
             onChange={(event) => setForm((current) => ({ ...current, flag: event.target.value }))}
             required
           />
 
           <Button type="submit" disabled={isSaving}>
-            {isSaving ? "Сохраняем..." : "Создать"}
+            {isSaving ? "Сохраняем..." : editingTask ? "Сохранить" : "Создать"}
           </Button>
         </form>
       </Modal>
