@@ -31,6 +31,12 @@ public class QuizController {
         return ResponseEntity.ok(quizService.startQuiz(quizId, user.getId()));
     }
 
+    @GetMapping("/attempts")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<List<QuizAttempt>> getStudentAttempts(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(quizService.getStudentAttempts(user.getId()));
+    }
+
     @PostMapping("/{quizId}/submit")
     @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<QuizAttempt> submitAnswers(

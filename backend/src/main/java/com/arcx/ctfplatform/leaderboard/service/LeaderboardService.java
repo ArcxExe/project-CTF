@@ -16,6 +16,8 @@ import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class LeaderboardService {
     private final GradingService gradingService;
     private final AttemptRepository attemptRepository;
     private final QuizAttemptRepository quizAttemptRepository;
+    private final TestRepository testRepository;
     private final PromoCodeRepository promoCodeRepository;
     private final PromoCodeClaimRepository promoCodeClaimRepository;
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
@@ -118,6 +121,9 @@ public class LeaderboardService {
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<LeaderboardEntry> getLeaderboardSnapshot(String scopeType, UUID scopeId) {
         List<Student> allStudents = studentRepository.findAll();
+        List<QuizAttempt> allQuizzes = quizAttemptRepository.findAll();
+        List<Test> allTests = testRepository.findAll();
+        Map<UUID, Test> testMap = allTests.stream().collect(Collectors.toMap(Test::getId, t -> t));
 
         if (scopeType != null && scopeId != null) {
             if ("GROUP".equalsIgnoreCase(scopeType)) {
@@ -140,6 +146,7 @@ public class LeaderboardService {
 
         // Determine active competition
         List<Competition> competitions = competitionRepository.findAll();
+        Map<UUID, Competition> compMap = competitions.stream().collect(Collectors.toMap(Competition::getId, c -> c));
         java.time.Instant now = java.time.Instant.now();
         Competition activeComp = competitions.stream()
                 .filter(c -> c.getStartDate() != null && c.getEndDate() != null &&
@@ -175,13 +182,21 @@ public class LeaderboardService {
                 .toList();
             score += attempts.stream().mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded()).sum();
 
-            // 2. Tests (if sumTestPoints is true)
-            for (Competition comp : competitions) {
-                if (comp.isSumTestPoints()) {
-                    List<QuizAttempt> quizzes = quizAttemptRepository.findAll().stream()
-                        .filter(q -> q.getStudentId().equals(student.getId()))
-                        .toList();
-                    score += quizzes.stream().mapToInt(QuizAttempt::getScore).sum();
+            // 2. Tests
+            List<QuizAttempt> studentQuizzes = allQuizzes.stream()
+                .filter(q -> q.getStudentId().equals(student.getId()))
+                .toList();
+            for (QuizAttempt qa : studentQuizzes) {
+                Test t = testMap.get(qa.getQuizId());
+                if (t != null) {
+                    if (t.getCompetitionId() == null) {
+                        score += qa.getScore();
+                    } else {
+                        Competition comp = compMap.get(t.getCompetitionId());
+                        if (comp != null && comp.isSumTestPoints()) {
+                            score += qa.getScore();
+                        }
+                    }
                 }
             }
 

@@ -10,5 +10,6 @@ import java.util.List;
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> {
     Optional<QuizAttempt> findByQuizIdAndStudentIdAndStatus(UUID quizId, UUID studentId, QuizAttemptStatus status);
     List<QuizAttempt> findAllByQuizIdAndStudentId(UUID quizId, UUID studentId);
+    List<QuizAttempt> findAllByStudentId(UUID studentId);
     List<QuizAttempt> findAllByStatus(QuizAttemptStatus status);
 }

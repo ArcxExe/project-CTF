@@ -39,9 +39,19 @@ public class QuizService {
         Test test = testRepository.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
 
-        Optional<QuizAttempt> activeAttempt = attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, student.getId(), QuizAttemptStatus.IN_PROGRESS);
+        List<QuizAttempt> attempts = attemptRepository.findAllByQuizIdAndStudentId(quizId, student.getId());
+        
+        Optional<QuizAttempt> activeAttempt = attempts.stream()
+                .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
+                .findFirst();
         if (activeAttempt.isPresent()) {
             return activeAttempt.get();
+        }
+
+        boolean hasCompleted = attempts.stream()
+                .anyMatch(a -> a.getStatus() == QuizAttemptStatus.COMPLETED);
+        if (hasCompleted) {
+            throw new IllegalStateException("Вы уже прошли этот тест");
         }
 
         QuizAttempt attempt = QuizAttempt.builder()
@@ -53,6 +63,13 @@ public class QuizService {
                 .build();
 
         return attemptRepository.save(attempt);
+    }
+
+    @Transactional(readOnly = true)
+    public List<QuizAttempt> getStudentAttempts(UUID userId) {
+        Student student = studentRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        return attemptRepository.findAllByStudentId(student.getId());
     }
 
     @Transactional

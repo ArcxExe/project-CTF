@@ -17,6 +17,8 @@ import com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment;
 import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class AdminProgressService {
     private final AcademicGroupRepository academicGroupRepository;
     private final AttemptRepository attemptRepository;
     private final QuizAttemptRepository quizAttemptRepository;
+    private final TestRepository testRepository;
     private final PromoCodeClaimRepository promoCodeClaimRepository;
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
     private final CompetitionRepository competitionRepository;
@@ -59,6 +62,9 @@ public class AdminProgressService {
         List<QuizAttempt> allQuizAttempts = quizAttemptRepository.findAll();
         Map<UUID, List<QuizAttempt>> quizAttemptsByStudent = allQuizAttempts.stream()
                 .collect(Collectors.groupingBy(QuizAttempt::getStudentId));
+        List<Test> allTests = testRepository.findAll();
+        Map<UUID, Test> testMap = allTests.stream().collect(Collectors.toMap(Test::getId, t -> t));
+        Map<UUID, Competition> compMap = competitions.stream().collect(Collectors.toMap(Competition::getId, c -> c));
 
         List<PromoCodeClaim> allClaims = promoCodeClaimRepository.findAllWithPromoCode();
         Map<UUID, List<PromoCodeClaim>> claimsByStudent = allClaims.stream()
@@ -83,10 +89,18 @@ public class AdminProgressService {
             score += correctAttempts.stream().mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded()).sum();
 
             // 1.2 Tests score
-            for (Competition comp : competitions) {
-                if (comp.isSumTestPoints()) {
-                    List<QuizAttempt> quizzes = quizAttemptsByStudent.getOrDefault(studentId, Collections.emptyList());
-                    score += quizzes.stream().mapToInt(QuizAttempt::getScore).sum();
+            List<QuizAttempt> quizzes = quizAttemptsByStudent.getOrDefault(studentId, Collections.emptyList());
+            for (QuizAttempt qa : quizzes) {
+                Test t = testMap.get(qa.getQuizId());
+                if (t != null) {
+                    if (t.getCompetitionId() == null) {
+                        score += qa.getScore();
+                    } else {
+                        Competition comp = compMap.get(t.getCompetitionId());
+                        if (comp != null && comp.isSumTestPoints()) {
+                            score += qa.getScore();
+                        }
+                    }
                 }
             }
 
