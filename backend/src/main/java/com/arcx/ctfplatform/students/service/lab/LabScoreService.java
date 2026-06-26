@@ -30,6 +30,10 @@ public class LabScoreService {
     private final LabScoreHistoryRepository labScoreHistoryRepository;
     private final StudentRepository studentRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.arcx.ctfplatform.leaderboard.service.LeaderboardService leaderboardService;
+
     @Transactional
     public void setScore(UUID studentId, int score, String reason, UUID adminUserId) {
         Student student = studentRepository.findById(studentId)
@@ -51,6 +55,9 @@ public class LabScoreService {
                 .reason(reason)
                 .build();
         labScoreHistoryRepository.save(history);
+        if (leaderboardService != null) {
+            leaderboardService.broadcastUpdate();
+        }
     }
 
     @Transactional

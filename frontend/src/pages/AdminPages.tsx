@@ -13,6 +13,8 @@ import { studentsApi } from "@/shared/api/services/students";
 import type { Student } from "@/shared/types/education";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
 import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
+import { labScoresApi } from "@/shared/api/services/labScores";
+import type { LabScore } from "@/shared/api/services/labScores";
 import { leaderboardApi } from "@/shared/api/services/leaderboard";
 import type { LeaderboardRow } from "@/shared/api/services/leaderboard";
 import { Button } from "@/shared/ui/Button/Button";
@@ -1929,3 +1931,168 @@ export const AdminRatingPage = () => {
 export const AdminPromoCodesPage = () => <AdminPromoCodesManagerPage />;
 export { AdminAnalyticsPage } from "./AdminAnalyticsPage";
 export { AdminGradingScalePage } from "./AdminGradingScalePage";
+
+const AdminLabsManagerPage = () => {
+  const { push } = useToastStore();
+  const [scores, setScores] = useState<LabScore[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const [form, setForm] = useState({
+    studentId: "",
+    score: "0",
+    reason: "Оценка за лабораторную работу",
+  });
+
+  const loadData = async () => {
+    try {
+      const [scoresData, studentsData] = await Promise.all([
+        labScoresApi.getAllScores().catch(() => [] as LabScore[]),
+        studentsApi.getAll().catch(() => [] as Student[]),
+      ]);
+      setScores(scoresData);
+      setStudents(studentsData);
+      if (studentsData.length > 0) {
+        setForm((current) => ({
+          ...current,
+          studentId: current.studentId || studentsData[0].id,
+        }));
+      }
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось загрузить данные",
+        variant: "error",
+      });
+    }
+  };
+
+  useEffect(() => {
+    void loadData().finally(() => setIsLoading(false));
+  }, [push]);
+
+  const filteredScores = useMemo(
+    () =>
+      scores.filter((score) =>
+        [score.studentName, score.studentCode, score.groupName]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    [scores, search],
+  );
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!form.studentId) {
+      push({ title: "Выберите студента", variant: "error" });
+      return;
+    }
+    setIsSaving(true);
+
+    try {
+      await labScoresApi.setScore(form.studentId, Number(form.score), form.reason);
+      push({ title: "Баллы за лабораторную успешно сохранены", variant: "success" });
+      setIsModalOpen(false);
+      setForm({
+        studentId: students[0]?.id || "",
+        score: "0",
+        reason: "Оценка за лабораторную работу",
+      });
+      await loadData();
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось сохранить баллы",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return <Loader label="Загружаем баллы..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Лабораторные работы"
+        subtitle="Управление баллами участников за выполнение лабораторных работ."
+        actions={<Button onClick={() => setIsModalOpen(true)}>Задать баллы</Button>}
+      />
+
+      <div className="admin-toolbar">
+        <Input
+          placeholder="Поиск по студенту, шифру или группе..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <DataTable
+        columns={[
+          { key: "studentName", title: "Участник" },
+          { key: "groupName", title: "Группа" },
+          { key: "score", title: "Баллы за лаб" },
+          { 
+            key: "v1Coefficient", 
+            title: "Коэффициент v1",
+            render: (row) => row.v1Coefficient.toFixed(3)
+          },
+          { key: "status", title: "Статус" },
+        ]}
+        rows={filteredScores}
+      />
+
+      <Modal open={isModalOpen} title="Задать баллы за лабораторную" onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleSubmit}>
+          <label className="ui-field">
+            <span className="ui-field__label">Студент</span>
+            <select
+              className="ui-input"
+              value={form.studentId}
+              onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
+              required
+            >
+              <option value="" disabled>-- Выберите студента --</option>
+              {students.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.fullName} ({student.nickname || student.studentCode})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <Input
+            label="Баллы"
+            type="number"
+            min={0}
+            value={form.score}
+            onChange={(e) => setForm((current) => ({ ...current, score: e.target.value }))}
+            required
+          />
+
+          <label className="ui-field">
+            <span className="ui-field__label">Причина / Примечание</span>
+            <textarea
+              className="ui-input ui-textarea"
+              value={form.reason}
+              onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))}
+              required
+            />
+          </label>
+
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Сохраняем..." : "Сохранить"}
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+export const AdminLabsPage = () => <AdminLabsManagerPage />;
+

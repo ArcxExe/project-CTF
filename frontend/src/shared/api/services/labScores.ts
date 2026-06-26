@@ -15,6 +15,10 @@ export const labScoresApi = {
     return apiRequest<LabScore[]>("/api/admin/lab-scores");
   },
 
+  async getParticipantScores(): Promise<LabScore[]> {
+    return apiRequest<LabScore[]>("/api/lab-scores");
+  },
+
   async importScores(file: File): Promise<void> {
     const formData = new FormData();
     formData.append("file", file);

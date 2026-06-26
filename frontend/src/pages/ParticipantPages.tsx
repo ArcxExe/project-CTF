@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
@@ -16,6 +16,10 @@ import { competitionsApi } from "@/shared/api/services/competitions";
 import type { Competition } from "@/shared/types/competition";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
 import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
+import { labScoresApi } from "@/shared/api/services/labScores";
+import type { LabScore } from "@/shared/api/services/labScores";
+import { groupsApi } from "@/shared/api/services/groups";
+import type { Group } from "@/shared/types/education";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
@@ -753,3 +757,95 @@ export const PromoCodePage = () => {
     </div>
   );
 };
+
+export const ParticipantLabsPage = () => {
+  const { push } = useToastStore();
+  const [scores, setScores] = useState<LabScore[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    void Promise.all([
+      labScoresApi.getParticipantScores().catch(() => [] as LabScore[]),
+      groupsApi.getAll().catch(() => [] as Group[]),
+    ])
+      .then(([scoresData, groupsData]) => {
+        setScores(scoresData);
+        setGroups(groupsData);
+      })
+      .catch((error: unknown) => {
+        push({
+          title: error instanceof Error ? error.message : "Не удалось загрузить данные",
+          variant: "error",
+        });
+      })
+      .finally(() => setIsLoading(false));
+  }, [push]);
+
+  const selectedGroupName = useMemo(() => {
+    return groups.find((g) => g.id === selectedGroupId)?.name || "";
+  }, [groups, selectedGroupId]);
+
+  const filteredScores = useMemo(() => {
+    return scores.filter((score) => {
+      const matchesGroup = selectedGroupId ? score.groupName === selectedGroupName : true;
+      const matchesSearch = search.trim()
+        ? score.studentName.toLowerCase().includes(search.toLowerCase())
+        : true;
+      return matchesGroup && matchesSearch;
+    });
+  }, [scores, selectedGroupId, selectedGroupName, search]);
+
+  if (isLoading) {
+    return <Loader label="Загружаем баллы..." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        title="Лабораторные работы"
+        subtitle="Просмотр баллов участников за выполнение лабораторных работ."
+      />
+
+      <div className="admin-toolbar">
+        <Input
+          placeholder="Поиск по имени или фамилии..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <label className="ui-field" style={{ margin: 0, minWidth: "200px" }}>
+          <select
+            className="ui-input"
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+          >
+            <option value="">Все группы</option>
+            {groups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <DataTable
+        columns={[
+          { key: "studentName", title: "Участник" },
+          { key: "groupName", title: "Группа" },
+          { key: "score", title: "Баллы за лаб" },
+          { 
+            key: "v1Coefficient", 
+            title: "Коэффициент v1",
+            render: (row) => row.v1Coefficient.toFixed(3)
+          },
+          { key: "status", title: "Статус" },
+        ]}
+        rows={filteredScores}
+      />
+    </div>
+  );
+};
+

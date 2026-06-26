@@ -19,6 +19,7 @@ const adminLinks: LayoutLink[] = [
   { to: "/admin/tests", label: "Тесты" },
   { to: "/admin/tasks", label: "Задания" },
   { to: "/admin/rating", label: "Рейтинг" },
+  { to: "/admin/labs", label: "Лабораторные" },
   { to: "/admin/promo-codes", label: "Промокоды" },
   { to: "/admin/analytics", label: "Аналитика" },
 ];
@@ -29,6 +30,7 @@ const participantLinks: LayoutLink[] = [
   { to: "/participant/test", label: "Тест" },
   { to: "/participant/ctf", label: "CTF" },
   { to: "/participant/rating", label: "Рейтинг" },
+  { to: "/participant/labs", label: "Лабораторные" },
   { to: "/participant/promo-code", label: "Промокод" },
 ];
 

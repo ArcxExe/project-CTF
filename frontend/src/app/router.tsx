@@ -7,6 +7,7 @@ import {
   AdminStreamsPage,
   AdminTasksPage,
   AdminTestsPage,
+  AdminLabsPage,
 } from "@/pages/AdminPages";
 import { CompetitionsPage } from "@/pages/CompetitionsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -21,6 +22,7 @@ import {
   ParticipantTestPage,
   PromoCodePage,
   RegisterPage,
+  ParticipantLabsPage,
 } from "@/pages/ParticipantPages";
 import { ParticipantTestRunnerPage } from "@/pages/ParticipantTestRunnerPage";
 import { ParticipantProfilePage } from "@/pages/ParticipantProfilePage";
@@ -60,6 +62,7 @@ export const router = createBrowserRouter([
       { path: "tasks", element: <AdminTasksPage /> },
       { path: "rating", element: <AdminRatingPage /> },
       { path: "promo-codes", element: <AdminPromoCodesPage /> },
+      { path: "labs", element: <AdminLabsPage /> },
       { path: "analytics", element: <AdminAnalyticsPage /> },
     ],
   },
@@ -80,6 +83,7 @@ export const router = createBrowserRouter([
       { path: "ctf", element: <ParticipantCtfPage /> },
       { path: "tasks/:taskId", element: <ParticipantTaskPage /> },
       { path: "rating", element: <ParticipantRatingPage /> },
+      { path: "labs", element: <ParticipantLabsPage /> },
       { path: "promo-code", element: <PromoCodePage /> },
     ],
   },
