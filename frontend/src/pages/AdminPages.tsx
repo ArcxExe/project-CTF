@@ -1937,9 +1937,11 @@ const AdminLabsManagerPage = () => {
   const [scores, setScores] = useState<LabScore[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   
   const [form, setForm] = useState({
     studentId: "",
@@ -1984,6 +1986,77 @@ const AdminLabsManagerPage = () => {
     [scores, search],
   );
 
+  const filteredStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    if (!query) return students;
+    return students.filter((student) => {
+      const nameMatch =
+        student.fullName.toLowerCase().includes(query) ||
+        (student.lastName && student.lastName.toLowerCase().includes(query)) ||
+        (student.middleName && student.middleName.toLowerCase().includes(query)) ||
+        (student.firstName && student.firstName.toLowerCase().includes(query));
+      const nicknameMatch = student.nickname.toLowerCase().includes(query);
+      const codeMatch = student.studentCode && student.studentCode.toLowerCase().includes(query);
+      return nameMatch || nicknameMatch || codeMatch;
+    });
+  }, [students, studentSearch]);
+
+  const groupedStudents = useMemo(() => {
+    const groups: Record<string, Student[]> = {};
+    filteredStudents.forEach((student) => {
+      const streamName = student.stream || "Без потока";
+      const groupName = student.group || "Без группы";
+      const label =
+        streamName !== "Без потока" || groupName !== "Без группы"
+          ? `Поток: ${streamName} | Группа: ${groupName}`
+          : "Без группы и потока";
+      if (!groups[label]) {
+        groups[label] = [];
+      }
+      groups[label].push(student);
+    });
+    return groups;
+  }, [filteredStudents]);
+
+  useEffect(() => {
+    if (!isEditing) {
+      if (filteredStudents.length > 0) {
+        const isSelectedFiltered = filteredStudents.some((s) => s.id === form.studentId);
+        if (!isSelectedFiltered) {
+          setForm((current) => ({ ...current, studentId: filteredStudents[0].id }));
+        }
+      } else {
+        setForm((current) => ({ ...current, studentId: "" }));
+      }
+    }
+  }, [filteredStudents, isEditing]);
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setStudentSearch("");
+    setIsEditing(false);
+  };
+
+  const handleAddClick = () => {
+    setForm({
+      studentId: students[0]?.id || "",
+      score: "0",
+      reason: "Оценка за лабораторную работу",
+    });
+    setIsEditing(false);
+    setIsModalOpen(true);
+  };
+
+  const handleEditClick = (row: LabScore) => {
+    setForm({
+      studentId: row.studentId,
+      score: row.score.toString(),
+      reason: "Редактирование оценки за лабораторную работу",
+    });
+    setIsEditing(true);
+    setIsModalOpen(true);
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.studentId) {
@@ -1995,12 +2068,7 @@ const AdminLabsManagerPage = () => {
     try {
       await labScoresApi.setScore(form.studentId, Number(form.score), form.reason);
       push({ title: "Баллы за лабораторную успешно сохранены", variant: "success" });
-      setIsModalOpen(false);
-      setForm({
-        studentId: students[0]?.id || "",
-        score: "0",
-        reason: "Оценка за лабораторную работу",
-      });
+      handleCloseModal();
       await loadData();
     } catch (error) {
       push({
@@ -2021,7 +2089,7 @@ const AdminLabsManagerPage = () => {
       <PageHeader
         title="Лабораторные работы"
         subtitle="Управление баллами участников за выполнение лабораторных работ."
-        actions={<Button onClick={() => setIsModalOpen(true)}>Задать баллы</Button>}
+        actions={<Button onClick={handleAddClick}>Задать баллы</Button>}
       />
 
       <div className="admin-toolbar">
@@ -2043,28 +2111,60 @@ const AdminLabsManagerPage = () => {
             render: (row) => row.v1Coefficient.toFixed(3)
           },
           { key: "status", title: "Статус" },
+          {
+            key: "actions",
+            title: "Действия",
+            render: (row) => (
+              <Button
+                variant="secondary"
+                onClick={() => handleEditClick(row)}
+              >
+                Редактировать
+              </Button>
+            ),
+          },
         ]}
         rows={filteredScores}
       />
 
-      <Modal open={isModalOpen} title="Задать баллы за лабораторную" onClose={() => setIsModalOpen(false)}>
+      <Modal open={isModalOpen} title={isEditing ? "Редактировать баллы за лабораторную" : "Задать баллы за лабораторную"} onClose={handleCloseModal}>
         <form className="admin-form" onSubmit={handleSubmit}>
-          <label className="ui-field">
-            <span className="ui-field__label">Студент</span>
-            <select
-              className="ui-input"
-              value={form.studentId}
-              onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
-              required
-            >
-              <option value="" disabled>-- Выберите студента --</option>
-              {students.map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.fullName} ({student.nickname || student.studentCode})
-                </option>
-              ))}
-            </select>
-          </label>
+          {isEditing ? (
+            <Input
+              label="Студент"
+              value={scores.find((s) => s.studentId === form.studentId)?.studentName || ""}
+              disabled
+            />
+          ) : (
+            <>
+              <Input
+                label="Поиск студента (по фамилии, отчеству, имени)"
+                placeholder="Введите фамилию, отчество или имя..."
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+              />
+              <label className="ui-field">
+                <span className="ui-field__label">Студент</span>
+                <select
+                  className="ui-input"
+                  value={form.studentId}
+                  onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
+                  required
+                >
+                  <option value="" disabled>-- Выберите студента --</option>
+                  {Object.entries(groupedStudents).map(([label, list]) => (
+                    <optgroup key={label} label={label}>
+                      {list.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.fullName} ({student.nickname || student.studentCode})
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
 
           <Input
             label="Баллы"
