@@ -267,40 +267,56 @@ export const ParticipantTestPage = () => {
 export const ParticipantCtfPage = () => {
   const { push } = useToastStore();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [history, setHistory] = useState<AttemptHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void competitionsApi.getAll()
-      .then((compRows) => {
+    void Promise.all([
+      competitionsApi.getAll(),
+      attemptsApi.getHistory()
+    ])
+      .then(([compRows, historyRows]) => {
         setCompetitions(compRows);
+        setHistory(historyRows);
       })
       .catch((error: unknown) => {
         push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить соревнования",
+          title: error instanceof Error ? error.message : "Не удалось загрузить данные соревнований",
           variant: "error",
         });
       })
       .finally(() => setIsLoading(false));
   }, [push]);
 
-  const renderTaskCard = (task: Challenge) => (
-    <Card key={task.id}>
-      <div className="task-card">
-        <div className="task-card__head">
-          <Badge tone="info">{task.category}</Badge>
-          <strong>{task.points} pts</strong>
+  const renderTaskCard = (task: Challenge) => {
+    const isSolved = history.some(h => h.challengeId === task.id && h.correct);
+
+    return (
+      <Card key={task.id} className={isSolved ? "task-card-solved" : ""}>
+        <div className="task-card">
+          <div className="task-card__head">
+            {isSolved ? (
+              <Badge tone="success">Решено</Badge>
+            ) : (
+              <Badge tone="info">{task.category}</Badge>
+            )}
+            <strong>{task.points} pts</strong>
+          </div>
+          <div>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {task.title}
+              {isSolved && <span style={{ color: 'var(--success)' }}>✓</span>}
+            </h3>
+            <p className="muted">{task.description}</p>
+          </div>
+          <div className="task-card__footer">
+            <span>{task.difficulty}</span>
+            <Link to={`/participant/tasks/${task.id}`}>Открыть</Link>
+          </div>
         </div>
-        <div>
-          <h3>{task.title}</h3>
-          <p className="muted">{task.description}</p>
-        </div>
-        <div className="task-card__footer">
-          <span>{task.difficulty}</span>
-          <Link to={`/participant/tasks/${task.id}`}>Открыть</Link>
-        </div>
-      </div>
-    </Card>
-  );
+      </Card>
+    );
+  };
 
   if (isLoading) {
     return <Loader label="Загружаем задания..." />;

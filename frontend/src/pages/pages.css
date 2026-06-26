@@ -250,3 +250,7 @@
     text-align: left;
   }
 }
+
+.task-card-solved {
+  border-color: var(--success) !important;
+}
