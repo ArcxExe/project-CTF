@@ -113,6 +113,10 @@ export const adminChallengesApi = {
     return toChallenge(response);
   },
 
+  async getFlag(id: string): Promise<{ flag: string }> {
+    return await apiRequest<{ flag: string }>(`/api/challenges/${id}/flag`);
+  },
+
   async delete(id: string): Promise<void> {
     await apiRequest<void>(`/api/challenges/${id}`, {
       method: "DELETE",

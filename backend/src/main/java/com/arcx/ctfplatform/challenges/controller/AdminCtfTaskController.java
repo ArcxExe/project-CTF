@@ -52,6 +52,12 @@ public class AdminCtfTaskController {
         return ResponseEntity.ok(ctfTaskService.updateTask(id, request));
     }
 
+    @GetMapping("/{id}/flag")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'TEACHER')")
+    public ResponseEntity<java.util.Map<String, String>> getTaskFlag(@PathVariable UUID id) {
+        return ResponseEntity.ok(java.util.Map.of("flag", ctfTaskService.getTaskFlag(id)));
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'TEACHER')")
     public ResponseEntity<Void> deleteTask(@PathVariable UUID id) {

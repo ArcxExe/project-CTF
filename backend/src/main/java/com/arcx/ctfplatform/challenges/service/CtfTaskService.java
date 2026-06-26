@@ -63,6 +63,13 @@ public class CtfTaskService {
         return ctfTaskMapper.mapping(updatedTask);
     }
 
+    @Transactional(readOnly = true)
+    public String getTaskFlag(UUID id) {
+        CtfTask task = ctfTaskRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found"));
+        return task.getFlag();
+    }
+
     @Transactional
     public void deleteTask(UUID id) {
         ctfTaskRepository.deleteById(id);

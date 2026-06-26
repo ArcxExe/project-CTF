@@ -45,6 +45,7 @@ const AdminTasksManagerPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Challenge | null>(null);
+  const [previousFlag, setPreviousFlag] = useState<string>("");
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -113,6 +114,7 @@ const AdminTasksManagerPage = () => {
         difficulty: "easy",
       });
       setEditingTask(null);
+      setPreviousFlag("");
       setIsModalOpen(false);
     } catch (error) {
       push({
@@ -124,7 +126,7 @@ const AdminTasksManagerPage = () => {
     }
   };
 
-  const handleEditClick = (task: Challenge) => {
+  const handleEditClick = async (task: Challenge) => {
     setEditingTask(task);
     setForm({
       title: task.title,
@@ -134,7 +136,16 @@ const AdminTasksManagerPage = () => {
       category: task.category || "",
       difficulty: task.difficulty || "easy",
     });
+    setPreviousFlag("");
     setIsModalOpen(true);
+
+    try {
+      const response = await adminChallengesApi.getFlag(task.id);
+      setPreviousFlag(response.flag);
+      setForm((current) => ({ ...current, flag: response.flag }));
+    } catch (err) {
+      console.error("Failed to load task flag", err);
+    }
   };
 
   const handleDelete = async (task: Challenge) => {
@@ -262,6 +273,15 @@ const AdminTasksManagerPage = () => {
         onClose={() => {
           setIsModalOpen(false);
           setEditingTask(null);
+          setPreviousFlag("");
+          setForm({
+            title: "",
+            description: "",
+            baseScore: "100",
+            flag: "",
+            category: "",
+            difficulty: "easy",
+          });
         }}
       >
         <form className="admin-form" onSubmit={handleCreate}>
@@ -321,6 +341,11 @@ const AdminTasksManagerPage = () => {
             onChange={(event) => setForm((current) => ({ ...current, flag: event.target.value }))}
             required
           />
+          {editingTask && previousFlag && (
+            <div className="muted" style={{ fontSize: "0.85em", marginTop: "-8px", marginBottom: "8px" }}>
+              Предыдущий ответ: <strong style={{ color: "var(--primary)" }}>{previousFlag}</strong>
+            </div>
+          )}
 
           <Button type="submit" disabled={isSaving}>
             {isSaving ? "Сохраняем..." : editingTask ? "Сохранить" : "Создать"}
