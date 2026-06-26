@@ -267,21 +267,16 @@ export const ParticipantTestPage = () => {
 export const ParticipantCtfPage = () => {
   const { push } = useToastStore();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [tasks, setTasks] = useState<Challenge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void Promise.all([
-      competitionsApi.getAll(),
-      challengesApi.getAll()
-    ])
-      .then(([compRows, taskRows]) => {
+    void competitionsApi.getAll()
+      .then((compRows) => {
         setCompetitions(compRows);
-        setTasks(taskRows);
       })
       .catch((error: unknown) => {
         push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить данные",
+          title: error instanceof Error ? error.message : "Не удалось загрузить соревнования",
           variant: "error",
         });
       })
@@ -311,11 +306,14 @@ export const ParticipantCtfPage = () => {
     return <Loader label="Загружаем задания..." />;
   }
 
-  const tasksInCompetitions = new Set(
-    competitions.flatMap(c => (c.tasks || []).map(t => t.id))
-  );
-  const generalTasks = tasks.filter(t => !tasksInCompetitions.has(t.id));
-  const hasAnyTasks = tasks.length > 0;
+  const now = new Date();
+  const activeCompetitions = competitions.filter(comp => {
+    const start = new Date(comp.startsAt);
+    const end = new Date(comp.endsAt);
+    return comp.status === "active" && start <= now && now <= end;
+  });
+
+  const hasAnyActiveTasks = activeCompetitions.some(c => (c.tasks || []).length > 0);
 
   return (
     <div className="page-stack">
@@ -325,9 +323,9 @@ export const ParticipantCtfPage = () => {
         actions={<Badge tone="success">backend live</Badge>}
       />
 
-      {hasAnyTasks ? (
+      {hasAnyActiveTasks ? (
         <div className="page-stack" style={{ gap: '2rem' }}>
-          {competitions.map((comp) => {
+          {activeCompetitions.map((comp) => {
             const compTasks = comp.tasks || [];
             if (compTasks.length === 0) return null;
 
@@ -347,21 +345,10 @@ export const ParticipantCtfPage = () => {
               </div>
             );
           })}
-
-          {generalTasks.length > 0 && (
-            <div className="page-stack" style={{ gap: '1rem' }}>
-              <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                Общие задачи
-              </h2>
-              <div className="task-grid">
-                {generalTasks.map(task => renderTaskCard(task))}
-              </div>
-            </div>
-          )}
         </div>
       ) : (
         <Card>
-          <p className="muted">Список заданий пуст. Опубликуйте хотя бы одно задание в admin API.</p>
+          <p className="muted">Нет активных соревнований или заданий в данный момент.</p>
         </Card>
       )}
     </div>
