@@ -89,6 +89,20 @@ public class AdminAnalyticsService {
         String date
     ) {}
 
+    public record StudentChallengeAnalytics(
+        UUID studentId,
+        String studentName,
+        String groupName,
+        UUID challengeId,
+        String challengeName,
+        String category,
+        int maxScore,
+        boolean solved,
+        int scoreAwarded,
+        int attemptsCount,
+        String date
+    ) {}
+
     @Transactional(readOnly = true)
     public AnalyticsSummary getGroupAnalytics(UUID groupId, UUID flowId) {
         List<Student> students = studentRepository.findAll();
@@ -309,6 +323,80 @@ public class AdminAnalyticsService {
                     status,
                     score,
                     t.getPassingScore(),
+                    date
+                ));
+            }
+        }
+
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public List<StudentChallengeAnalytics> getStudentChallengeAnalytics(UUID groupId, UUID flowId) {
+        List<Student> students = studentRepository.findAll();
+        if (groupId != null) {
+            students = students.stream().filter(s -> groupId.equals(s.getGroupId())).toList();
+        } else if (flowId != null) {
+            students = students.stream()
+                .filter(s -> s.getGroupId() != null)
+                .filter(s -> {
+                    AcademicGroup g = academicGroupRepository.findById(s.getGroupId()).orElse(null);
+                    return g != null && flowId.equals(g.getStreamId());
+                }).toList();
+        }
+
+        List<CtfTask> tasks = ctfTaskRepository.findAll();
+        List<Attempt> allAttempts = attemptRepository.findAll();
+        
+        Map<UUID, List<Attempt>> attemptsByStudent = allAttempts.stream()
+            .collect(Collectors.groupingBy(Attempt::getStudentId));
+
+        List<StudentChallengeAnalytics> result = new ArrayList<>();
+
+        for (Student s : students) {
+            String studentName = s.getFirstName() + " " + s.getLastName();
+            String groupName = s.getAcademicGroup() != null ? s.getAcademicGroup().getName() : "Без группы";
+
+            List<Attempt> studentAttempts = attemptsByStudent.getOrDefault(s.getId(), Collections.emptyList());
+            Map<UUID, List<Attempt>> attemptsByTask = studentAttempts.stream()
+                .collect(Collectors.groupingBy(Attempt::getTaskId));
+
+            for (CtfTask task : tasks) {
+                List<Attempt> taskAttempts = attemptsByTask.getOrDefault(task.getId(), Collections.emptyList());
+                
+                boolean solved = false;
+                int scoreAwarded = 0;
+                int attemptsCount = taskAttempts.size();
+                String date = "-";
+
+                Optional<Attempt> correctAttemptOpt = taskAttempts.stream()
+                    .filter(Attempt::isCorrect)
+                    .min(Comparator.comparing(Attempt::getSubmittedAt));
+
+                if (correctAttemptOpt.isPresent()) {
+                    solved = true;
+                    Attempt correct = correctAttemptOpt.get();
+                    scoreAwarded = correct.getScoreAwarded() != null ? correct.getScoreAwarded() : 0;
+                    date = correct.getSubmittedAt().toString();
+                } else if (!taskAttempts.isEmpty()) {
+                    Optional<Attempt> latestAttemptOpt = taskAttempts.stream()
+                        .max(Comparator.comparing(Attempt::getSubmittedAt));
+                    if (latestAttemptOpt.isPresent()) {
+                        date = latestAttemptOpt.get().getSubmittedAt().toString();
+                    }
+                }
+
+                result.add(new StudentChallengeAnalytics(
+                    s.getId(),
+                    studentName,
+                    groupName,
+                    task.getId(),
+                    task.getTitle(),
+                    task.getCategory(),
+                    task.getMaxScore(),
+                    solved,
+                    scoreAwarded,
+                    attemptsCount,
                     date
                 ));
             }

@@ -361,11 +361,8 @@ const AdminTasksManagerPage = () => {
 const AdminTestsManagerPage = () => {
   const { push } = useToastStore();
   const [tests, setTests] = useState<CtfTest[]>([]);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [testChallenges, setTestChallenges] = useState<Challenge[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [selectedTestId, setSelectedTestId] = useState("");
-  const [selectedChallengeId, setSelectedChallengeId] = useState("");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -404,16 +401,13 @@ const AdminTestsManagerPage = () => {
 
   const loadData = async () => {
     try {
-      const [testRows, challengeRows, competitionRows] = await Promise.all([
+      const [testRows, competitionRows] = await Promise.all([
         adminTestsApi.getAll(),
-        adminChallengesApi.getAll(),
         adminCompetitionsApi.getAll()
       ]);
       setTests(testRows);
-      setChallenges(challengeRows);
       setCompetitions(competitionRows);
       setSelectedTestId(testRows[0]?.id ?? "");
-      setSelectedChallengeId(challengeRows[0]?.id ?? "");
     } catch (error: unknown) {
       push({
         title: error instanceof Error ? error.message : "Не удалось загрузить данные",
@@ -427,23 +421,6 @@ const AdminTestsManagerPage = () => {
   useEffect(() => {
     void loadData();
   }, [push]);
-
-  useEffect(() => {
-    if (!selectedTestId) {
-      setTestChallenges([]);
-      return;
-    }
-
-    void adminTestsApi
-      .getChallenges(selectedTestId)
-      .then(setTestChallenges)
-      .catch((error: unknown) => {
-        push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить задания теста",
-          variant: "error",
-        });
-      });
-  }, [push, selectedTestId]);
 
   const filteredTests = useMemo(
     () =>
@@ -565,42 +542,6 @@ const AdminTestsManagerPage = () => {
       });
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleAddChallenge = async () => {
-    if (!selectedTestId || !selectedChallengeId) {
-      return;
-    }
-
-    try {
-      const updated = await adminTestsApi.addChallenge(selectedTestId, selectedChallengeId);
-      setTests((current) => current.map((test) => (test.id === updated.id ? updated : test)));
-      setTestChallenges(await adminTestsApi.getChallenges(selectedTestId));
-      push({ title: "Задание добавлено в тест", variant: "success" });
-    } catch (error) {
-      push({
-        title: error instanceof Error ? error.message : "Не удалось добавить задание",
-        variant: "error",
-      });
-    }
-  };
-
-  const handleRemoveChallenge = async (challengeId: string) => {
-    if (!selectedTestId) {
-      return;
-    }
-
-    try {
-      const updated = await adminTestsApi.removeChallenge(selectedTestId, challengeId);
-      setTests((current) => current.map((test) => (test.id === updated.id ? updated : test)));
-      setTestChallenges((current) => current.filter((challenge) => challenge.id !== challengeId));
-      push({ title: "Задание удалено из теста", variant: "success" });
-    } catch (error) {
-      push({
-        title: error instanceof Error ? error.message : "Не удалось удалить задание",
-        variant: "error",
-      });
     }
   };
 
@@ -855,68 +796,7 @@ const AdminTestsManagerPage = () => {
         rows={filteredTests}
       />
 
-      <Card>
-        <div className="page-stack">
-          <div className="admin-form-grid">
-            <label className="ui-field">
-              <span className="ui-field__label">Тест</span>
-              <select
-                className="ui-input"
-                value={selectedTestId}
-                onChange={(event) => setSelectedTestId(event.target.value)}
-              >
-                {tests.map((test) => (
-                  <option key={test.id} value={test.id}>
-                    {test.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="ui-field">
-              <span className="ui-field__label">Задание</span>
-              <select
-                className="ui-input"
-                value={selectedChallengeId}
-                onChange={(event) => setSelectedChallengeId(event.target.value)}
-              >
-                {challenges.map((challenge) => (
-                  <option key={challenge.id} value={challenge.id}>
-                    {challenge.title} · {challenge.points} pts
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button type="button" onClick={() => void handleAddChallenge()}>
-              Добавить задание
-            </Button>
-          </div>
 
-          <DataTable
-            columns={[
-              { key: "title", title: "Задание" },
-              { key: "points", title: "Баллы" },
-              {
-                key: "competitionId",
-                title: "Соревнования",
-                render: (challenge) => {
-                  const linkedComps = competitions.filter((comp) => comp.tasks?.some((t) => t.id === challenge.id));
-                  return linkedComps.length > 0 ? linkedComps.map((c) => c.title).join(", ") : "—";
-                },
-              },
-              {
-                key: "actions",
-                title: "Действия",
-                render: (challenge) => (
-                  <Button variant="danger" onClick={() => void handleRemoveChallenge(challenge.id)}>
-                    Удалить из теста
-                  </Button>
-                ),
-              },
-            ]}
-            rows={testChallenges}
-          />
-        </div>
-      </Card>
 
       <Modal open={isModalOpen} title={editingTestId ? "Редактировать тест" : "Новый тест"} onClose={() => setIsModalOpen(false)}>
         <form className="admin-form" onSubmit={handleSubmit}>

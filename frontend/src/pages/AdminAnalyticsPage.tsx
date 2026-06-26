@@ -7,7 +7,7 @@ import { DataTable } from "@/shared/ui/DataTable/DataTable";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { Input } from "@/shared/ui/Input/Input";
 import { useToastStore } from "@/entities/notification/model/toastStore";
-import { analyticsApi, AnalyticsSummary, TaskAnalytics, StudentTestAnalytics } from "@/shared/api/services/analytics";
+import { analyticsApi, AnalyticsSummary, TaskAnalytics, StudentTestAnalytics, StudentChallengeAnalytics } from "@/shared/api/services/analytics";
 import { groupsApi } from "@/shared/api/services/groups";
 import { streamsApi } from "@/shared/api/services/streams";
 
@@ -22,6 +22,11 @@ export const AdminAnalyticsPage = () => {
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [tasks, setTasks] = useState<TaskAnalytics[]>([]);
   const [studentTests, setStudentTests] = useState<StudentTestAnalytics[]>([]);
+  const [studentChallenges, setStudentChallenges] = useState<StudentChallengeAnalytics[]>([]);
+  
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [activeSubTab, setActiveSubTab] = useState<"tests" | "challenges">("tests");
+
   const [testSearch, setTestSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -49,14 +54,25 @@ export const AdminAnalyticsPage = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [aData, tData, stData] = await Promise.all([
+      const [aData, tData, stData, scData] = await Promise.all([
         analyticsApi.getGroupAnalytics(selectedGroupId, selectedFlowId),
         analyticsApi.getTaskAnalytics(selectedGroupId, selectedFlowId),
-        analyticsApi.getStudentTestAnalytics(selectedGroupId, selectedFlowId)
+        analyticsApi.getStudentTestAnalytics(selectedGroupId, selectedFlowId),
+        analyticsApi.getStudentChallengeAnalytics(selectedGroupId, selectedFlowId)
       ]);
       setAnalytics(aData);
       setTasks(tData);
       setStudentTests(stData);
+      setStudentChallenges(scData);
+
+      if (aData.students.length > 0) {
+        setSelectedStudentId((prev) => {
+          const exists = aData.students.some(s => s.id === prev);
+          return exists ? prev : aData.students[0].id;
+        });
+      } else {
+        setSelectedStudentId("");
+      }
     } catch (error) {
       push({ title: "Ошибка загрузки аналитики", variant: "error" });
     } finally {
@@ -75,6 +91,25 @@ export const AdminAnalyticsPage = () => {
       );
     });
   }, [studentTests, testSearch]);
+
+  const avgTestScore = useMemo(() => {
+    const completedTests = studentTests.filter(t => t.status === "COMPLETED");
+    if (completedTests.length === 0) return 0;
+    const sum = completedTests.reduce((acc, t) => acc + t.score, 0);
+    return sum / completedTests.length;
+  }, [studentTests]);
+
+  const selectedStudent = useMemo(() => {
+    return analytics?.students.find(s => s.id === selectedStudentId) || null;
+  }, [analytics?.students, selectedStudentId]);
+
+  const selectedStudentTests = useMemo(() => {
+    return studentTests.filter(t => t.studentId === selectedStudentId);
+  }, [studentTests, selectedStudentId]);
+
+  const selectedStudentChallenges = useMemo(() => {
+    return studentChallenges.filter(c => c.studentId === selectedStudentId);
+  }, [studentChallenges, selectedStudentId]);
 
   const escapeCSV = (str: string | number) => `"${String(str).replace(/"/g, '""')}"`;
 
@@ -167,6 +202,12 @@ export const AdminAnalyticsPage = () => {
             </Card>
             <Card>
               <div className="metric-card">
+                <span className="muted">Всего студентов</span>
+                <strong>{analytics.students.length}</strong>
+              </div>
+            </Card>
+            <Card>
+              <div className="metric-card">
                 <span className="muted">Допущены</span>
                 <strong>{analytics.metrics.admissionPercentage.toFixed(1)}%</strong>
               </div>
@@ -176,6 +217,15 @@ export const AdminAnalyticsPage = () => {
                 <span className="muted">Заблокированы</span>
                 <strong>{analytics.metrics.blockedOrDisqualifiedCount}</strong>
                 <Badge tone="danger">Внимание</Badge>
+              </div>
+            </Card>
+            <Card>
+              <div className="metric-card">
+                <span className="muted">Ср. успеваемость (Тесты)</span>
+                <strong>{avgTestScore.toFixed(1)}%</strong>
+                <Badge tone="success">
+                  Решено: {studentTests.filter(t => t.status === "COMPLETED").length}
+                </Badge>
               </div>
             </Card>
           </div>
@@ -259,7 +309,31 @@ export const AdminAnalyticsPage = () => {
             </div>
             <DataTable
               columns={[
-                { key: "fullName", title: "ФИО" },
+                {
+                  key: "fullName",
+                  title: "ФИО",
+                  render: (r: any) => (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStudentId(r.id);
+                        document.getElementById("detailed-student-analytics")?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary)',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                        padding: 0,
+                        font: 'inherit',
+                        textAlign: 'left'
+                      }}
+                    >
+                      {r.fullName}
+                    </button>
+                  )
+                },
                 { key: "status", title: "Статус", render: (r: any) => <Badge tone={r.status === 'ACTIVE' ? 'success' : 'danger'}>{r.status}</Badge> },
                 { key: "labScore", title: "M (Лабы)" },
                 { key: "ctfScore", title: "N (CTF)" },
@@ -270,6 +344,178 @@ export const AdminAnalyticsPage = () => {
               ]}
               rows={analytics.students}
             />
+          </Card>
+
+          <Card>
+            <div className="page-stack" id="detailed-student-analytics">
+              <h3>Детальная статистика студента</h3>
+              
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                <div style={{ flex: 1, minWidth: '250px' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+                    Выберите студента для просмотра детальной истории
+                  </label>
+                  <select
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg)',
+                      color: 'var(--text)',
+                      font: 'inherit'
+                    }}
+                  >
+                    <option value="">-- Выберите студента --</option>
+                    {analytics.students.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.fullName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedStudent ? (
+                <div className="page-stack" style={{ borderTop: '1px solid var(--border)', paddingTop: '1.5rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '1.25rem' }}>{selectedStudent.fullName}</h4>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                        Рекомендуемая оценка: <Badge tone="info">{selectedStudent.recommendedGrade}</Badge>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1.5rem' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>M (Лабы)</span>
+                        <strong style={{ fontSize: '1.2rem' }}>{selectedStudent.labScore}</strong>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>N (CTF)</span>
+                        <strong style={{ fontSize: '1.2rem' }}>{selectedStudent.ctfScore}</strong>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>Итого (S*100)</span>
+                        <strong style={{ fontSize: '1.2rem' }}>{selectedStudent.totalScore100.toFixed(1)}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab("tests")}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        border: 'none',
+                        background: activeSubTab === "tests" ? 'var(--primary)' : 'transparent',
+                        color: activeSubTab === "tests" ? 'white' : 'var(--text)',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Тесты ({selectedStudentTests.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab("challenges")}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        border: 'none',
+                        background: activeSubTab === "challenges" ? 'var(--primary)' : 'transparent',
+                        color: activeSubTab === "challenges" ? 'white' : 'var(--text)',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Задания CTF ({selectedStudentChallenges.length})
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: '1rem' }}>
+                    {activeSubTab === "tests" ? (
+                      <DataTable
+                        columns={[
+                          { key: "testTitle", title: "Тест" },
+                          {
+                            key: "status",
+                            title: "Статус",
+                            render: (r: any) => {
+                              let tone: "success" | "danger" | "info" | "neutral" = "neutral";
+                              let label = "Не приступал";
+                              if (r.status === "COMPLETED") {
+                                tone = "success";
+                                label = "Решен";
+                              } else if (r.status === "IN_PROGRESS") {
+                                tone = "info";
+                                label = "В процессе";
+                              }
+                              return <Badge tone={tone}>{label}</Badge>;
+                            }
+                          },
+                          {
+                            key: "score",
+                            title: "Баллы / Порог",
+                            render: (r: any) => {
+                              if (r.status === "NOT_STARTED") return "—";
+                              const isPassed = r.score >= r.passingScore;
+                              return (
+                                <span style={{ color: isPassed ? "var(--success)" : "var(--danger)", fontWeight: 'bold' }}>
+                                  {r.score}% (порог: {r.passingScore}%)
+                                </span>
+                              );
+                            }
+                          },
+                          {
+                            key: "date",
+                            title: "Время сдачи/активности",
+                            render: (r: any) => r.date !== "-" ? new Date(r.date).toLocaleString("ru") : "—"
+                          }
+                        ]}
+                        rows={selectedStudentTests}
+                      />
+                    ) : (
+                      <DataTable
+                        columns={[
+                          { key: "challengeName", title: "Задание" },
+                          { key: "category", title: "Категория" },
+                          { key: "maxScore", title: "Макс. балл" },
+                          {
+                            key: "solved",
+                            title: "Статус",
+                            render: (r: any) => (
+                              <Badge tone={r.solved ? "success" : r.attemptsCount > 0 ? "info" : "neutral"}>
+                                {r.solved ? "Решено" : r.attemptsCount > 0 ? "Есть попытки" : "Не приступал"}
+                              </Badge>
+                            )
+                          },
+                          {
+                            key: "scoreAwarded",
+                            title: "Получено баллов",
+                            render: (r: any) => r.solved ? r.scoreAwarded : "—"
+                          },
+                          { key: "attemptsCount", title: "Всего попыток" },
+                          {
+                            key: "date",
+                            title: "Время последнего действия",
+                            render: (r: any) => r.date !== "-" ? new Date(r.date).toLocaleString("ru") : "—"
+                          }
+                        ]}
+                        rows={selectedStudentChallenges}
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text-secondary)', padding: '2rem 0', textAlign: 'center' }}>
+                  Студент не выбран или список студентов пуст.
+                </div>
+              )}
+            </div>
           </Card>
         </>
       )}

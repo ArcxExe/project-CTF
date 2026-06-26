@@ -48,6 +48,20 @@ export interface StudentTestAnalytics {
   date: string;
 }
 
+export interface StudentChallengeAnalytics {
+  studentId: string;
+  studentName: string;
+  groupName: string;
+  challengeId: string;
+  challengeName: string;
+  category: string;
+  maxScore: number;
+  solved: boolean;
+  scoreAwarded: number;
+  attemptsCount: number;
+  date: string;
+}
+
 export const analyticsApi = {
   async getGroupAnalytics(groupId?: string, flowId?: string): Promise<AnalyticsSummary> {
     const params = new URLSearchParams();
@@ -80,5 +94,16 @@ export const analyticsApi = {
     const url = `/api/admin/analytics/student-tests${queryString ? "?" + queryString : ""}`;
 
     return apiRequest<StudentTestAnalytics[]>(url);
+  },
+
+  async getStudentChallengeAnalytics(groupId?: string, flowId?: string): Promise<StudentChallengeAnalytics[]> {
+    const params = new URLSearchParams();
+    if (groupId) params.append("groupId", groupId);
+    if (flowId) params.append("flowId", flowId);
+
+    const queryString = params.toString();
+    const url = `/api/admin/analytics/student-challenges${queryString ? "?" + queryString : ""}`;
+
+    return apiRequest<StudentChallengeAnalytics[]>(url);
   },
 };

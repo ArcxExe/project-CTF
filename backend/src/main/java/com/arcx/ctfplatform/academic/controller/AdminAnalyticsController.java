@@ -14,6 +14,7 @@ import com.arcx.ctfplatform.academic.service.AdminAnalyticsService;
 import com.arcx.ctfplatform.academic.service.AdminAnalyticsService.AnalyticsSummary;
 import com.arcx.ctfplatform.academic.service.AdminAnalyticsService.TaskAnalytics;
 import com.arcx.ctfplatform.academic.service.AdminAnalyticsService.StudentTestAnalytics;
+import com.arcx.ctfplatform.academic.service.AdminAnalyticsService.StudentChallengeAnalytics;
 
 import lombok.RequiredArgsConstructor;
 
@@ -44,5 +45,12 @@ public class AdminAnalyticsController {
             @RequestParam(required = false) UUID groupId,
             @RequestParam(required = false) UUID flowId) {
         return ResponseEntity.ok(adminAnalyticsService.getStudentTestAnalytics(groupId, flowId));
+    }
+
+    @GetMapping("/student-challenges")
+    public ResponseEntity<List<StudentChallengeAnalytics>> getStudentChallengeAnalytics(
+            @RequestParam(required = false) UUID groupId,
+            @RequestParam(required = false) UUID flowId) {
+        return ResponseEntity.ok(adminAnalyticsService.getStudentChallengeAnalytics(groupId, flowId));
     }
 }
