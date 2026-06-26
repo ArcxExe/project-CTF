@@ -36,6 +36,18 @@ export interface TaskAnalytics {
   incorrectAttempts: number;
 }
 
+export interface StudentTestAnalytics {
+  studentId: string;
+  studentName: string;
+  groupName: string;
+  testId: string;
+  testTitle: string;
+  status: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED";
+  score: number;
+  passingScore: number;
+  date: string;
+}
+
 export const analyticsApi = {
   async getGroupAnalytics(groupId?: string, flowId?: string): Promise<AnalyticsSummary> {
     const params = new URLSearchParams();
@@ -57,5 +69,16 @@ export const analyticsApi = {
     const url = `/api/admin/analytics/tasks${queryString ? "?" + queryString : ""}`;
 
     return apiRequest<TaskAnalytics[]>(url);
+  },
+
+  async getStudentTestAnalytics(groupId?: string, flowId?: string): Promise<StudentTestAnalytics[]> {
+    const params = new URLSearchParams();
+    if (groupId) params.append("groupId", groupId);
+    if (flowId) params.append("flowId", flowId);
+
+    const queryString = params.toString();
+    const url = `/api/admin/analytics/student-tests${queryString ? "?" + queryString : ""}`;
+
+    return apiRequest<StudentTestAnalytics[]>(url);
   },
 };

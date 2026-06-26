@@ -799,7 +799,7 @@ const AdminTestsManagerPage = () => {
     <div className="page-stack">
       <PageHeader
         title="Тесты"
-        subtitle="Предварительные тесты допуска из backend API."
+        subtitle="Предварительные тесты."
         actions={<Button onClick={handleCreateClick}>Создать тест</Button>}
       />
 

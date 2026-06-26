@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import { Card } from "@/shared/ui/Card/Card";
 import { Badge } from "@/shared/ui/Badge/Badge";
 import { Button } from "@/shared/ui/Button/Button";
 import { DataTable } from "@/shared/ui/DataTable/DataTable";
 import { Loader } from "@/shared/ui/Loader/Loader";
+import { Input } from "@/shared/ui/Input/Input";
 import { useToastStore } from "@/entities/notification/model/toastStore";
-import { analyticsApi, AnalyticsSummary, TaskAnalytics } from "@/shared/api/services/analytics";
+import { analyticsApi, AnalyticsSummary, TaskAnalytics, StudentTestAnalytics } from "@/shared/api/services/analytics";
 import { groupsApi } from "@/shared/api/services/groups";
 import { streamsApi } from "@/shared/api/services/streams";
 
@@ -20,6 +21,8 @@ export const AdminAnalyticsPage = () => {
 
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [tasks, setTasks] = useState<TaskAnalytics[]>([]);
+  const [studentTests, setStudentTests] = useState<StudentTestAnalytics[]>([]);
+  const [testSearch, setTestSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -46,18 +49,32 @@ export const AdminAnalyticsPage = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [aData, tData] = await Promise.all([
+      const [aData, tData, stData] = await Promise.all([
         analyticsApi.getGroupAnalytics(selectedGroupId, selectedFlowId),
-        analyticsApi.getTaskAnalytics(selectedGroupId, selectedFlowId)
+        analyticsApi.getTaskAnalytics(selectedGroupId, selectedFlowId),
+        analyticsApi.getStudentTestAnalytics(selectedGroupId, selectedFlowId)
       ]);
       setAnalytics(aData);
       setTasks(tData);
+      setStudentTests(stData);
     } catch (error) {
       push({ title: "Ошибка загрузки аналитики", variant: "error" });
     } finally {
       setIsLoading(false);
     }
   };
+
+  const filteredStudentTests = useMemo(() => {
+    return studentTests.filter((st) => {
+      const query = testSearch.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        st.studentName.toLowerCase().includes(query) ||
+        st.testTitle.toLowerCase().includes(query) ||
+        st.groupName.toLowerCase().includes(query)
+      );
+    });
+  }, [studentTests, testSearch]);
 
   const escapeCSV = (str: string | number) => `"${String(str).replace(/"/g, '""')}"`;
 
@@ -175,6 +192,62 @@ export const AdminAnalyticsPage = () => {
                   { key: "incorrectAttempts", title: "Неверных попыток" }
                 ]}
                 rows={tasks}
+              />
+            </div>
+          </Card>
+
+          <Card>
+            <div className="page-stack">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3>Прохождение тестов студентами</h3>
+                <Input
+                  placeholder="Поиск по студенту или тесту..."
+                  value={testSearch}
+                  onChange={(e) => setTestSearch(e.target.value)}
+                  style={{ maxWidth: '300px', margin: 0 }}
+                />
+              </div>
+              <DataTable
+                columns={[
+                  { key: "studentName", title: "Студент" },
+                  { key: "groupName", title: "Группа" },
+                  { key: "testTitle", title: "Тест" },
+                  { 
+                    key: "status", 
+                    title: "Статус",
+                    render: (r: any) => {
+                      let tone: "success" | "danger" | "info" | "neutral" = "neutral";
+                      let label = "Не приступал";
+                      if (r.status === "COMPLETED") {
+                        tone = "success";
+                        label = "Решен";
+                      } else if (r.status === "IN_PROGRESS") {
+                        tone = "info";
+                        label = "В процессе";
+                      }
+                      return <Badge tone={tone}>{label}</Badge>;
+                    }
+                  },
+                  { 
+                    key: "score", 
+                    title: "Баллы (Проходной)",
+                    render: (r: any) => {
+                      if (r.status === "NOT_STARTED") return "-";
+                      const isPassed = r.score >= r.passingScore;
+                      return (
+                        <span style={{ color: isPassed ? "var(--success)" : "var(--danger)", fontWeight: 'bold' }}>
+                          {r.score}% (порог: {r.passingScore}%)
+                        </span>
+                      );
+                    }
+                  },
+                  { 
+                    key: "date", 
+                    title: "Время сдачи",
+                    render: (r: any) => r.date !== "-" ? new Date(r.date).toLocaleString("ru") : "-"
+                  }
+                ]}
+                rows={filteredStudentTests}
               />
             </div>
           </Card>
