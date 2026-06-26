@@ -46,6 +46,9 @@ public class AcademicGroupService {
         AcademicGroup entity = new AcademicGroup();
         entity.setName(request.name());
         entity.setStreamId(request.streamId());
+        if (request.maxLabs() != null) {
+            entity.setMaxLabs(request.maxLabs());
+        }
         AcademicGroup response = repository.save(entity);
 
         return acMappingDTO.mapping(response);
@@ -65,6 +68,9 @@ public class AcademicGroupService {
         }
 
         academicGroup.setStreamId(request.streamId());
+        if (request.maxLabs() != null) {
+            academicGroup.setMaxLabs(request.maxLabs());
+        }
         repository.save(academicGroup);
 
         return acMappingDTO.mapping(academicGroup);

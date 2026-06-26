@@ -10,7 +10,7 @@ import { adminTestsApi } from "@/shared/api/services/tests";
 import type { CtfTest, QuizQuestion, QuizOption } from "@/shared/api/services/tests";
 import type { Competition } from "@/shared/types/competition";
 import { studentsApi } from "@/shared/api/services/students";
-import type { Student } from "@/shared/types/education";
+import type { Student, Group } from "@/shared/types/education";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
 import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
 import { labScoresApi } from "@/shared/api/services/labScores";
@@ -1482,7 +1482,8 @@ export const AdminGroupsPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", streamId: "" });
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", streamId: "", maxLabs: "0" });
 
   const loadData = async () => {
     try {
@@ -1503,19 +1504,39 @@ export const AdminGroupsPage = () => {
     loadData();
   }, [push]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleAddClick = () => {
+    setEditingGroupId(null);
+    setForm({ name: "", streamId: "", maxLabs: "0" });
+    setIsModalOpen(true);
+  };
+
+  const handleEditClick = (g: any) => {
+    setEditingGroupId(g.id);
+    setForm({ name: g.name, streamId: g.streamId || "", maxLabs: (g.maxLabs || 0).toString() });
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     try {
-
-      await groupsApi.create({
+      const payload = {
         name: form.name,
         streamId: form.streamId || undefined,
-      });
+        maxLabs: form.maxLabs ? Number(form.maxLabs) : 0,
+      };
+
+      if (editingGroupId) {
+        await groupsApi.update(editingGroupId, payload);
+        push({ title: "Группа обновлена", variant: "success" });
+      } else {
+        await groupsApi.create(payload);
+        push({ title: "Группа создана", variant: "success" });
+      }
       await loadData();
       setIsModalOpen(false);
-      setForm({ name: "", streamId: "" });
-      push({ title: "Группа создана", variant: "success" });
+      setEditingGroupId(null);
+      setForm({ name: "", streamId: "", maxLabs: "0" });
     } catch (error) {
       push({ title: error instanceof Error ? error.message : "Ошибка", variant: "error" });
     } finally {
@@ -1529,23 +1550,29 @@ export const AdminGroupsPage = () => {
 
   return (
     <div className="page-stack">
-      <PageHeader title="Группы" subtitle="Учебные группы, привязка к потокам" actions={<Button onClick={() => setIsModalOpen(true)}>Добавить группу</Button>} />
+      <PageHeader title="Группы" subtitle="Учебные группы, привязка к потокам" actions={<Button onClick={handleAddClick}>Добавить группу</Button>} />
       <Card><Input label="Поиск" value={search} onChange={(e) => setSearch(e.target.value)} /></Card>
       <DataTable
         columns={[
           { key: "name", title: "Группа" },
           { key: "streamId", title: "Поток", render: (g) => streams.find(s => s.id === g.streamId)?.name || "Не назначен" },
-          { key: "actions", title: "Действия", render: (g) => <Button variant="danger" onClick={async () => {
-            if(!confirm("Удалить?")) return;
+          { key: "maxLabs", title: "Всего лаб. работ", render: (g) => g.maxLabs || 0 },
+          { key: "actions", title: "Действия", render: (g) => (
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <Button variant="secondary" onClick={() => handleEditClick(g)}>Редактировать</Button>
+              <Button variant="danger" onClick={async () => {
+                if(!confirm("Удалить?")) return;
 
-            await groupsApi.delete(g.id);
-            await loadData();
-          }}>Удалить</Button> }
+                await groupsApi.delete(g.id);
+                await loadData();
+              }}>Удалить</Button>
+            </div>
+          ) }
         ]}
         rows={filtered}
       />
-      <Modal open={isModalOpen} title="Новая группа" onClose={() => setIsModalOpen(false)}>
-        <form className="admin-form" onSubmit={handleCreate}>
+      <Modal open={isModalOpen} title={editingGroupId ? "Редактировать группу" : "Новая группа"} onClose={() => setIsModalOpen(false)}>
+        <form className="admin-form" onSubmit={handleSubmit}>
           <Input label="Название" value={form.name} onChange={(e) => setForm(c => ({...c, name: e.target.value}))} required />
           <label className="ui-field">
             <span className="ui-field__label">Поток</span>
@@ -1554,7 +1581,15 @@ export const AdminGroupsPage = () => {
               {streams.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
-          <Button type="submit" disabled={isSaving}>{isSaving ? "Сохранение..." : "Добавить"}</Button>
+          <Input
+            label="Всего лабораторных работ"
+            type="number"
+            min={0}
+            value={form.maxLabs}
+            onChange={(e) => setForm(c => ({...c, maxLabs: e.target.value}))}
+            required
+          />
+          <Button type="submit" disabled={isSaving}>{isSaving ? "Сохранение..." : (editingGroupId ? "Сохранить" : "Добавить")}</Button>
         </form>
       </Modal>
     </div>
@@ -1936,6 +1971,7 @@ const AdminLabsManagerPage = () => {
   const { push } = useToastStore();
   const [scores, setScores] = useState<LabScore[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -1951,12 +1987,14 @@ const AdminLabsManagerPage = () => {
 
   const loadData = async () => {
     try {
-      const [scoresData, studentsData] = await Promise.all([
+      const [scoresData, studentsData, groupsData] = await Promise.all([
         labScoresApi.getAllScores().catch(() => [] as LabScore[]),
         studentsApi.getAll().catch(() => [] as Student[]),
+        groupsApi.getAll().catch(() => [] as Group[]),
       ]);
       setScores(scoresData);
       setStudents(studentsData);
+      setGroups(groupsData);
       if (studentsData.length > 0) {
         setForm((current) => ({
           ...current,
@@ -2002,7 +2040,7 @@ const AdminLabsManagerPage = () => {
   }, [students, studentSearch]);
 
   const groupedStudents = useMemo(() => {
-    const groups: Record<string, Student[]> = {};
+    const groupsMap: Record<string, Student[]> = {};
     filteredStudents.forEach((student) => {
       const streamName = student.stream || "Без потока";
       const groupName = student.group || "Без группы";
@@ -2010,12 +2048,12 @@ const AdminLabsManagerPage = () => {
         streamName !== "Без потока" || groupName !== "Без группы"
           ? `Поток: ${streamName} | Группа: ${groupName}`
           : "Без группы и потока";
-      if (!groups[label]) {
-        groups[label] = [];
+      if (!groupsMap[label]) {
+        groupsMap[label] = [];
       }
-      groups[label].push(student);
+      groupsMap[label].push(student);
     });
-    return groups;
+    return groupsMap;
   }, [filteredStudents]);
 
   useEffect(() => {
@@ -2030,6 +2068,14 @@ const AdminLabsManagerPage = () => {
       }
     }
   }, [filteredStudents, isEditing]);
+
+  const currentMaxLabs = useMemo(() => {
+    if (!form.studentId) return 0;
+    const student = students.find((s) => s.id === form.studentId);
+    if (!student) return 0;
+    const group = groups.find((g) => g.name === student.group);
+    return group?.maxLabs ?? 0;
+  }, [form.studentId, students, groups]);
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
@@ -2104,7 +2150,15 @@ const AdminLabsManagerPage = () => {
         columns={[
           { key: "studentName", title: "Участник" },
           { key: "groupName", title: "Группа" },
-          { key: "score", title: "Баллы за лаб" },
+          { 
+            key: "score", 
+            title: "Баллы за лаб",
+            render: (row) => {
+              const group = groups.find((g) => g.name === row.groupName);
+              const maxLabs = group?.maxLabs ?? 0;
+              return `${maxLabs} \\ ${row.score}`;
+            }
+          },
           { 
             key: "v1Coefficient", 
             title: "Коэффициент v1",
@@ -2167,7 +2221,7 @@ const AdminLabsManagerPage = () => {
           )}
 
           <Input
-            label="Баллы"
+            label={currentMaxLabs > 0 ? `Баллы (Всего лабораторных работ в группе: ${currentMaxLabs})` : "Баллы"}
             type="number"
             min={0}
             value={form.score}

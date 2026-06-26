@@ -6,7 +6,8 @@ import jakarta.validation.constraints.NotNull;
 
 public record AcademicGroupRequestDTO(
     @NotBlank String name,
-    @NotNull UUID streamId
+    @NotNull UUID streamId,
+    Integer maxLabs
     ) {
 }
 

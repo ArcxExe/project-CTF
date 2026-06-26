@@ -12,7 +12,8 @@ public record AcademicGroupResponseDTO(
         String name,
         UUID id,
         Instant createdAt,
-        UUID streamId) {
+        UUID streamId,
+        Integer maxLabs) {
 
     @Component
     public static class Mapper implements IMapping<AcademicGroup, AcademicGroupResponseDTO> {
@@ -27,7 +28,8 @@ public record AcademicGroupResponseDTO(
                     from.getName(),
                     from.getId(),
                     from.getCreatedAt(),
-                    from.getStreamId());
+                    from.getStreamId(),
+                    from.getMaxLabs());
         }
     }
 }

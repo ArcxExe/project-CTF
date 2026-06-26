@@ -7,18 +7,21 @@ interface BackendGroupResponse {
   name: string;
   createdAt: string;
   streamId: string | null;
+  maxLabs?: number;
 }
 
 /** Matches backend AcademicGroupRequestDTO (academic/group/dto/AcademicGroupRequestDTO.java) */
 export interface GroupPayload {
   name: string;
   streamId?: string;
+  maxLabs?: number;
 }
 
 const toGroup = (response: BackendGroupResponse): Group => ({
   id: response.id,
   name: response.name,
   streamId: response.streamId ?? undefined,
+  maxLabs: response.maxLabs,
   createdAt: response.createdAt,
 });
 

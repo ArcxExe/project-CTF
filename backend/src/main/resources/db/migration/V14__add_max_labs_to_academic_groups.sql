@@ -1,0 +1,1 @@
+ALTER TABLE academic_groups ADD COLUMN max_labs INT NOT NULL DEFAULT 0;

@@ -6,6 +6,7 @@ export interface Group {
   streamId?: Identifier;
   streamName?: string;
   studentsCount?: number;
+  maxLabs?: number;
   createdAt?: ISODateTime;
 }
 

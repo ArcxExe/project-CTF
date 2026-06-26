@@ -51,6 +51,10 @@ public class AcademicGroup {
         }
     }
 
+    @Column(name = "max_labs", nullable = false)
+    @Builder.Default
+    private Integer maxLabs = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

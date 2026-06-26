@@ -835,7 +835,15 @@ export const ParticipantLabsPage = () => {
         columns={[
           { key: "studentName", title: "Участник" },
           { key: "groupName", title: "Группа" },
-          { key: "score", title: "Баллы за лаб" },
+          { 
+            key: "score", 
+            title: "Баллы за лаб",
+            render: (row) => {
+              const group = groups.find((g) => g.name === row.groupName);
+              const maxLabs = group?.maxLabs ?? 0;
+              return `${maxLabs} \\ ${row.score}`;
+            }
+          },
           { 
             key: "v1Coefficient", 
             title: "Коэффициент v1",
