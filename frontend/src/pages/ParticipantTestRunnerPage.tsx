@@ -18,6 +18,7 @@ export const ParticipantTestRunnerPage = () => {
   const [attempt, setAttempt] = useState<QuizAttempt | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [sequenceInputs, setSequenceInputs] = useState<Record<string, string>>({});
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,7 +45,22 @@ export const ParticipantTestRunnerPage = () => {
           const savedAnswers = localStorage.getItem(`quiz_answers_${testId}`);
           if (savedAnswers) {
             try {
-              setAnswers(JSON.parse(savedAnswers));
+              const parsed = JSON.parse(savedAnswers) as Record<string, string[]>;
+              setAnswers(parsed);
+
+              // Initialize sequenceInputs from parsed answers
+              const inputs: Record<string, string> = {};
+              loadedQuestions.forEach(q => {
+                if (q.type === "SEQUENCE") {
+                  const ans = parsed[q.id] || [];
+                  const indices = ans.map((id: string) => {
+                    const idx = q.options.findIndex(opt => opt.id === id);
+                    return idx !== -1 ? String(idx + 1) : "";
+                  }).filter(Boolean);
+                  inputs[q.id] = indices.join(", ");
+                }
+              });
+              setSequenceInputs(inputs);
             } catch (e) {
               console.error("Failed to parse saved answers", e);
             }
@@ -134,6 +150,23 @@ export const ParticipantTestRunnerPage = () => {
       return newAnswers;
     });
   };
+  const handleSequenceInputChange = (questionId: string, text: string, options: any[]) => {
+    setSequenceInputs(prev => ({ ...prev, [questionId]: text }));
+
+    const tokens = text.split(/[\s,]+/).filter(Boolean);
+    const selectedIds: string[] = [];
+    tokens.forEach(token => {
+      const num = parseInt(token, 10);
+      if (!isNaN(num) && num >= 1 && num <= options.length) {
+        const opt = options[num - 1];
+        if (opt && !selectedIds.includes(opt.id)) {
+          selectedIds.push(opt.id);
+        }
+      }
+    });
+
+    setAnswers(prev => ({ ...prev, [questionId]: selectedIds }));
+  };
 
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -209,20 +242,22 @@ export const ParticipantTestRunnerPage = () => {
 
                 {q.type === "SEQUENCE" && (
                   <div className="test-options">
-                    <p className="muted" style={{ fontSize: "0.85rem" }}>
-                      *(Временный UI для Sequence) Введите порядок ID через запятую.
+                    <p className="muted" style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                      Введите порядок элементов (номера через запятую или пробел, например: 1,3,2,4).
                     </p>
                     <input 
-                      style={{ padding: '0.5rem', width: '100%' }}
-                      placeholder="e.g. uuid1,uuid2" 
-                      value={(answers[q.id] || []).join(",")}
-                      onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: e.target.value.split(",").filter(Boolean) }))} 
+                      style={{ padding: '0.5rem', width: '100%', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}
+                      placeholder="Например: 1, 3, 2, 4" 
+                      value={sequenceInputs[q.id] || ""}
+                      onChange={(e) => handleSequenceInputChange(q.id, e.target.value, q.options)} 
                     />
-                    <ul style={{ paddingLeft: "1.5rem", marginTop: '0.5rem' }}>
-                      {q.options.map(opt => (
-                        <li key={opt.id} className="muted">{opt.id} - {opt.text}</li>
+                    <ol style={{ paddingLeft: "1.5rem", marginTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {q.options.map((opt) => (
+                        <li key={opt.id} style={{ color: 'var(--text-secondary)' }}>
+                          {opt.text}
+                        </li>
                       ))}
-                    </ul>
+                    </ol>
                   </div>
                 )}
 

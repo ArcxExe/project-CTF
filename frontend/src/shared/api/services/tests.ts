@@ -107,6 +107,10 @@ export const testsApi = {
     return response.map(toTest);
   },
 
+  async getAttempts(): Promise<QuizAttempt[]> {
+    return apiRequest<QuizAttempt[]>("/api/quizzes/attempts");
+  },
+
   async getChallenges(testId: string): Promise<Challenge[]> {
     const response = await apiRequest<BackendChallengeResponse[]>(`/api/tests/${testId}/challenges`);
     return response.map(toChallenge);

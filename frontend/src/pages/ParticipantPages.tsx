@@ -11,7 +11,7 @@ import { leaderboardApi } from "@/shared/api/services/leaderboard";
 import type { LeaderboardRow } from "@/shared/api/services/leaderboard";
 import { promoCodesApi } from "@/shared/api/services/promoCodes";
 import { testsApi } from "@/shared/api/services/tests";
-import type { CtfTest } from "@/shared/api/services/tests";
+import type { CtfTest, QuizAttempt } from "@/shared/api/services/tests";
 import { competitionsApi } from "@/shared/api/services/competitions";
 import type { Competition } from "@/shared/types/competition";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
@@ -90,17 +90,21 @@ export const ParticipantCompetitionPage = () => {
   const { push } = useToastStore();
   const { competitionId } = useParams();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [tests, setTests] = useState<CtfTest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void competitionsApi
-      .getAll()
-      .then((data) => {
+    void Promise.all([
+      competitionsApi.getAll(),
+      testsApi.getPublished()
+    ])
+      .then(([comps, testRows]) => {
         if (competitionId) {
-          setCompetitions(data.filter((c) => c.id === competitionId));
+          setCompetitions(comps.filter((c) => c.id === competitionId));
         } else {
-          setCompetitions(data);
+          setCompetitions(comps);
         }
+        setTests(testRows);
       })
       .catch((error: unknown) => {
         push({
@@ -124,43 +128,48 @@ export const ParticipantCompetitionPage = () => {
 
       {competitions.length > 0 ? (
         <div className="page-stack">
-          {competitions.map((competition) => (
-            <div key={competition.id} className="grid grid-2">
-              <Card>
-                <div className="page-stack">
-                  <div>
-                    <h3>{competition.title}</h3>
-                    <p className="muted">{competition.description}</p>
-                  </div>
-                  <div className="info-grid">
-                    <span>Старт</span>
-                    <strong>{new Date(competition.startsAt).toLocaleString("ru-RU")}</strong>
-                    <span>Финиш</span>
-                    <strong>{new Date(competition.endsAt).toLocaleString("ru-RU")}</strong>
-                    <span>Статус</span>
-                    <strong>{competition.status === "published" ? "Активно" : competition.status}</strong>
-                  </div>
-                </div>
-              </Card>
+          {competitions.map((competition) => {
+            const linkedTest = tests.find(t => t.competitionId === competition.id);
+            const testUrl = linkedTest ? `/participant/test/${linkedTest.id}` : "/participant/test";
 
-              <Card>
-                <div className="action-grid">
-                  <Link className="page-link-button" to="/participant/test">
-                    Перейти к тесту
-                  </Link>
-                  <Link className="page-link-button" to="/participant/ctf">
-                    Открыть CTF
-                  </Link>
-                  <Link className="page-link-button" to="/participant/rating">
-                    Смотреть рейтинг
-                  </Link>
-                  <Link className="page-link-button" to="/participant/promo-code">
-                    Ввести промокод
-                  </Link>
-                </div>
-              </Card>
-            </div>
-          ))}
+            return (
+              <div key={competition.id} className="grid grid-2">
+                <Card>
+                  <div className="page-stack">
+                    <div>
+                      <h3>{competition.title}</h3>
+                      <p className="muted">{competition.description}</p>
+                    </div>
+                    <div className="info-grid">
+                      <span>Старт</span>
+                      <strong>{new Date(competition.startsAt).toLocaleString("ru-RU")}</strong>
+                      <span>Финиш</span>
+                      <strong>{new Date(competition.endsAt).toLocaleString("ru-RU")}</strong>
+                      <span>Статус</span>
+                      <strong>{competition.status === "published" ? "Активно" : competition.status}</strong>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card>
+                  <div className="action-grid">
+                    <Link className="page-link-button" to={testUrl}>
+                      Перейти к тесту
+                    </Link>
+                    <Link className="page-link-button" to="/participant/ctf">
+                      Открыть CTF
+                    </Link>
+                    <Link className="page-link-button" to="/participant/rating">
+                      Смотреть рейтинг
+                    </Link>
+                    <Link className="page-link-button" to="/participant/promo-code">
+                      Ввести промокод
+                    </Link>
+                  </div>
+                </Card>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <Card>
@@ -174,13 +183,17 @@ export const ParticipantCompetitionPage = () => {
 export const ParticipantTestPage = () => {
   const { push } = useToastStore();
   const [tests, setTests] = useState<CtfTest[]>([]);
+  const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void testsApi
-      .getPublished()
-      .then(async (testRows) => {
+    void Promise.all([
+      testsApi.getPublished(),
+      testsApi.getAttempts()
+    ])
+      .then(([testRows, attemptRows]) => {
         setTests(testRows);
+        setAttempts(attemptRows);
       })
       .catch((error: unknown) => {
         push({
@@ -205,29 +218,42 @@ export const ParticipantTestPage = () => {
 
       {tests.length > 0 ? (
         <div className="grid">
-          {tests.map((test) => (
-            <Card key={test.id}>
-              <div className="page-stack">
-                <div className="test-row">
-                  <div>
-                    <h3>{test.title}</h3>
-                    <p className="muted">{test.description || "Описание теста не указано."}</p>
-                  </div>
-                  <div className="entity-summary">
-                    <span>{test.questionsCount} заданий</span>
-                    <span>{test.timeLimitMinutes} мин</span>
-                    <span>проходной {test.passingScore}%</span>
-                  </div>
-                </div>
+          {tests.map((test) => {
+            const attempt = attempts.find(a => a.quizId === test.id);
+            const isCompleted = attempt?.status === "COMPLETED";
+            const isInProgress = attempt?.status === "IN_PROGRESS";
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                  <Button onClick={() => window.location.href = `/participant/test/${test.id}`}>
-                    Начать тест
-                  </Button>
+            let btnText = "Начать тест";
+            if (isCompleted) btnText = "Тест пройден";
+            else if (isInProgress) btnText = "Продолжить тест";
+
+            return (
+              <Card key={test.id}>
+                <div className="page-stack">
+                  <div className="test-row">
+                    <div>
+                      <h3>{test.title}</h3>
+                      <p className="muted">{test.description || "Описание теста не указано."}</p>
+                    </div>
+                    <div className="entity-summary">
+                      <span>{test.questionsCount} заданий</span>
+                      <span>{test.timeLimitMinutes} мин</span>
+                      <span>проходной {test.passingScore}%</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                    <Button 
+                      onClick={() => window.location.href = `/participant/test/${test.id}`}
+                      disabled={isCompleted}
+                    >
+                      {btnText}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card>
@@ -240,25 +266,56 @@ export const ParticipantTestPage = () => {
 
 export const ParticipantCtfPage = () => {
   const { push } = useToastStore();
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [tasks, setTasks] = useState<Challenge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    void challengesApi
-      .getAll()
-      .then(setTasks)
+    void Promise.all([
+      competitionsApi.getAll(),
+      challengesApi.getAll()
+    ])
+      .then(([compRows, taskRows]) => {
+        setCompetitions(compRows);
+        setTasks(taskRows);
+      })
       .catch((error: unknown) => {
         push({
-          title: error instanceof Error ? error.message : "Не удалось загрузить задания",
+          title: error instanceof Error ? error.message : "Не удалось загрузить данные",
           variant: "error",
         });
       })
       .finally(() => setIsLoading(false));
   }, [push]);
 
+  const renderTaskCard = (task: Challenge) => (
+    <Card key={task.id}>
+      <div className="task-card">
+        <div className="task-card__head">
+          <Badge tone="info">{task.category}</Badge>
+          <strong>{task.points} pts</strong>
+        </div>
+        <div>
+          <h3>{task.title}</h3>
+          <p className="muted">{task.description}</p>
+        </div>
+        <div className="task-card__footer">
+          <span>{task.difficulty}</span>
+          <Link to={`/participant/tasks/${task.id}`}>Открыть</Link>
+        </div>
+      </div>
+    </Card>
+  );
+
   if (isLoading) {
     return <Loader label="Загружаем задания..." />;
   }
+
+  const tasksInCompetitions = new Set(
+    competitions.flatMap(c => (c.tasks || []).map(t => t.id))
+  );
+  const generalTasks = tasks.filter(t => !tasksInCompetitions.has(t.id));
+  const hasAnyTasks = tasks.length > 0;
 
   return (
     <div className="page-stack">
@@ -268,26 +325,39 @@ export const ParticipantCtfPage = () => {
         actions={<Badge tone="success">backend live</Badge>}
       />
 
-      {tasks.length > 0 ? (
-        <div className="task-grid">
-          {tasks.map((task) => (
-            <Card key={task.id}>
-              <div className="task-card">
-                <div className="task-card__head">
-                  <Badge tone="info">{task.category}</Badge>
-                  <strong>{task.points} pts</strong>
-                </div>
-                <div>
-                  <h3>{task.title}</h3>
-                  <p className="muted">{task.description}</p>
-                </div>
-                <div className="task-card__footer">
-                  <span>{task.difficulty}</span>
-                  <Link to={`/participant/tasks/${task.id}`}>Открыть</Link>
+      {hasAnyTasks ? (
+        <div className="page-stack" style={{ gap: '2rem' }}>
+          {competitions.map((comp) => {
+            const compTasks = comp.tasks || [];
+            if (compTasks.length === 0) return null;
+
+            return (
+              <div key={comp.id} className="page-stack" style={{ gap: '1rem' }}>
+                <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                  {comp.title}
+                </h2>
+                {comp.description && (
+                  <p className="muted" style={{ marginTop: '-0.5rem', marginBottom: '0.5rem' }}>
+                    {comp.description}
+                  </p>
+                )}
+                <div className="task-grid">
+                  {compTasks.map(task => renderTaskCard(task))}
                 </div>
               </div>
-            </Card>
-          ))}
+            );
+          })}
+
+          {generalTasks.length > 0 && (
+            <div className="page-stack" style={{ gap: '1rem' }}>
+              <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                Общие задачи
+              </h2>
+              <div className="task-grid">
+                {generalTasks.map(task => renderTaskCard(task))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <Card>
