@@ -1,4 +1,8 @@
 Run
-` docker compose up --build`
+```shell 
+docker compose up --build
+```
 
-`http://localhost:3000/`
+```text
+http://localhost:3000/
+```
