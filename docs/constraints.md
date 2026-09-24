@@ -1,12 +1,19 @@
 # CTF Platform - Архитектурные ограничения (Constraints)
 
 ## Технологический стек
-- **Язык:** Java 21
-- **Фреймворк:** Spring Boot 3
-- **База данных:** PostgreSQL
-- **Миграции БД:** Flyway
-- **Сборка:** Gradle
-- **Контейнеризация:** Docker, Docker Compose
+- **Backend:**
+  - **Язык:** Java 21
+  - **Фреймворк:** Spring Boot 3
+  - **База данных:** PostgreSQL
+  - **Миграции БД:** Flyway
+  - **Сборка:** Gradle
+  - **Контейнеризация:** Docker, Docker Compose
+- **Frontend:**
+  - **Язык:** TypeScript
+  - **Библиотека:** React 18 / 19
+  - **Сборщик:** Vite
+  - **Архитектурный подход:** Feature-Sliced Design (FSD)
+  - **Стилизация:** Чистый CSS с CSS Variables
 
 ## Правила написания кода (Code Guidelines)
 1. **Строгая типизация:** Использование `var` допускается только там, где тип очевиден из правой части выражения.
