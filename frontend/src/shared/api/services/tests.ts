@@ -8,6 +8,8 @@ export interface CtfTest {
   title: string;
   description: string;
   status: "draft" | "published" | "archived";
+  type?: "LECTURE" | "CONTROL_POINT";
+  ktNumber?: number | null;
   timeLimitMinutes: number;
   passingScore: number;
   questionsCount: number;
@@ -48,6 +50,8 @@ export interface CtfTestPayload {
   title: string;
   description?: string;
   status?: CtfTest["status"];
+  type?: "LECTURE" | "CONTROL_POINT";
+  ktNumber?: number | null;
   timeLimitMinutes: number;
   passingScore: number;
   questionsCount: number;
@@ -59,6 +63,8 @@ interface BackendTestResponse {
   title: string;
   description?: string;
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  type?: "LECTURE" | "CONTROL_POINT";
+  ktNumber?: number | null;
   timeLimitMinutes: number;
   passingScore: number;
   questionsCount: number;
@@ -84,6 +90,8 @@ const toTest = (response: BackendTestResponse): CtfTest => ({
   title: response.title,
   description: response.description ?? "",
   status: statusMap[response.status],
+  type: response.type ?? "LECTURE",
+  ktNumber: response.ktNumber ?? null,
   timeLimitMinutes: response.timeLimitMinutes,
   passingScore: response.passingScore,
   questionsCount: response.questionsCount,
@@ -96,6 +104,8 @@ const toBackendPayload = (payload: CtfTestPayload) => ({
   title: payload.title,
   description: payload.description,
   status: payload.status ? backendStatusMap[payload.status] : undefined,
+  type: payload.type ?? "LECTURE",
+  ktNumber: payload.type === "CONTROL_POINT" ? (payload.ktNumber ?? null) : null,
   timeLimitMinutes: payload.timeLimitMinutes,
   passingScore: payload.passingScore,
   questionsCount: payload.questionsCount,

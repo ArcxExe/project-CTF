@@ -132,7 +132,7 @@ export const AdminGradingScalePage = () => {
 
   const openCreateModal = () => {
     setEditingId(null);
-    setForm({ flowId: selectedFlowId || "", minScore: 0, maxScore: 100, gradeName: "A" });
+    setForm({ flowId: selectedFlowId || "", minScore: 85, maxScore: 100, gradeName: "5" });
     setIsModalOpen(true);
   };
 
@@ -152,10 +152,40 @@ export const AdminGradingScalePage = () => {
   return (
     <div className="page-stack">
       <PageHeader
-        title="Шкала оценок"
-        subtitle="Настройка интервалов для перевода итогового балла в оценку"
+        title="Шкала оценок (Регламент курса)"
+        subtitle="Нормативная шкала перевода итогового показателя S% в оценку (2..5) и пользовательские интервалы"
         actions={<Button onClick={openCreateModal}>Создать интервал</Button>}
       />
+
+      <Card>
+        <div style={{ display: "grid", gap: "0.75rem", fontSize: "0.92rem" }}>
+          <h3 style={{ margin: 0 }}>Нормативная шкала по регламенту курса (Раздел 2.2 и 3.1–3.2)</h3>
+          <div>
+            <strong>Формула итогового показателя:</strong>{" "}
+            <code>S = round(0.50 × L + 0.25 × K + 0.25 × C, 2)</code>, где{" "}
+            <code>L = min(Общее_ЛР / 143 × 100, 100)</code>,{" "}
+            <code>K = min(Общее_КТ / 100 × 100, 100)</code>,{" "}
+            <code>C = min(B_CTF / 800 × 100, 100)</code>.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+            <div style={{ padding: "0.75rem", borderRadius: 8, background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)" }}>
+              <strong>Оценка «5» (Отлично):</strong> <code>S ≥ 85.00%</code> при условии сдачи 8/8 ЛР, <code>L ≥ 60.00%</code> и <code>K ≥ 60.00%</code> (иначе оценка ограничивается «4»).
+            </div>
+            <div style={{ padding: "0.75rem", borderRadius: 8, background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.3)" }}>
+              <strong>Оценка «4» (Хорошо):</strong> <code>70.00% ≤ S &lt; 85.00%</code> (при сдаче всех 8/8 ЛР).
+            </div>
+            <div style={{ padding: "0.75rem", borderRadius: 8, background: "rgba(234,179,8,0.12)", border: "1px solid rgba(234,179,8,0.3)" }}>
+              <strong>Оценка «3» (Удовл.):</strong> <code>50.00% ≤ S &lt; 70.00%</code> (при сдаче всех 8/8 ЛР).
+            </div>
+            <div style={{ padding: "0.75rem", borderRadius: 8, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)" }}>
+              <strong>Оценка «2» (Неудовл.):</strong> <code>S &lt; 50.00%</code> или не приняты все 8 обязательных ЛР (нет допуска).
+            </div>
+          </div>
+          <div className="muted">
+            При добровольной сдаче экзамена (для допущенных студентов, сдавших 8/8 ЛР): <code>G_итог = max(G_курс, G_экзамен)</code>.
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <div className="page-stack" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>

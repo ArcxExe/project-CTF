@@ -104,3 +104,9 @@ Frontend построен с использованием модульной FSD
 - `GET /api/admin/analytics/group`, `/tasks`, `/student-tests`, `/student-challenges` — Сводная аналитика успеваемости и решения задач.
 - `GET /api/admin/grading-scales`, `POST /api/admin/grading-scales` — Настройка динамической шкалы перевода коэффициента $S$ в оценку (2, 3, 4, 5).
 
+### 9. Ведомость посещаемости (`/api/academic/attendance`)
+Учёт посещений 8 лекций и 8 практик в виде матрицы (п. 3.4 регламента, не влияет на рейтинг).
+- `GET /api/academic/attendance/sheet?groupId={groupId}` — Матрица посещаемости группы (без `groupId` — все студенты), строки отсортированы по ФИО.
+- `PUT /api/academic/attendance/cell` — Мгновенное сохранение одной ячейки (статусы `PRESENT`, `ABSENT`, `EXCUSED`; `null` сбрасывает отметку). Только `ADMIN`.
+- `POST /api/academic/attendance/bulk` — Массовая отметка всей группы на занятие («Отметить всех присутствующими»). Только `ADMIN`.
+

@@ -53,6 +53,35 @@ public class Test {
     @Column(nullable = false, length = 30)
     private TestStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    @Builder.Default
+    private TestType type = TestType.LECTURE;
+
+    @Column(name = "kt_number")
+    private Integer ktNumber;
+
+    public boolean isControlPoint() {
+        if (type != null) {
+            return type.isControlPoint();
+        }
+        return title != null && (title.toUpperCase().contains("КТ") || title.toLowerCase().contains("контрольн"));
+    }
+
+    public Integer getEffectiveKtNumber() {
+        if (ktNumber != null && ktNumber >= 1 && ktNumber <= 4) {
+            return ktNumber;
+        }
+        if (title != null && isControlPoint()) {
+            for (int i = 1; i <= 4; i++) {
+                if (title.contains(String.valueOf(i))) {
+                    return i;
+                }
+            }
+        }
+        return null;
+    }
+
     @Column(name = "time_limit_minutes", nullable = false)
     @Builder.Default
     private java.lang.Integer timeLimitMinutes = 60;

@@ -64,6 +64,51 @@ public class Student {
     @Column(name = "created_by")
     private UUID createdBy;
 
+    /**
+     * Student's number in the pair (subgroup) the university splits the group into.
+     * May be {@code null} when the student works individually.
+     */
+    @Column(name = "pair_number")
+    private Integer pairNumber;
+
+    @Column(name = "kt1", nullable = false)
+    @Builder.Default
+    private double kt1 = 0.0;
+
+    @Column(name = "kt2", nullable = false)
+    @Builder.Default
+    private double kt2 = 0.0;
+
+    @Column(name = "kt3", nullable = false)
+    @Builder.Default
+    private double kt3 = 0.0;
+
+    @Column(name = "kt4", nullable = false)
+    @Builder.Default
+    private double kt4 = 0.0;
+
+    @Column(name = "token_info", length = 64)
+    private String tokenInfo;
+
+    @Column(name = "exam_score")
+    private Integer examScore;
+
+    public String getFullName() {
+        StringBuilder sb = new StringBuilder();
+        if (lastName != null && !lastName.isBlank()) {
+            sb.append(lastName.trim());
+        }
+        if (firstName != null && !firstName.isBlank()) {
+            if (!sb.isEmpty()) sb.append(" ");
+            sb.append(firstName.trim());
+        }
+        if (middleName != null && !middleName.isBlank()) {
+            if (!sb.isEmpty()) sb.append(" ");
+            sb.append(middleName.trim());
+        }
+        return sb.isEmpty() ? "Студент" : sb.toString();
+    }
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default

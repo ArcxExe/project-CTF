@@ -28,6 +28,8 @@ import "./pages.css";
 
 import { groupsApi } from "@/shared/api/services/groups";
 import { streamsApi } from "@/shared/api/services/streams";
+import { AcademicResetModal } from "@/features/academic/ui/AcademicResetModal";
+import { GradebookView } from "@/features/gradebook/GradebookView";
 
 
 export const testStatusLabels: Record<CtfTest["status"], string> = {
@@ -55,6 +57,7 @@ const AdminTasksManagerPage = () => {
     flag: "",
     category: "",
     difficulty: "easy",
+    isFirstBloodOnly: false,
   });
 
   useEffect(() => {
@@ -95,6 +98,7 @@ const AdminTasksManagerPage = () => {
         difficulty: form.difficulty,
         baseScore: Number(form.baseScore),
         flag: form.flag,
+        isFirstBloodOnly: form.isFirstBloodOnly,
       };
 
       if (editingTask) {
@@ -114,6 +118,7 @@ const AdminTasksManagerPage = () => {
         flag: "",
         category: "",
         difficulty: "easy",
+        isFirstBloodOnly: false,
       });
       setEditingTask(null);
       setPreviousFlag("");
@@ -137,6 +142,7 @@ const AdminTasksManagerPage = () => {
       flag: "",
       category: task.category || "",
       difficulty: task.difficulty || "easy",
+      isFirstBloodOnly: Boolean(task.isFirstBloodOnly),
     });
     setPreviousFlag("");
     setIsModalOpen(true);
@@ -187,6 +193,7 @@ const AdminTasksManagerPage = () => {
                 flag: "",
                 category: "",
                 difficulty: "easy",
+                isFirstBloodOnly: false,
               });
               setIsModalOpen(true);
             }}
@@ -244,6 +251,11 @@ const AdminTasksManagerPage = () => {
           },
           { key: "baseScore", title: "Баллы", render: (task) => task.baseScore },
           {
+            key: "isFirstBloodOnly",
+            title: "Режим",
+            render: (task) => (task.isFirstBloodOnly ? "Только First Blood" : "Обычный"),
+          },
+          {
             key: "competitionId",
             title: "Соревнования",
             render: (task) => {
@@ -283,6 +295,7 @@ const AdminTasksManagerPage = () => {
             flag: "",
             category: "",
             difficulty: "easy",
+            isFirstBloodOnly: false,
           });
         }}
       >
@@ -334,6 +347,14 @@ const AdminTasksManagerPage = () => {
               onChange={(event) => setForm((current) => ({ ...current, baseScore: event.target.value }))}
               required
             />
+            <label className="ui-field" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "0.5rem", marginTop: "1.5rem" }}>
+              <input
+                type="checkbox"
+                checked={form.isFirstBloodOnly}
+                onChange={(event) => setForm((current) => ({ ...current, isFirstBloodOnly: event.target.checked }))}
+              />
+              <span>Только первое решение (First Blood)</span>
+            </label>
           </div>
 
           <Input
@@ -393,6 +414,8 @@ const AdminTestsManagerPage = () => {
     title: "",
     description: "",
     status: "published" as CtfTest["status"],
+    type: "LECTURE" as "LECTURE" | "CONTROL_POINT",
+    ktNumber: "",
     timeLimitMinutes: "30",
     passingScore: "70",
     questionsCount: "10",
@@ -436,6 +459,8 @@ const AdminTestsManagerPage = () => {
       title: "",
       description: "",
       status: "published",
+      type: "LECTURE",
+      ktNumber: "",
       timeLimitMinutes: "30",
       passingScore: "70",
       questionsCount: "10",
@@ -450,6 +475,8 @@ const AdminTestsManagerPage = () => {
       title: test.title,
       description: test.description || "",
       status: test.status,
+      type: test.type || "LECTURE",
+      ktNumber: test.ktNumber != null ? String(test.ktNumber) : "",
       timeLimitMinutes: String(test.timeLimitMinutes),
       passingScore: String(test.passingScore),
       questionsCount: String(test.questionsCount),
@@ -484,6 +511,8 @@ const AdminTestsManagerPage = () => {
         title: test.title,
         description: test.description || undefined,
         status: newStatus,
+        type: test.type,
+        ktNumber: test.ktNumber,
         timeLimitMinutes: test.timeLimitMinutes,
         passingScore: test.passingScore,
         questionsCount: test.questionsCount,
@@ -507,6 +536,8 @@ const AdminTestsManagerPage = () => {
       title: form.title,
       description: form.description || undefined,
       status: form.status,
+      type: form.type,
+      ktNumber: form.ktNumber ? Number(form.ktNumber) : null,
       timeLimitMinutes: Number(form.timeLimitMinutes),
       passingScore: Number(form.passingScore),
       questionsCount: Number(form.questionsCount),
@@ -528,6 +559,8 @@ const AdminTestsManagerPage = () => {
         title: "",
         description: "",
         status: "published",
+        type: "LECTURE",
+        ktNumber: "",
         timeLimitMinutes: "30",
         passingScore: "70",
         questionsCount: "10",
@@ -739,8 +772,8 @@ const AdminTestsManagerPage = () => {
   return (
     <div className="page-stack">
       <PageHeader
-        title="Тесты"
-        subtitle="Предварительные тесты."
+        title="Тесты и Контрольные точки (КТ)"
+        subtitle="Управление предварительными тестами и контрольными точками КТ 1–4."
         actions={<Button onClick={handleCreateClick}>Создать тест</Button>}
       />
 
@@ -756,6 +789,14 @@ const AdminTestsManagerPage = () => {
       <DataTable
         columns={[
           { key: "title", title: "Название" },
+          {
+            key: "type",
+            title: "Тип / КТ",
+            render: (test) => {
+              if (test.ktNumber) return `КТ ${test.ktNumber} (до 25 б.)`;
+              return test.type === "CONTROL_POINT" ? "Контрольная точка (КТ)" : "Лекционный тест";
+            },
+          },
           { key: "questionsCount", title: "Вопросов" },
           { key: "timeLimitMinutes", title: "Лимит, мин" },
           { key: "passingScore", title: "Проходной %" },
@@ -815,6 +856,46 @@ const AdminTestsManagerPage = () => {
               onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
             />
           </label>
+
+          <div className="admin-form-grid">
+            <label className="ui-field">
+              <span className="ui-field__label">Тип теста</span>
+              <select
+                className="ui-input"
+                value={form.type}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    type: event.target.value as "LECTURE" | "CONTROL_POINT",
+                  }))
+                }
+              >
+                <option value="LECTURE">Лекционный / Предварительный тест</option>
+                <option value="CONTROL_POINT">Контрольная точка (КТ)</option>
+              </select>
+            </label>
+
+            <label className="ui-field">
+              <span className="ui-field__label">Привязка к КТ 1–4 в ведомости</span>
+              <select
+                className="ui-input"
+                value={form.ktNumber}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    ktNumber: event.target.value,
+                    type: event.target.value ? "CONTROL_POINT" : current.type,
+                  }))
+                }
+              >
+                <option value="">Без прямой привязки к колонке КТ</option>
+                <option value="1">КТ 1 (макс. 25 б.)</option>
+                <option value="2">КТ 2 (макс. 25 б.)</option>
+                <option value="3">КТ 3 (макс. 25 б.)</option>
+                <option value="4">КТ 4 (макс. 25 б.)</option>
+              </select>
+            </label>
+          </div>
 
           <label className="ui-field">
             <span className="ui-field__label">Соревнование</span>
@@ -1480,16 +1561,22 @@ export const AdminGroupsPage = () => {
 export const AdminStreamsPage = () => {
   const { push } = useToastStore();
   const [streams, setStreams] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [form, setForm] = useState({ name: "" });
 
   const loadData = async () => {
     try {
-      const data = await streamsApi.getAll();
-      setStreams(data);
+      const [streamsData, groupsData] = await Promise.all([
+        streamsApi.getAll(),
+        groupsApi.getAll().catch(() => []),
+      ]);
+      setStreams(streamsData);
+      setGroups(groupsData);
     } catch (error) {
       push({ title: "Ошибка загрузки", variant: "error" });
     } finally {
@@ -1524,7 +1611,33 @@ export const AdminStreamsPage = () => {
 
   return (
     <div className="page-stack">
-      <PageHeader title="Потоки" subtitle="Потоки обучения" actions={<Button onClick={() => setIsModalOpen(true)}>Создать поток</Button>} />
+      <PageHeader
+        title="Потоки"
+        subtitle="Потоки обучения"
+        actions={
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Button onClick={() => setIsModalOpen(true)}>Создать поток</Button>
+            <Button variant="danger" onClick={() => setIsResetModalOpen(true)}>
+              Очистить данные курса
+            </Button>
+          </div>
+        }
+      />
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <strong style={{ fontSize: "1.05rem" }}>Подготовка к новому семестру (Очистка данных)</strong>
+            <p style={{ margin: "0.25rem 0 0 0", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+              Безопасный сброс академических результатов или полная очистка перед набором новых студентов. Каталог задач CTF и тесты сохраняются.
+            </p>
+          </div>
+          <Button variant="danger" onClick={() => setIsResetModalOpen(true)}>
+            Очистить данные курса
+          </Button>
+        </div>
+      </Card>
+
       <Card><Input label="Поиск" value={search} onChange={(e) => setSearch(e.target.value)} /></Card>
       <DataTable
         columns={[
@@ -1546,6 +1659,14 @@ export const AdminStreamsPage = () => {
           <Button type="submit" disabled={isSaving}>{isSaving ? "Сохранение..." : "Добавить"}</Button>
         </form>
       </Modal>
+
+      <AcademicResetModal
+        open={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onSuccess={loadData}
+        streams={streams}
+        groups={groups}
+      />
     </div>
   );
 };
@@ -1554,6 +1675,7 @@ export const AdminTestsPage = () => <AdminTestsManagerPage />;
 export const AdminTasksPage = () => <AdminTasksManagerPage />;
 export const AdminRatingPage = () => {
   const { push } = useToastStore();
+  const [activeTab, setActiveTab] = useState<"gradebook" | "ctf">("gradebook");
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -1614,12 +1736,17 @@ export const AdminRatingPage = () => {
           place: index + 1,
           participant: entry.username || entry.participant,
           group: entry.groupName ?? "Без группы",
-          score: entry.score ?? entry.totalScore ?? 0,
+          score: entry.ctfScore ?? entry.score ?? entry.totalScore ?? 0,
           solved: entry.solvedCount ?? 0,
-          v1: entry.v1 ?? 0,
-          v2: entry.v2 ?? 0,
-          sCoefficient: entry.sCoefficient ?? 0,
-          recommendedGrade: entry.recommendedGrade ?? 2,
+          lPercent: entry.lPercent ?? entry.v1 ?? 0,
+          kPercent: entry.kPercent ?? 0,
+          cPercent: entry.cPercent ?? entry.v2 ?? 0,
+          sScore: entry.sScore ?? entry.sCoefficient ?? 0,
+          isEligible: entry.isEligible ?? false,
+          recommendedGrade: entry.recommendedGrade,
+          v1: entry.lPercent ?? entry.v1 ?? 0,
+          v2: entry.cPercent ?? entry.v2 ?? 0,
+          sCoefficient: entry.sScore ?? entry.sCoefficient ?? 0,
         }));
         setRows(newRows);
         setIsLoading(false);
@@ -1700,146 +1827,195 @@ export const AdminRatingPage = () => {
     }
   };
 
-  if (isLoading) {
-    return <Loader label="Загружаем рейтинг..." />;
-  }
-
   return (
     <div className="page-stack">
-      <PageHeader
-        title="Рейтинг"
-        subtitle="Административный вид рейтинга с возможностью ручной корректировки баллов участников."
-        actions={<Button onClick={() => setIsModalOpen(true)}>Корректировка баллов</Button>}
-      />
-
-      <div className="metric-grid">
-        <Card>
-          <div className="metric-card">
-            <span className="muted">Участников</span>
-            <strong>{rows.length}</strong>
-          </div>
-        </Card>
-        <Card>
-          <div className="metric-card">
-            <span className="muted">Средний балл</span>
-            <strong>
-              {rows.length > 0
-                ? Math.round(rows.reduce((sum, r) => sum + r.score, 0) / rows.length)
-                : 0}
-            </strong>
-          </div>
-        </Card>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <Button
+          variant={activeTab === "gradebook" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("gradebook")}
+        >
+          Ведомость курса (Рейтинг ЛР 1–8 / КТ 1–4 / CTF)
+        </Button>
+        <Button
+          variant={activeTab === "ctf" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("ctf")}
+        >
+          Табло CTF и корректировки баллов
+        </Button>
       </div>
 
-      <DataTable
-        columns={[
-          { key: "place", title: "Место" },
-          { key: "participant", title: "Студент" },
-          { key: "group", title: "Группа" },
-          { key: "score", title: "Баллы" },
-          { key: "solved", title: "Решено задач" },
-          { key: "v1", title: "v1" },
-          { key: "v2", title: "v2" },
-          { key: "sCoefficient", title: "S" },
-          { key: "recommendedGrade", title: "Рекомендованная оценка" },
-        ]}
-        rows={rows}
-      />
+      {activeTab === "gradebook" ? (
+        <GradebookView editable={true} />
+      ) : isLoading ? (
+        <Loader label="Загружаем рейтинг..." />
+      ) : (
+        <>
+          <PageHeader
+            title="Рейтинг CTF и корректировки"
+            subtitle="Административный вид рейтинга с возможностью ручной корректировки баллов участников."
+            actions={<Button onClick={() => setIsModalOpen(true)}>Корректировка баллов</Button>}
+          />
 
-      <div style={{ marginTop: "2.5rem" }}>
-        <PageHeader
-          title="История корректировок баллов"
-          subtitle="Записи о ручном изменении баллов участников преподавателями."
-        />
-        <div style={{ marginTop: "1rem" }}>
+          <div className="metric-grid">
+            <Card>
+              <div className="metric-card">
+                <span className="muted">Участников</span>
+                <strong>{rows.length}</strong>
+              </div>
+            </Card>
+            <Card>
+              <div className="metric-card">
+                <span className="muted">Средний балл</span>
+                <strong>
+                  {rows.length > 0
+                    ? Math.round(rows.reduce((sum, r) => sum + r.score, 0) / rows.length)
+                    : 0}
+                </strong>
+              </div>
+            </Card>
+          </div>
+
           <DataTable
             columns={[
-              { key: "participant", title: "Участник" },
-              { key: "date", title: "Когда" },
-              { key: "reason", title: "За что" },
+              { key: "place", title: "Место" },
+              { key: "participant", title: "Студент" },
+              { key: "group", title: "Группа" },
+              { key: "score", title: "Баллы CTF" },
+              { key: "solved", title: "Решено задач" },
               {
-                key: "amount",
-                title: "Сколько",
-                render: (row: any) => {
-                  const isNegative = row.amount.startsWith("-");
-                  return (
-                    <span style={{ color: isNegative ? "var(--danger)" : "var(--success)", fontWeight: "bold" }}>
-                      {row.amount}
-                    </span>
-                  );
-                }
+                key: "lPercent",
+                title: "Лаб (L, %)",
+                render: (row: any) => `${(row.lPercent ?? row.v1 ?? 0).toFixed(2)}%`,
+              },
+              {
+                key: "kPercent",
+                title: "КТ (K, %)",
+                render: (row: any) => `${(row.kPercent ?? 0).toFixed(2)}%`,
+              },
+              {
+                key: "cPercent",
+                title: "CTF (C, %)",
+                render: (row: any) => `${(row.cPercent ?? row.v2 ?? 0).toFixed(2)}%`,
+              },
+              {
+                key: "sScore",
+                title: "Итог (S, %)",
+                render: (row: any) => `${(row.sScore ?? row.sCoefficient ?? 0).toFixed(2)}%`,
+              },
+              {
+                key: "isEligible",
+                title: "Допуск",
+                render: (row: any) => (
+                  <span style={{ color: row.isEligible ? "var(--success)" : "var(--danger)", fontWeight: 500 }}>
+                    {row.isEligible ? "Да" : "Нет"}
+                  </span>
+                ),
+              },
+              {
+                key: "recommendedGrade",
+                title: "Рекомендованная оценка",
+                render: (row: any) => (row.recommendedGrade != null ? row.recommendedGrade : "—"),
               },
             ]}
-            rows={adjustments.map((adj) => ({
-              id: adj.id,
-              participant: `${adj.studentName} (${adj.username})`,
-              date: new Date(adj.createdAt).toLocaleString("ru-RU"),
-              reason: adj.reason,
-              amount: adj.points > 0 ? `+${adj.points}` : adj.points.toString(),
-            }))}
-          />
-        </div>
-      </div>
-
-      <Modal open={isModalOpen} title="Корректировка баллов" onClose={() => setIsModalOpen(false)}>
-        <form className="admin-form" onSubmit={handleSubmit}>
-          <label className="ui-field">
-            <span className="ui-field__label">Студент</span>
-            <select
-              className="ui-input"
-              value={form.studentId}
-              onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
-              required
-            >
-              <option value="" disabled>-- Выберите студента --</option>
-              {students.map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.fullName} ({student.nickname})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="ui-field">
-            <span className="ui-field__label">Соревнование</span>
-            <select
-              className="ui-input"
-              value={form.competitionId}
-              onChange={(e) => setForm((current) => ({ ...current, competitionId: e.target.value }))}
-            >
-              <option value="">Не связано с соревнованием</option>
-              {competitions.map((comp) => (
-                <option key={comp.id} value={comp.id}>
-                  {comp.title}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <Input
-            label="Баллы (положительное или отрицательное число)"
-            type="number"
-            value={form.points}
-            onChange={(e) => setForm((current) => ({ ...current, points: e.target.value }))}
-            required
+            rows={rows}
           />
 
-          <label className="ui-field">
-            <span className="ui-field__label">Причина корректировки</span>
-            <textarea
-              className="ui-input ui-textarea"
-              value={form.reason}
-              onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))}
-              placeholder="Укажите причину начисления/списания баллов..."
-              required
+          <div style={{ marginTop: "2.5rem" }}>
+            <PageHeader
+              title="История корректировок баллов"
+              subtitle="Записи о ручном изменении баллов участников преподавателями."
             />
-          </label>
+            <div style={{ marginTop: "1rem" }}>
+              <DataTable
+                columns={[
+                  { key: "participant", title: "Участник" },
+                  { key: "date", title: "Когда" },
+                  { key: "reason", title: "За что" },
+                  {
+                    key: "amount",
+                    title: "Сколько",
+                    render: (row: any) => {
+                      const isNegative = row.amount.startsWith("-");
+                      return (
+                        <span style={{ color: isNegative ? "var(--danger)" : "var(--success)", fontWeight: "bold" }}>
+                          {row.amount}
+                        </span>
+                      );
+                    }
+                  },
+                ]}
+                rows={adjustments.map((adj) => ({
+                  id: adj.id,
+                  participant: `${adj.studentName} (${adj.username})`,
+                  date: new Date(adj.createdAt).toLocaleString("ru-RU"),
+                  reason: adj.reason,
+                  amount: adj.points > 0 ? `+${adj.points}` : adj.points.toString(),
+                }))}
+              />
+            </div>
+          </div>
 
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? "Сохраняем..." : "Сохранить"}
-          </Button>
-        </form>
-      </Modal>
+          <Modal open={isModalOpen} title="Корректировка баллов" onClose={() => setIsModalOpen(false)}>
+            <form className="admin-form" onSubmit={handleSubmit}>
+              <label className="ui-field">
+                <span className="ui-field__label">Студент</span>
+                <select
+                  className="ui-input"
+                  value={form.studentId}
+                  onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
+                  required
+                >
+                  <option value="" disabled>-- Выберите студента --</option>
+                  {students.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.fullName} ({student.nickname})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="ui-field">
+                <span className="ui-field__label">Соревнование</span>
+                <select
+                  className="ui-input"
+                  value={form.competitionId}
+                  onChange={(e) => setForm((current) => ({ ...current, competitionId: e.target.value }))}
+                >
+                  <option value="">Не связано с соревнованием</option>
+                  {competitions.map((comp) => (
+                    <option key={comp.id} value={comp.id}>
+                      {comp.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <Input
+                label="Баллы (положительное или отрицательное число)"
+                type="number"
+                value={form.points}
+                onChange={(e) => setForm((current) => ({ ...current, points: e.target.value }))}
+                required
+              />
+
+              <label className="ui-field">
+                <span className="ui-field__label">Причина корректировки</span>
+                <textarea
+                  className="ui-input ui-textarea"
+                  value={form.reason}
+                  onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))}
+                  placeholder="Укажите причину начисления/списания баллов..."
+                  required
+                />
+              </label>
+
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? "Сохраняем..." : "Сохранить"}
+              </Button>
+            </form>
+          </Modal>
+        </>
+      )}
     </div>
   );
 };
@@ -1849,6 +2025,7 @@ export { AdminGradingScalePage } from "./AdminGradingScalePage";
 
 const AdminLabsManagerPage = () => {
   const { push } = useToastStore();
+  const [activeTab, setActiveTab] = useState<"gradebook" | "legacy">("gradebook");
   const [scores, setScores] = useState<LabScore[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -2006,127 +2183,147 @@ const AdminLabsManagerPage = () => {
     }
   };
 
-  if (isLoading) {
-    return <Loader label="Загружаем баллы..." />;
-  }
-
   return (
     <div className="page-stack">
-      <PageHeader
-        title="Лабораторные работы"
-        subtitle="Управление баллами участников за выполнение лабораторных работ."
-        actions={<Button onClick={handleAddClick}>Задать баллы</Button>}
-      />
-
-      <div className="admin-toolbar">
-        <Input
-          placeholder="Поиск по студенту, шифру или группе..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <Button
+          variant={activeTab === "gradebook" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("gradebook")}
+        >
+          Ведомость ЛР 1–8 и КТ 1–4 (по регламенту)
+        </Button>
+        <Button
+          variant={activeTab === "legacy" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("legacy")}
+        >
+          Сводная таблица баллов ЛР
+        </Button>
       </div>
 
-      <DataTable
-        columns={[
-          { key: "studentName", title: "Участник" },
-          { key: "groupName", title: "Группа" },
-          { 
-            key: "score", 
-            title: "Баллы за лаб",
-            render: (row) => {
-              const group = groups.find((g) => g.name === row.groupName);
-              const maxLabs = group?.maxLabs ?? 0;
-              return `${maxLabs} \\ ${row.score}`;
-            }
-          },
-          { 
-            key: "v1Coefficient", 
-            title: "Коэффициент v1",
-            render: (row) => row.v1Coefficient.toFixed(3)
-          },
-          { key: "status", title: "Статус" },
-          {
-            key: "actions",
-            title: "Действия",
-            render: (row) => (
-              <Button
-                variant="secondary"
-                onClick={() => handleEditClick(row)}
-              >
-                Редактировать
-              </Button>
-            ),
-          },
-        ]}
-        rows={filteredScores}
-      />
-
-      <Modal open={isModalOpen} title={isEditing ? "Редактировать баллы за лабораторную" : "Задать баллы за лабораторную"} onClose={handleCloseModal}>
-        <form className="admin-form" onSubmit={handleSubmit}>
-          {isEditing ? (
-            <Input
-              label="Студент"
-              value={scores.find((s) => s.studentId === form.studentId)?.studentName || ""}
-              disabled
-            />
-          ) : (
-            <>
-              <Input
-                label="Поиск студента (по фамилии, отчеству, имени)"
-                placeholder="Введите фамилию, отчество или имя..."
-                value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
-              />
-              <label className="ui-field">
-                <span className="ui-field__label">Студент</span>
-                <select
-                  className="ui-input"
-                  value={form.studentId}
-                  onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
-                  required
-                >
-                  <option value="" disabled>-- Выберите студента --</option>
-                  {Object.entries(groupedStudents).map(([label, list]) => (
-                    <optgroup key={label} label={label}>
-                      {list.map((student) => (
-                        <option key={student.id} value={student.id}>
-                          {student.fullName} ({student.nickname || student.studentCode})
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-            </>
-          )}
-
-          <Input
-            label={currentMaxLabs > 0 ? `Баллы (Всего лабораторных работ в группе: ${currentMaxLabs})` : "Баллы"}
-            type="number"
-            min={0}
-            value={form.score}
-            onChange={(e) => setForm((current) => ({ ...current, score: e.target.value }))}
-            required
+      {activeTab === "gradebook" ? (
+        <GradebookView editable={true} />
+      ) : isLoading ? (
+        <Loader label="Загружаем баллы..." />
+      ) : (
+        <>
+          <PageHeader
+            title="Лабораторные работы"
+            subtitle="Управление баллами участников за выполнение лабораторных работ."
+            actions={<Button onClick={handleAddClick}>Задать баллы</Button>}
           />
 
-          <label className="ui-field">
-            <span className="ui-field__label">Причина / Примечание</span>
-            <textarea
-              className="ui-input ui-textarea"
-              value={form.reason}
-              onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))}
-              required
+          <div className="admin-toolbar">
+            <Input
+              placeholder="Поиск по студенту, шифру или группе..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
-          </label>
+          </div>
 
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? "Сохраняем..." : "Сохранить"}
-          </Button>
-        </form>
-      </Modal>
+          <DataTable
+            columns={[
+              { key: "studentName", title: "Участник" },
+              { key: "groupName", title: "Группа" },
+              { 
+                key: "score", 
+                title: "Баллы за лаб",
+                render: (row) => {
+                  const group = groups.find((g) => g.name === row.groupName);
+                  const maxLabs = group?.maxLabs ?? 143;
+                  return `${row.score} / ${maxLabs}`;
+                }
+              },
+              { 
+                key: "v1Coefficient", 
+                title: "Доля ЛР (L)",
+                render: (row) => `${(row.v1Coefficient * 100).toFixed(2)}%`
+              },
+              { key: "status", title: "Статус" },
+              {
+                key: "actions",
+                title: "Действия",
+                render: (row) => (
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleEditClick(row)}
+                  >
+                    Редактировать
+                  </Button>
+                ),
+              },
+            ]}
+            rows={filteredScores}
+          />
+
+          <Modal open={isModalOpen} title={isEditing ? "Редактировать баллы за лабораторную" : "Задать баллы за лабораторную"} onClose={handleCloseModal}>
+            <form className="admin-form" onSubmit={handleSubmit}>
+              {isEditing ? (
+                <Input
+                  label="Студент"
+                  value={scores.find((s) => s.studentId === form.studentId)?.studentName || ""}
+                  disabled
+                />
+              ) : (
+                <>
+                  <Input
+                    label="Поиск студента (по фамилии, отчеству, имени)"
+                    placeholder="Введите фамилию, отчество или имя..."
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                  />
+                  <label className="ui-field">
+                    <span className="ui-field__label">Студент</span>
+                    <select
+                      className="ui-input"
+                      value={form.studentId}
+                      onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
+                      required
+                    >
+                      <option value="" disabled>-- Выберите студента --</option>
+                      {Object.entries(groupedStudents).map(([label, list]) => (
+                        <optgroup key={label} label={label}>
+                          {list.map((student) => (
+                            <option key={student.id} value={student.id}>
+                              {student.fullName} ({student.nickname || student.studentCode})
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+
+              <Input
+                label={currentMaxLabs > 0 ? `Баллы (Макс. баллов ЛР: ${currentMaxLabs})` : "Баллы (макс. 143)"}
+                type="number"
+                min={0}
+                value={form.score}
+                onChange={(e) => setForm((current) => ({ ...current, score: e.target.value }))}
+                required
+              />
+
+              <label className="ui-field">
+                <span className="ui-field__label">Причина / Примечание</span>
+                <textarea
+                  className="ui-input ui-textarea"
+                  value={form.reason}
+                  onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))}
+                  required
+                />
+              </label>
+
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? "Сохраняем..." : "Сохранить"}
+              </Button>
+            </form>
+          </Modal>
+        </>
+      )}
     </div>
   );
 };
 
 export const AdminLabsPage = () => <AdminLabsManagerPage />;
+
 

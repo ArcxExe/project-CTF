@@ -38,4 +38,12 @@ public interface AttemptRepository extends JpaRepository<Attempt, UUID> {
         @org.springframework.data.repository.query.Param("studentId") UUID studentId,
         @org.springframework.data.repository.query.Param("taskId") UUID taskId
     );
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("DELETE FROM Attempt a")
+    int deleteAllAttempts();
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("DELETE FROM Attempt a WHERE a.studentId IN :studentIds")
+    int deleteByStudentIdIn(@org.springframework.data.repository.query.Param("studentIds") java.util.Collection<UUID> studentIds);
 }

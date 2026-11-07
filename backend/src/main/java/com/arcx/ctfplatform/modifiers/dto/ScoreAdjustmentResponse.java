@@ -38,7 +38,8 @@ public record ScoreAdjustmentResponse(
                 var studentOpt = studentRepository.findById(from.getStudentId());
                 if (studentOpt.isPresent()) {
                     var student = studentOpt.get();
-                    studentName = student.getFirstName() + " " + student.getLastName();
+                    String full = student.getFullName();
+                    studentName = (full != null && !full.isBlank()) ? full : "Неизвестно";
                     if (student.getUserId() != null) {
                         var userOpt = userRepository.findById(student.getUserId());
                         if (userOpt.isPresent()) {

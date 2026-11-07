@@ -23,4 +23,12 @@ public interface LabScoreRepository extends JpaRepository<LabScore, UUID> {
 
     @Query("SELECT MAX(ls.score) FROM LabScore ls JOIN ls.student s WHERE s.status = com.arcx.ctfplatform.academic.entity.StudentStatus.ACTIVE")
     Optional<Integer> findMaxScoreGlobal();
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM LabScore ls")
+    int deleteAllScores();
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM LabScore ls WHERE ls.student.id IN :studentIds")
+    int deleteByStudentIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
 }

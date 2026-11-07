@@ -41,6 +41,8 @@ public class CtfTaskService {
         task.setCategory(request.category());
         task.setDifficulty(request.difficulty());
         task.setBaseScore(request.baseScore());
+        task.setMaxScore(request.maxScore() != null && request.maxScore() > 0 ? request.maxScore() : request.baseScore());
+        task.setFirstBloodOnly(Boolean.TRUE.equals(request.isFirstBloodOnly()));
         task.setFlag(request.flag());
 
         CtfTask savedTask = ctfTaskRepository.save(task);
@@ -57,6 +59,10 @@ public class CtfTaskService {
         task.setCategory(request.category());
         task.setDifficulty(request.difficulty());
         task.setBaseScore(request.baseScore());
+        task.setMaxScore(request.maxScore() != null && request.maxScore() > 0 ? request.maxScore() : request.baseScore());
+        if (request.isFirstBloodOnly() != null) {
+            task.setFirstBloodOnly(request.isFirstBloodOnly());
+        }
         task.setFlag(request.flag());
 
         CtfTask updatedTask = ctfTaskRepository.save(task);

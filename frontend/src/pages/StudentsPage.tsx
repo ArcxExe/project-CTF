@@ -12,6 +12,7 @@ import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
+import { AcademicResetModal } from "@/features/academic/ui/AcademicResetModal";
 import "./pages.css";
 
 export const StudentsPage = () => {
@@ -22,6 +23,7 @@ export const StudentsPage = () => {
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // Create Student Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -30,6 +32,7 @@ export const StudentsPage = () => {
   const [middleName, setMiddleName] = useState("");
   const [studentCode, setStudentCode] = useState("");
   const [groupId, setGroupId] = useState("");
+  const [pairNumber, setPairNumber] = useState("");
 
   // Edit Student Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -39,6 +42,13 @@ export const StudentsPage = () => {
   const [editMiddleName, setEditMiddleName] = useState("");
   const [editStudentCode, setEditStudentCode] = useState("");
   const [editGroupId, setEditGroupId] = useState("");
+  const [editPairNumber, setEditPairNumber] = useState("");
+
+  // Import Students / Gradebook Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importGroupId, setImportGroupId] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const { push } = useToastStore();
 
@@ -90,20 +100,26 @@ export const StudentsPage = () => {
     }
   };
 
-  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const handleImportSubmit = async () => {
+    if (!importFile) {
+      push({ title: "Выберите файл .xlsx или .csv для импорта", variant: "error" });
+      return;
+    }
+    setIsImporting(true);
     try {
-      await studentsApi.importStudents(file);
-      push({ title: "Импорт успешно завершен", variant: "success" });
+      const res = await studentsApi.importStudents(importFile, importGroupId || undefined);
+      push({
+        title: `Импорт завершён: добавлено ${res?.importedCount ?? 0}, обновлено ${res?.updatedCount ?? 0}, ЛР: ${res?.labsImported ?? 0}, КТ: ${res?.ktImported ?? 0}`,
+        variant: "success",
+      });
+      setIsImportModalOpen(false);
+      setImportFile(null);
       loadData();
     } catch (e: unknown) {
       const errorMsg = e instanceof Error ? e.message : "Ошибка при импорте студентов";
       push({ title: errorMsg, variant: "error" });
     } finally {
-      // Clear the input so the same file can be selected again
-      event.target.value = "";
+      setIsImporting(false);
     }
   };
 
@@ -115,6 +131,7 @@ export const StudentsPage = () => {
         middleName,
         studentCode,
         groupId: groupId || undefined,
+        pairNumber: pairNumber ? Number(pairNumber) : null,
       });
       push({ title: "Студент успешно создан", variant: "success" });
       setIsCreateModalOpen(false);
@@ -123,6 +140,7 @@ export const StudentsPage = () => {
       setMiddleName("");
       setStudentCode("");
       setGroupId("");
+      setPairNumber("");
       loadData();
     } catch (e: unknown) {
       push({ title: "Ошибка при создании студента", variant: "error" });
@@ -136,6 +154,7 @@ export const StudentsPage = () => {
     setEditMiddleName(student.middleName ?? "");
     setEditStudentCode(student.studentCode ?? "");
     setEditGroupId(student.groupId ?? "");
+    setEditPairNumber(student.pairNumber != null ? String(student.pairNumber) : "");
     setIsEditModalOpen(true);
   };
 
@@ -148,6 +167,7 @@ export const StudentsPage = () => {
         middleName: editMiddleName,
         studentCode: editStudentCode,
         groupId: editGroupId || undefined,
+        pairNumber: editPairNumber ? Number(editPairNumber) : null,
       });
       push({ title: "Данные студента успешно обновлены", variant: "success" });
       setIsEditModalOpen(false);
@@ -249,25 +269,86 @@ export const StudentsPage = () => {
     <div className="page-stack">
       <PageHeader
         title="Студенты"
-        subtitle="Управление студентами, регистрациями и статусами."
+        subtitle="Управление студентами, импорт списков и ведомостей (.xlsx / .csv), назначение пар и статусов."
         actions={
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              id="student-import-input"
-              style={{ display: "none" }}
-              onChange={handleFileImport}
-            />
-            <Button onClick={() => document.getElementById("student-import-input")?.click()} variant="secondary">
-              Импорт
+            <Button onClick={() => setIsImportModalOpen(true)} variant="secondary">
+              Импорт (.xlsx / .csv)
             </Button>
             <Button onClick={() => setIsCreateModalOpen(true)}>
               Добавить студента
             </Button>
+            <Button variant="danger" onClick={() => setIsResetModalOpen(true)}>
+              Очистить данные курса
+            </Button>
           </div>
         }
       />
+
+      <Modal
+        open={isImportModalOpen}
+        title="Импорт списка студентов / ведомости (.xlsx, .csv)"
+        onClose={() => setIsImportModalOpen(false)}
+      >
+        <div className="page-stack">
+          <p className="muted" style={{ margin: 0, fontSize: "0.88rem" }}>
+            Поддерживаются таблицы Excel (<code>.xlsx</code>) и <code>.csv</code>, включая ведомость{" "}
+            <strong>«Рейтинг»</strong> (колонки <code>№ п/п</code>, <code>Пара</code>,{" "}
+            <code>ФИО студента</code>, <code>ЛР 1..8</code>, <code>КТ 1..4</code>, <code>Токен</code>) и
+            стандартные списки студентов. Строка <code>MAX</code> автоматически игнорируется.
+          </p>
+          <label className="ui-field">
+            <span className="ui-field__label">Целевая учебная группа (если не указана в файле)</span>
+            <select
+              className="ui-input"
+              value={importGroupId}
+              onChange={(e) => setImportGroupId(e.target.value)}
+            >
+              <option value="">Определить из файла / Общая группа</option>
+              {groupedGroups.map((grouping) => (
+                <optgroup key={grouping.streamId || "no-stream"} label={grouping.streamName}>
+                  {grouping.groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label className="ui-field">
+            <span className="ui-field__label">Выберите файл (.xlsx или .csv)</span>
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              className="ui-input"
+              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
+            <Button variant="secondary" onClick={() => setIsImportModalOpen(false)}>
+              Отмена
+            </Button>
+            <Button disabled={!importFile || isImporting} onClick={() => void handleImportSubmit()}>
+              {isImporting ? "Импортируем..." : "Импортировать"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <strong style={{ fontSize: "1.05rem" }}>Подготовка к новому семестру (Очистка данных)</strong>
+            <p style={{ margin: "0.25rem 0 0 0", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+              Безопасный сброс академических результатов или полная очистка перед набором новых студентов. Каталог задач CTF и тесты сохраняются.
+            </p>
+          </div>
+          <Button variant="danger" onClick={() => setIsResetModalOpen(true)}>
+            Очистить данные курса
+          </Button>
+        </div>
+      </Card>
 
       <Modal
         open={isCreateModalOpen}
@@ -294,6 +375,14 @@ export const StudentsPage = () => {
             label="Код студента (ИСУ и т.п.)"
             value={studentCode}
             onChange={(e) => setStudentCode(e.target.value)}
+          />
+          <Input
+            label="Номер пары (подгруппы)"
+            type="number"
+            min={1}
+            placeholder="Оставьте пустым, если студент работает индивидуально"
+            value={pairNumber}
+            onChange={(e) => setPairNumber(e.target.value)}
           />
           <label className="ui-field">
             <span className="ui-field__label">Академическая группа</span>
@@ -355,6 +444,14 @@ export const StudentsPage = () => {
             label="Код студента (ИСУ и т.п.)"
             value={editStudentCode}
             onChange={(e) => setEditStudentCode(e.target.value)}
+          />
+          <Input
+            label="Номер пары (подгруппы)"
+            type="number"
+            min={1}
+            placeholder="Оставьте пустым, если студент работает индивидуально"
+            value={editPairNumber}
+            onChange={(e) => setEditPairNumber(e.target.value)}
           />
           <label className="ui-field">
             <span className="ui-field__label">Академическая группа</span>
@@ -441,6 +538,7 @@ export const StudentsPage = () => {
       <DataTable
         columns={[
           { key: "fullName", title: "ФИО" },
+          { key: "pairNumber", title: "Пара", render: (student) => student.pairNumber ?? "—" },
           { key: "nickname", title: "Ник" },
           { key: "group", title: "Группа" },
           { key: "stream", title: "Поток" },
@@ -483,6 +581,14 @@ export const StudentsPage = () => {
           },
         ]}
         rows={filteredStudents}
+      />
+
+      <AcademicResetModal
+        open={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onSuccess={loadData}
+        streams={allStreams}
+        groups={allGroups}
       />
     </div>
   );

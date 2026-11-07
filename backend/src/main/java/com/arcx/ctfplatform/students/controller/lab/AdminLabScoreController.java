@@ -35,7 +35,11 @@ public class AdminLabScoreController {
     public ResponseEntity<Void> setScore(
             @Valid @RequestBody LabScoreRequest request,
             @AuthenticationPrincipal User user) {
-        labScoreService.setScore(request.studentId(), request.score(), request.reason(), user.getId());
+        if (request.isEligible() != null) {
+            labScoreService.setScore(request.studentId(), request.score(), request.isEligible(), request.reason(), user.getId());
+        } else {
+            labScoreService.setScore(request.studentId(), request.score(), request.reason(), user.getId());
+        }
         return ResponseEntity.ok().build();
     }
 

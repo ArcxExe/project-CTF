@@ -3,7 +3,7 @@ import { cn } from "@/shared/lib/cn";
 import "./Badge.css";
 
 interface BadgeProps extends PropsWithChildren {
-  tone?: "neutral" | "success" | "danger" | "info";
+  tone?: "neutral" | "success" | "danger" | "info" | "warning";
 }
 
 export const Badge = ({ children, tone = "neutral" }: BadgeProps) => (

@@ -13,6 +13,7 @@ public record StudentResponse(
         String firstName,
         String lastName,
         String middleName,
+        String fullName,
         String studentCode,
         UUID userId,
         String username,
@@ -24,8 +25,76 @@ public record StudentResponse(
         StudentStatus status,
         Instant createdAt,
         Instant updatedAt,
-        UUID createdBy
+        UUID createdBy,
+        Integer pairNumber,
+        double kt1,
+        double kt2,
+        double kt3,
+        double kt4,
+        String tokenInfo,
+        Integer examScore
 ) {
+    public StudentResponse(
+            UUID id,
+            String firstName,
+            String lastName,
+            String middleName,
+            String studentCode,
+            UUID userId,
+            String username,
+            String email,
+            UUID groupId,
+            String groupName,
+            UUID flowId,
+            String flowName,
+            StudentStatus status,
+            Instant createdAt,
+            Instant updatedAt,
+            UUID createdBy,
+            Integer pairNumber
+    ) {
+        this(
+                id,
+                firstName,
+                lastName,
+                middleName,
+                buildFullName(lastName, firstName, middleName),
+                studentCode,
+                userId,
+                username,
+                email,
+                groupId,
+                groupName,
+                flowId,
+                flowName,
+                status,
+                createdAt,
+                updatedAt,
+                createdBy,
+                pairNumber,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                null,
+                null
+        );
+    }
+
+    private static String buildFullName(String lastName, String firstName, String middleName) {
+        StringBuilder sb = new StringBuilder();
+        if (lastName != null && !lastName.isBlank()) sb.append(lastName.trim());
+        if (firstName != null && !firstName.isBlank()) {
+            if (!sb.isEmpty()) sb.append(" ");
+            sb.append(firstName.trim());
+        }
+        if (middleName != null && !middleName.isBlank()) {
+            if (!sb.isEmpty()) sb.append(" ");
+            sb.append(middleName.trim());
+        }
+        return sb.toString();
+    }
+
     @Component
     public static class Mapper implements IMapping<Student, StudentResponse> {
         private final UserRepository userRepository;
@@ -39,7 +108,7 @@ public record StudentResponse(
             if (from == null) {
                 return null;
             }
-            UUID groupId = null;
+            UUID groupId = from.getGroupId();
             String groupName = null;
             UUID flowId = null;
             String flowName = null;
@@ -68,6 +137,7 @@ public record StudentResponse(
                     from.getFirstName(),
                     from.getLastName(),
                     from.getMiddleName(),
+                    from.getFullName(),
                     from.getStudentCode(),
                     from.getUserId(),
                     username,
@@ -79,7 +149,14 @@ public record StudentResponse(
                     from.getStatus(),
                     from.getCreatedAt(),
                     from.getUpdatedAt(),
-                    from.getCreatedBy()
+                    from.getCreatedBy(),
+                    from.getPairNumber(),
+                    from.getKt1(),
+                    from.getKt2(),
+                    from.getKt3(),
+                    from.getKt4(),
+                    from.getTokenInfo(),
+                    from.getExamScore()
             );
         }
     }

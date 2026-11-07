@@ -27,6 +27,7 @@ import { DataTable } from "@/shared/ui/DataTable/DataTable";
 import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
+import { GradebookView } from "@/features/gradebook/GradebookView";
 import "./pages.css";
 
 export const RegisterPage = () => {
@@ -527,6 +528,7 @@ export const ParticipantTaskPage = () => {
 export const ParticipantRatingPage = () => {
   const { push } = useToastStore();
   const { currentUser } = useAuthStore();
+  const [activeTab, setActiveTab] = useState<"gradebook" | "ctf">("gradebook");
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [adjustments, setAdjustments] = useState<ScoreAdjustmentResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -566,12 +568,17 @@ export const ParticipantRatingPage = () => {
           place: index + 1,
           participant: entry.username || entry.participant,
           group: entry.groupName ?? "Без группы",
-          score: entry.score ?? entry.totalScore ?? 0,
+          score: entry.ctfScore ?? entry.score ?? entry.totalScore ?? 0,
           solved: entry.solvedCount ?? 0,
-          v1: entry.v1,
-          v2: entry.v2,
-          sCoefficient: entry.sCoefficient,
+          lPercent: entry.lPercent ?? entry.v1 ?? 0,
+          kPercent: entry.kPercent ?? 0,
+          cPercent: entry.cPercent ?? entry.v2 ?? 0,
+          sScore: entry.sScore ?? entry.sCoefficient ?? 0,
+          isEligible: entry.isEligible ?? false,
           recommendedGrade: entry.recommendedGrade,
+          v1: entry.lPercent ?? entry.v1 ?? 0,
+          v2: entry.cPercent ?? entry.v2 ?? 0,
+          sCoefficient: entry.sScore ?? entry.sCoefficient ?? 0,
         }));
         setRows(newRows);
         setIsLoading(false);
@@ -610,87 +617,136 @@ export const ParticipantRatingPage = () => {
     };
   }, [push]);
 
-  if (isLoading) {
-    return <Loader label="Загружаем рейтинг..." />;
-  }
-
   return (
     <div className="page-stack">
-      <PageHeader title="Рейтинг" subtitle="Таблица результатов участников текущего соревнования." />
-      {leaderboardHidden ? (
-        <Card>
-          <div style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "3rem 1.5rem",
-            textAlign: "center",
-          }}>
-            <span style={{ fontSize: "3rem", marginBottom: "1rem" }}>❄️</span>
-            <h3 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Рейтинг временно заморожен организаторами</h3>
-            <p className="muted">Результаты соревнования скрыты. Продолжайте решать задачи!</p>
-          </div>
-        </Card>
-      ) : (
-        <DataTable
-          columns={[
-            { key: "place", title: "Место" },
-            { key: "participant", title: "Участник" },
-            { key: "group", title: "Группа" },
-            { key: "score", title: "Баллы" },
-            { key: "solved", title: "Решено" },
-            { key: "v1", title: "v1" },
-            { key: "v2", title: "v2" },
-            { key: "sCoefficient", title: "S" },
-            { key: "recommendedGrade", title: "Рекомендованная оценка" },
-          ]}
-          rows={rows}
-          rowClassName={(row) =>
-            currentUser &&
-            (row.participant === currentUser.username ||
-              row.participant === currentUser.email ||
-              row.participant === currentUser.fullName)
-              ? "highlighted-row"
-              : ""
-          }
-        />
-      )}
-
-      <div style={{ marginTop: "2.5rem" }}>
-        <PageHeader
-          title="История корректировок баллов"
-          subtitle="Записи о ручном изменении баллов участников преподавателями."
-        />
-        <div style={{ marginTop: "1rem" }}>
-          <DataTable
-            columns={[
-              { key: "participant", title: "Участник" },
-              { key: "date", title: "Когда" },
-              { key: "reason", title: "За что" },
-              {
-                key: "amount",
-                title: "Сколько",
-                render: (row: any) => {
-                  const isNegative = row.amount.startsWith("-");
-                  return (
-                    <span style={{ color: isNegative ? "var(--danger)" : "var(--success)", fontWeight: "bold" }}>
-                      {row.amount}
-                    </span>
-                  );
-                }
-              },
-            ]}
-            rows={adjustments.map((adj) => ({
-              id: adj.id,
-              participant: `${adj.studentName} (${adj.username})`,
-              date: new Date(adj.createdAt).toLocaleString("ru-RU"),
-              reason: adj.reason,
-              amount: adj.points > 0 ? `+${adj.points}` : adj.points.toString(),
-            }))}
-          />
-        </div>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <Button
+          variant={activeTab === "gradebook" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("gradebook")}
+        >
+          Ведомость курса (Рейтинг ЛР 1–8 / КТ 1–4 / CTF)
+        </Button>
+        <Button
+          variant={activeTab === "ctf" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("ctf")}
+        >
+          Табло CTF и корректировки
+        </Button>
       </div>
+
+      {activeTab === "gradebook" ? (
+        <GradebookView editable={false} />
+      ) : isLoading ? (
+        <Loader label="Загружаем рейтинг..." />
+      ) : (
+        <>
+          <PageHeader title="Рейтинг CTF" subtitle="Таблица результатов участников текущего соревнования." />
+          {leaderboardHidden ? (
+            <Card>
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "3rem 1.5rem",
+                textAlign: "center",
+              }}>
+                <span style={{ fontSize: "3rem", marginBottom: "1rem" }}>❄️</span>
+                <h3 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Рейтинг временно заморожен организаторами</h3>
+                <p className="muted">Результаты соревнования скрыты. Продолжайте решать задачи!</p>
+              </div>
+            </Card>
+          ) : (
+            <DataTable
+              columns={[
+                { key: "place", title: "Место" },
+                { key: "participant", title: "Участник" },
+                { key: "group", title: "Группа" },
+                { key: "score", title: "Баллы CTF" },
+                { key: "solved", title: "Решено" },
+                {
+                  key: "lPercent",
+                  title: "Лаб (L, %)",
+                  render: (row: any) => `${(row.lPercent ?? row.v1 ?? 0).toFixed(2)}%`,
+                },
+                {
+                  key: "kPercent",
+                  title: "КТ (K, %)",
+                  render: (row: any) => `${(row.kPercent ?? 0).toFixed(2)}%`,
+                },
+                {
+                  key: "cPercent",
+                  title: "CTF (C, %)",
+                  render: (row: any) => `${(row.cPercent ?? row.v2 ?? 0).toFixed(2)}%`,
+                },
+                {
+                  key: "sScore",
+                  title: "Итог (S, %)",
+                  render: (row: any) => `${(row.sScore ?? row.sCoefficient ?? 0).toFixed(2)}%`,
+                },
+                {
+                  key: "isEligible",
+                  title: "Допуск",
+                  render: (row: any) => (
+                    <span style={{ color: row.isEligible ? "var(--success)" : "var(--danger)", fontWeight: 500 }}>
+                      {row.isEligible ? "Да" : "Нет"}
+                    </span>
+                  ),
+                },
+                {
+                  key: "recommendedGrade",
+                  title: "Рекомендованная оценка",
+                  render: (row: any) => (row.recommendedGrade != null ? row.recommendedGrade : "—"),
+                },
+              ]}
+              rows={rows}
+              rowClassName={(row) =>
+                currentUser &&
+                (row.participant === currentUser.username ||
+                  row.participant === currentUser.email ||
+                  row.participant === currentUser.fullName)
+                  ? "highlighted-row"
+                  : ""
+              }
+            />
+          )}
+
+          <div style={{ marginTop: "2.5rem" }}>
+            <PageHeader
+              title="История корректировок баллов"
+              subtitle="Записи о ручном изменении баллов участников преподавателями."
+            />
+            <div style={{ marginTop: "1rem" }}>
+              <DataTable
+                columns={[
+                  { key: "participant", title: "Участник" },
+                  { key: "date", title: "Когда" },
+                  { key: "reason", title: "За что" },
+                  {
+                    key: "amount",
+                    title: "Сколько",
+                    render: (row: any) => {
+                      const isNegative = row.amount.startsWith("-");
+                      return (
+                        <span style={{ color: isNegative ? "var(--danger)" : "var(--success)", fontWeight: "bold" }}>
+                          {row.amount}
+                        </span>
+                      );
+                    }
+                  },
+                ]}
+                rows={adjustments.map((adj) => ({
+                  id: adj.id,
+                  participant: `${adj.studentName} (${adj.username})`,
+                  date: new Date(adj.createdAt).toLocaleString("ru-RU"),
+                  reason: adj.reason,
+                  amount: adj.points > 0 ? `+${adj.points}` : adj.points.toString(),
+                }))}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -760,6 +816,7 @@ export const PromoCodePage = () => {
 
 export const ParticipantLabsPage = () => {
   const { push } = useToastStore();
+  const [activeTab, setActiveTab] = useState<"gradebook" | "summary">("gradebook");
   const [scores, setScores] = useState<LabScore[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -798,62 +855,82 @@ export const ParticipantLabsPage = () => {
     });
   }, [scores, selectedGroupId, selectedGroupName, search]);
 
-  if (isLoading) {
-    return <Loader label="Загружаем баллы..." />;
-  }
-
   return (
     <div className="page-stack">
-      <PageHeader
-        title="Лабораторные работы"
-        subtitle="Просмотр баллов участников за выполнение лабораторных работ."
-      />
-
-      <div className="admin-toolbar">
-        <Input
-          placeholder="Поиск по имени или фамилии..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <label className="ui-field" style={{ margin: 0, minWidth: "200px" }}>
-          <select
-            className="ui-input"
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-          >
-            <option value="">Все группы</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <Button
+          variant={activeTab === "gradebook" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("gradebook")}
+        >
+          Ведомость ЛР 1–8 и КТ 1–4 (по регламенту)
+        </Button>
+        <Button
+          variant={activeTab === "summary" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("summary")}
+        >
+          Сводная таблица ЛР
+        </Button>
       </div>
 
-      <DataTable
-        columns={[
-          { key: "studentName", title: "Участник" },
-          { key: "groupName", title: "Группа" },
-          { 
-            key: "score", 
-            title: "Баллы за лаб",
-            render: (row) => {
-              const group = groups.find((g) => g.name === row.groupName);
-              const maxLabs = group?.maxLabs ?? 0;
-              return `${maxLabs} \\ ${row.score}`;
-            }
-          },
-          { 
-            key: "v1Coefficient", 
-            title: "Коэффициент v1",
-            render: (row) => row.v1Coefficient.toFixed(3)
-          },
-          { key: "status", title: "Статус" },
-        ]}
-        rows={filteredScores}
-      />
+      {activeTab === "gradebook" ? (
+        <GradebookView editable={false} />
+      ) : isLoading ? (
+        <Loader label="Загружаем баллы..." />
+      ) : (
+        <>
+          <PageHeader
+            title="Лабораторные работы"
+            subtitle="Просмотр баллов участников за выполнение лабораторных работ."
+          />
+
+          <div className="admin-toolbar">
+            <Input
+              placeholder="Поиск по имени или фамилии..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <label className="ui-field" style={{ margin: 0, minWidth: "200px" }}>
+              <select
+                className="ui-input"
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+              >
+                <option value="">Все группы</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <DataTable
+            columns={[
+              { key: "studentName", title: "Участник" },
+              { key: "groupName", title: "Группа" },
+              { 
+                key: "score", 
+                title: "Баллы за лаб",
+                render: (row) => {
+                  const group = groups.find((g) => g.name === row.groupName);
+                  const maxLabs = group?.maxLabs ?? 143;
+                  return `${row.score} / ${maxLabs}`;
+                }
+              },
+              { 
+                key: "v1Coefficient", 
+                title: "Доля ЛР (L)",
+                render: (row) => `${(row.v1Coefficient * 100).toFixed(2)}%`
+              },
+              { key: "status", title: "Статус" },
+            ]}
+            rows={filteredScores}
+          />
+        </>
+      )}
     </div>
   );
 };
+
 

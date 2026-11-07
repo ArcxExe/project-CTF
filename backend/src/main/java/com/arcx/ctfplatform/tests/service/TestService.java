@@ -16,6 +16,7 @@ import com.arcx.ctfplatform.tests.dto.TestRequest;
 import com.arcx.ctfplatform.tests.dto.TestResponse;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.entity.TestStatus;
+import com.arcx.ctfplatform.tests.entity.TestType;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
@@ -74,6 +75,7 @@ public class TestService {
 
     @Transactional
     public TestResponse createTest(TestRequest request) {
+        TestType type = determineTestType(request.type(), request.title());
         Test test = Test.builder()
                 .title(request.title())
                 .description(request.description())
@@ -82,6 +84,8 @@ public class TestService {
                 .passingScore(request.passingScore())
                 .questionsCount(request.questionsCount())
                 .competitionId(request.competitionId())
+                .type(type)
+                .ktNumber(type == TestType.CONTROL_POINT ? request.ktNumber() : null)
                 .build();
         return testMapper.mapping(testRepository.save(test));
     }
@@ -98,8 +102,30 @@ public class TestService {
         test.setPassingScore(request.passingScore());
         test.setQuestionsCount(request.questionsCount());
         test.setCompetitionId(request.competitionId());
+        if (request.type() != null) {
+            test.setType(request.type());
+        } else if (test.getType() == null) {
+            test.setType(determineTestType(null, request.title() != null ? request.title() : test.getTitle()));
+        }
+        if (test.getType() == TestType.CONTROL_POINT) {
+            if (request.ktNumber() != null) {
+                test.setKtNumber(request.ktNumber());
+            }
+        } else {
+            test.setKtNumber(null);
+        }
 
         return testMapper.mapping(testRepository.save(test));
+    }
+
+    private TestType determineTestType(TestType explicitType, String title) {
+        if (explicitType != null) {
+            return explicitType;
+        }
+        if (title != null && (title.toUpperCase().contains("КТ") || title.toLowerCase().contains("контрольн"))) {
+            return TestType.CONTROL_POINT;
+        }
+        return TestType.LECTURE;
     }
 
     @Transactional

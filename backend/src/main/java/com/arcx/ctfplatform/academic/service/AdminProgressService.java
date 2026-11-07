@@ -83,28 +83,12 @@ public class AdminProgressService {
             // 1. Total Score calculation
             int score = 0;
 
-            // 1.1 Challenge Attempts score
+            // 1.1 Challenge Attempts score (CTF component only; control points and lecture quizzes are separate per regulation)
             List<Attempt> attempts = attemptsByStudent.getOrDefault(studentId, Collections.emptyList());
             List<Attempt> correctAttempts = attempts.stream().filter(Attempt::isCorrect).toList();
             score += correctAttempts.stream().mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded()).sum();
 
-            // 1.2 Tests score
-            List<QuizAttempt> quizzes = quizAttemptsByStudent.getOrDefault(studentId, Collections.emptyList());
-            for (QuizAttempt qa : quizzes) {
-                Test t = testMap.get(qa.getQuizId());
-                if (t != null) {
-                    if (t.getCompetitionId() == null) {
-                        score += qa.getScore();
-                    } else {
-                        Competition comp = compMap.get(t.getCompetitionId());
-                        if (comp != null && comp.isSumTestPoints()) {
-                            score += qa.getScore();
-                        }
-                    }
-                }
-            }
-
-            // 1.3 Promo Codes score
+            // 1.2 Promo Codes score
             List<PromoCodeClaim> claims = claimsByStudent.getOrDefault(studentId, Collections.emptyList());
             int additions = 0;
             int subtractions = 0;
@@ -126,9 +110,12 @@ public class AdminProgressService {
                 score = 0;
             }
 
-            // 1.4 Adjustments score
+            // 1.3 Adjustments score
             List<ScoreAdjustment> adjustments = adjustmentsByStudent.getOrDefault(studentId, Collections.emptyList());
             score += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
+            if (score < 0) {
+                score = 0;
+            }
 
             // 2. Metrics (solvedCount, attemptsCount)
             int solvedCount = correctAttempts.size();

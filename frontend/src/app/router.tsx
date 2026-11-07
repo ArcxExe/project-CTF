@@ -9,9 +9,11 @@ import {
   AdminTestsPage,
   AdminLabsPage,
 } from "@/pages/AdminPages";
+import { AdminGradingScalePage } from "@/pages/AdminGradingScalePage";
 import { CompetitionsPage } from "@/pages/CompetitionsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { AdminProgressPage } from "@/pages/AdminProgressPage";
+import { AdminAttendancePage } from "@/pages/AttendancePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import {
@@ -55,6 +57,7 @@ export const router = createBrowserRouter([
       { path: "dashboard", element: <DashboardPage /> },
       { path: "progress", element: <AdminProgressPage /> },
       { path: "students", element: <StudentsPage /> },
+      { path: "attendance", element: <AdminAttendancePage /> },
       { path: "groups", element: <AdminGroupsPage /> },
       { path: "streams", element: <AdminStreamsPage /> },
       { path: "competitions", element: <CompetitionsPage /> },
@@ -63,6 +66,7 @@ export const router = createBrowserRouter([
       { path: "rating", element: <AdminRatingPage /> },
       { path: "promo-codes", element: <AdminPromoCodesPage /> },
       { path: "labs", element: <AdminLabsPage /> },
+      { path: "grading-scales", element: <AdminGradingScalePage /> },
       { path: "analytics", element: <AdminAnalyticsPage /> },
     ],
   },

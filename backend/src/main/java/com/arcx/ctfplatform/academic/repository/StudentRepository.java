@@ -1,5 +1,6 @@
 package com.arcx.ctfplatform.academic.repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,6 +42,15 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     Page<Student> findByStatus(com.arcx.ctfplatform.academic.entity.StudentStatus status, Pageable pageable);
     long countByAcademicGroupAcademicFlowId(UUID flowId);
 
+    @Query("SELECT s FROM Student s LEFT JOIN FETCH s.academicGroup WHERE s.academicGroup.id = :groupId")
+    List<Student> findByAcademicGroupId(@Param("groupId") UUID groupId);
+
+    @Query("SELECT s FROM Student s LEFT JOIN FETCH s.academicGroup WHERE s.academicGroup.academicFlow.id = :flowId")
+    List<Student> findByAcademicFlowId(@Param("flowId") UUID flowId);
+
+    @Query("SELECT s FROM Student s LEFT JOIN FETCH s.academicGroup")
+    List<Student> findAllWithAcademicGroup();
+
     @Modifying
     @Transactional
     @Query(value = "DELETE FROM lab_score_history WHERE student_id = :studentId", nativeQuery = true)
@@ -50,6 +60,11 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     @Transactional
     @Query(value = "DELETE FROM lab_scores WHERE student_id = :studentId", nativeQuery = true)
     void deleteLabScoresByStudentId(@Param("studentId") UUID studentId);
+
+    @Modifying
+    @Transactional
+    @Query(value = "DELETE FROM student_labs WHERE student_id = :studentId", nativeQuery = true)
+    void deleteStudentLabsByStudentId(@Param("studentId") UUID studentId);
 
     @Modifying
     @Transactional
@@ -65,4 +80,36 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     @Transactional
     @Query(value = "DELETE FROM score_adjustments WHERE student_id = :studentId", nativeQuery = true)
     void deleteScoreAdjustmentsByStudentId(@Param("studentId") UUID studentId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM Student s WHERE s.id IN :studentIds")
+    int deleteStudentsByIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM Student s")
+    int deleteAllStudents();
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM manual_submissions", nativeQuery = true)
+    int deleteAllManualSubmissions();
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM manual_submissions WHERE student_id IN :studentIds", nativeQuery = true)
+    int deleteManualSubmissionsByStudentIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Student s SET s.kt1 = 0, s.kt2 = 0, s.kt3 = 0, s.kt4 = 0, s.tokenInfo = null, s.examScore = null")
+    int resetAllGradebookFields();
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Student s SET s.kt1 = 0, s.kt2 = 0, s.kt3 = 0, s.kt4 = 0, s.tokenInfo = null, s.examScore = null WHERE s.id IN :studentIds")
+    int resetGradebookFieldsByStudentIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM competition_hidden_students", nativeQuery = true)
+    int deleteAllHiddenStudents();
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM competition_hidden_students WHERE student_id IN :studentIds", nativeQuery = true)
+    int deleteHiddenStudentsByStudentIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
 }

@@ -60,11 +60,18 @@ public class AdminStudentController {
     }
 
     @PostMapping("/import")
-    public ResponseEntity<Void> importStudents(
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<StudentImportService.ImportResultDto> importStudents(
             @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "groupId", required = false) UUID groupId,
             @AuthenticationPrincipal User user) throws IOException {
-        studentImportService.parseAndImportStudents(file.getInputStream(), user);
-        return ResponseEntity.ok().build();
+        StudentImportService.ImportResultDto result = studentImportService.parseAndImportStudents(
+                file.getInputStream(),
+                file.getOriginalFilename(),
+                groupId,
+                user
+        );
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping

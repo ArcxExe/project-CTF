@@ -55,7 +55,8 @@ public class AttemptService {
         long solves = attemptRepository.countByTaskIdAndIsCorrect(task.getId(), true);
         boolean isFirstBlood = isCorrect && solves == 0;
         
-        Integer score = isCorrect ? (task.isFirstBloodOnly() ? (isFirstBlood ? task.getMaxScore() : 0) : task.getBaseScore()) : 0;
+        int firstBloodReward = (task.getMaxScore() != null && task.getMaxScore() > 0) ? task.getMaxScore() : task.getBaseScore();
+        Integer score = isCorrect ? (task.isFirstBloodOnly() ? (isFirstBlood ? firstBloodReward : 0) : task.getBaseScore()) : 0;
 
         Attempt attempt = Attempt.builder()
                 .taskId(task.getId())

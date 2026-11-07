@@ -1,0 +1,7 @@
+.gradle
+out
+bin
+*.log
+.idea
+.git
+src

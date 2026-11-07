@@ -8,5 +8,6 @@ public record StudentCreateRequest(
     @NotBlank String lastName,
     String middleName,
     @NotBlank String studentCode,
-    UUID groupId
+    UUID groupId,
+    Integer pairNumber
 ) {}

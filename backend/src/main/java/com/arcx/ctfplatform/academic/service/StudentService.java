@@ -49,6 +49,7 @@ public class StudentService {
                 .academicGroup(group)
                 .status(StudentStatus.ACTIVE)
                 .createdBy(currentUser.getId())
+                .pairNumber(request.pairNumber())
                 .build();
         return studentMapper.mapping(studentRepository.save(student));
     }
@@ -129,6 +130,7 @@ public class StudentService {
         student.setMiddleName(request.middleName());
         student.setStudentCode(request.studentCode());
         student.setAcademicGroup(group);
+        student.setPairNumber(request.pairNumber());
         
         return studentMapper.mapping(studentRepository.save(student));
     }
@@ -143,6 +145,7 @@ public class StudentService {
         
         // Clean up dependent tables first
         studentRepository.deleteLabScoreHistoryByStudentId(studentId);
+        studentRepository.deleteStudentLabsByStudentId(studentId);
         studentRepository.deleteLabScoresByStudentId(studentId);
         studentRepository.deleteManualSubmissionsByStudentId(studentId);
         studentRepository.deleteQuizAttemptsByStudentId(studentId);

@@ -10,6 +10,8 @@ export interface CtfTask {
   category?: string;
   difficulty?: "easy" | "medium" | "hard" | string;
   baseScore: number;
+  maxScore?: number;
+  isFirstBloodOnly?: boolean;
   points: number;
   createdAt: string;
 }
@@ -25,6 +27,8 @@ export interface ChallengePayload {
   category?: string;
   difficulty?: string;
   baseScore: number;
+  maxScore?: number;
+  isFirstBloodOnly?: boolean;
   flag?: string;
 }
 
@@ -36,6 +40,8 @@ export interface BackendChallengeResponse {
   category: string | null;
   difficulty: string | null;
   baseScore: number;
+  maxScore?: number;
+  isFirstBloodOnly?: boolean;
   createdAt: string;
 }
 
@@ -53,6 +59,8 @@ export const toChallenge = (response: BackendChallengeResponse): Challenge => ({
   category: response.category ?? undefined,
   difficulty: response.difficulty ?? undefined,
   baseScore: response.baseScore,
+  maxScore: response.maxScore ?? response.baseScore,
+  isFirstBloodOnly: Boolean(response.isFirstBloodOnly),
   points: response.baseScore,
   createdAt: response.createdAt,
 });
@@ -63,6 +71,8 @@ const toBackendPayload = (payload: ChallengePayload) => ({
   category: payload.category,
   difficulty: payload.difficulty,
   baseScore: payload.baseScore,
+  maxScore: payload.maxScore ?? payload.baseScore,
+  isFirstBloodOnly: Boolean(payload.isFirstBloodOnly),
   flag: payload.flag,
 });
 

@@ -45,10 +45,22 @@ public class QuizAttempt {
 
     @Column(name = "score", nullable = false)
     @Builder.Default
-    private Integer score = 0;
+    private Double score = 0.0;
+
+    public void setScore(Number score) {
+        this.score = score != null ? score.doubleValue() : 0.0;
+    }
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     @Builder.Default
     private QuizAttemptStatus status = QuizAttemptStatus.IN_PROGRESS;
+
+    public static class QuizAttemptBuilder {
+        public QuizAttemptBuilder score(Number score) {
+            this.score$value = score != null ? score.doubleValue() : 0.0;
+            this.score$set = true;
+            return this;
+        }
+    }
 }

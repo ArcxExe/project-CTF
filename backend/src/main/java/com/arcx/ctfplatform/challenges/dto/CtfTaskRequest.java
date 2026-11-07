@@ -11,6 +11,11 @@ public record CtfTaskRequest(
         String category,
         String difficulty,
         @NotNull @Min(1) Integer baseScore,
-        @NotBlank String flag
+        @NotBlank String flag,
+        Boolean isFirstBloodOnly,
+        Integer maxScore
 ) {
+    public CtfTaskRequest(String title, String description, String category, String difficulty, Integer baseScore, String flag) {
+        this(title, description, category, difficulty, baseScore, flag, false, baseScore);
+    }
 }

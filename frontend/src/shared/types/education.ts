@@ -32,6 +32,8 @@ export interface Student {
   group: string;
   streamId?: Identifier;
   stream: string;
+  /** Student number in the pair (subgroup), null when the student works individually. */
+  pairNumber?: number | null;
   laboratoryScore: number;
   status: "active" | "blocked" | "out_of_rating" | "disqualified";
   createdBy?: string;

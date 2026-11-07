@@ -17,6 +17,7 @@ interface BackendStudentResponse {
   status?: string;
   laboratoryScore?: number;
   createdBy?: string;
+  pairNumber?: number | null;
 }
 
 const statusMap: Record<string, Student["status"]> = {
@@ -36,7 +37,11 @@ const backendStatusMap: Record<Student["status"], string> = {
 const toStudent = (response: BackendStudentResponse): Student => {
   const first = response.firstName ?? "";
   const last = response.lastName ?? "";
-  const calculatedFullName = response.fullName ?? [first, last].filter(Boolean).join(" ");
+  const middle = response.middleName ?? "";
+  const calculatedFullName =
+    response.fullName && response.fullName.trim().length > 0
+      ? response.fullName
+      : [last, first, middle].filter(Boolean).join(" ");
 
   return {
     id: response.id,
@@ -51,6 +56,7 @@ const toStudent = (response: BackendStudentResponse): Student => {
     group: response.groupName ?? "Без группы",
     streamId: response.flowId,
     stream: response.flowName ?? "Без потока",
+    pairNumber: response.pairNumber ?? null,
     laboratoryScore: response.laboratoryScore ?? 0,
     status: response.status ? (statusMap[response.status] ?? (response.status.toLowerCase() as any)) : "active",
     createdBy: response.createdBy,
@@ -75,6 +81,15 @@ export interface CreateStudentPayload {
   middleName?: string;
   studentCode: string;
   groupId?: string;
+  pairNumber?: number | null;
+}
+
+export interface StudentImportResult {
+  importedCount: number;
+  updatedCount: number;
+  labsImported: number;
+  ktImported: number;
+  skippedRows: number;
 }
 
 export const studentsApi = {
@@ -103,10 +118,11 @@ export const studentsApi = {
     return extractContent(response).map(toStudent);
   },
 
-  async importStudents(file: File): Promise<void> {
+  async importStudents(file: File, groupId?: string): Promise<StudentImportResult> {
     const formData = new FormData();
     formData.append("file", file);
-    await apiRequest<void>("/api/admin/students/import", {
+    const qs = groupId ? `?groupId=${encodeURIComponent(groupId)}` : "";
+    return await apiRequest<StudentImportResult>(`/api/admin/students/import${qs}`, {
       method: "POST",
       body: formData,
     });

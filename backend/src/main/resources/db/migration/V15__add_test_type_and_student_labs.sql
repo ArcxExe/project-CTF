@@ -1,0 +1,20 @@
+ALTER TABLE lab_scores ADD COLUMN IF NOT EXISTS is_eligible BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE TABLE IF NOT EXISTS student_labs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    lab_number INT NOT NULL,
+    raw_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    max_raw_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    defense_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    max_defense_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    penalty_coefficient DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    is_accepted BOOLEAN NOT NULL DEFAULT FALSE,
+    score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_student_lab UNIQUE (student_id, lab_number)
+);
+
+ALTER TABLE tests ADD COLUMN IF NOT EXISTS type VARCHAR(30) NOT NULL DEFAULT 'LECTURE';
+UPDATE tests SET type = 'CONTROL_POINT' WHERE title ILIKE '%КТ%' OR title ILIKE '%контрольн%';

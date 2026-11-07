@@ -14,6 +14,11 @@ public record LabScoreRequest(
     int score,
 
     @NotBlank(message = "Reason cannot be blank")
-    String reason
+    String reason,
+
+    Boolean isEligible
 ) {
+    public LabScoreRequest(UUID studentId, int score, String reason) {
+        this(studentId, score, reason, null);
+    }
 }

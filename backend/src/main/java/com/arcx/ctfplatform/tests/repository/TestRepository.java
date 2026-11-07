@@ -15,6 +15,10 @@ import com.arcx.ctfplatform.tests.entity.TestStatus;
 public interface TestRepository extends JpaRepository<Test, UUID> {
     List<Test> findAllByStatus(TestStatus status);
 
+    List<Test> findAllByType(com.arcx.ctfplatform.tests.entity.TestType type);
+
+    List<Test> findAllByTypeAndStatus(com.arcx.ctfplatform.tests.entity.TestType type, TestStatus status);
+
     @Modifying
     @Query(value = "DELETE FROM quiz_attempts WHERE quiz_id = :testId", nativeQuery = true)
     void deleteQuizAttemptsByTestId(UUID testId);

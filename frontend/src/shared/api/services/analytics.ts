@@ -7,19 +7,46 @@ export interface GroupMetrics {
   avgCtfScore: number;
   admissionPercentage: number;
   blockedOrDisqualifiedCount: number;
+  avgLabPercent?: number;
+  avgKtScore?: number;
+  avgKtPercent?: number;
+  avgCtfPercent?: number;
+  avgSScore?: number;
+  labAdmissionPercentage?: number;
+  avgAttendancePercent?: number;
+  grade5Count?: number;
+  grade4Count?: number;
+  grade3Count?: number;
+  grade2Count?: number;
 }
 
 export interface StudentAnalytics {
   id: string;
   fullName: string;
+  fio?: string;
+  pairNumber?: number | null;
+  groupName?: string;
   status: string;
   labScore: number;
+  exactLabScore?: number;
+  acceptedLabsCount?: number;
+  isEligible?: boolean;
+  lPercent?: number;
+  ktScore?: number;
+  kPercent?: number;
+  totalPoints?: number;
   ctfScore: number;
+  ctfCoeff?: number;
+  cPercent?: number;
+  token?: string | null;
   v1: number;
   v2: number;
   totalScore: number;
   totalScore100: number;
+  sScore?: number;
   recommendedGrade: string;
+  numericGrade?: number;
+  attendancePercent?: number;
 }
 
 export interface AnalyticsSummary {

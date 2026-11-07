@@ -17,5 +17,7 @@ public record StudentUpdateRequest(
     String studentCode,
 
     @NotNull(message = "Группа обязательна для выбора")
-    UUID groupId
+    UUID groupId,
+
+    Integer pairNumber
 ) {}

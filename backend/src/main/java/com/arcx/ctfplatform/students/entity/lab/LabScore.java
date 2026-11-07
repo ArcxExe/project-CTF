@@ -43,6 +43,10 @@ public class LabScore {
     @Builder.Default
     private int score = 0;
 
+    @Column(name = "is_eligible", nullable = false)
+    @Builder.Default
+    private boolean isEligible = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

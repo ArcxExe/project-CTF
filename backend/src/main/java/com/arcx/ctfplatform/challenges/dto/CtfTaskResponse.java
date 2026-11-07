@@ -15,8 +15,14 @@ public record CtfTaskResponse(
         String category,
         String difficulty,
         Integer baseScore,
-        Instant createdAt
+        Instant createdAt,
+        boolean isFirstBloodOnly,
+        Integer maxScore
 ) {
+    public CtfTaskResponse(UUID id, String title, String description, String category, String difficulty, Integer baseScore, Instant createdAt) {
+        this(id, title, description, category, difficulty, baseScore, createdAt, false, baseScore);
+    }
+
     @Component
     public static class Mapper implements IMapping<CtfTask, CtfTaskResponse> {
 
@@ -32,7 +38,9 @@ public record CtfTaskResponse(
                     from.getCategory(),
                     from.getDifficulty(),
                     from.getBaseScore(),
-                    from.getCreatedAt()
+                    from.getCreatedAt(),
+                    from.isFirstBloodOnly(),
+                    from.getMaxScore() != null && from.getMaxScore() > 0 ? from.getMaxScore() : from.getBaseScore()
             );
         }
     }
