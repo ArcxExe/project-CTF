@@ -28,14 +28,16 @@ public class AttemptHistoryController {
     @GetMapping("/history")
     public ResponseEntity<List<AttemptHistoryResponse>> getHistory(
             @RequestParam(required = false) UUID taskId,
+            @RequestParam(required = false) UUID challengeId,
             @AuthenticationPrincipal User user) {
         
         Student student = studentRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
+        UUID effectiveTaskId = taskId != null ? taskId : challengeId;
         List<AttemptHistoryResponse> history;
-        if (taskId != null) {
-            history = attemptRepository.findHistoryByStudentIdAndTaskId(student.getId(), taskId);
+        if (effectiveTaskId != null) {
+            history = attemptRepository.findHistoryByStudentIdAndTaskId(student.getId(), effectiveTaskId);
         } else {
             history = attemptRepository.findHistoryByStudentId(student.getId());
         }

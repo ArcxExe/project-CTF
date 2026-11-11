@@ -14,6 +14,8 @@ export interface CtfTask {
   isFirstBloodOnly?: boolean;
   points: number;
   createdAt: string;
+  taskType?: "FLAG" | "FILE_UPLOAD" | string;
+  attachments?: string[];
 }
 
 export type Challenge = CtfTask;
@@ -30,6 +32,8 @@ export interface ChallengePayload {
   maxScore?: number;
   isFirstBloodOnly?: boolean;
   flag?: string;
+  taskType?: "FLAG" | "FILE_UPLOAD" | string;
+  attachments?: string[];
 }
 
 /** Matches backend CtfTaskResponse (challenges/dto/CtfTaskResponse.java) */
@@ -43,11 +47,14 @@ export interface BackendChallengeResponse {
   maxScore?: number;
   isFirstBloodOnly?: boolean;
   createdAt: string;
+  taskType?: "FLAG" | "FILE_UPLOAD" | string;
+  attachments?: string[];
 }
 
 export interface SubmitFlagResponse {
   challengeId: string;
   correct: boolean;
+  isCorrect?: boolean;
   message: string;
   pointsAdded: number;
 }
@@ -63,6 +70,8 @@ export const toChallenge = (response: BackendChallengeResponse): Challenge => ({
   isFirstBloodOnly: Boolean(response.isFirstBloodOnly),
   points: response.baseScore,
   createdAt: response.createdAt,
+  taskType: response.taskType ?? "FLAG",
+  attachments: response.attachments ?? [],
 });
 
 const toBackendPayload = (payload: ChallengePayload) => ({
@@ -74,6 +83,8 @@ const toBackendPayload = (payload: ChallengePayload) => ({
   maxScore: payload.maxScore ?? payload.baseScore,
   isFirstBloodOnly: Boolean(payload.isFirstBloodOnly),
   flag: payload.flag,
+  taskType: payload.taskType ?? "FLAG",
+  attachments: payload.attachments,
 });
 
 /**
@@ -91,10 +102,35 @@ export const challengesApi = {
   },
 
   async submitFlag(id: string, flag: string): Promise<SubmitFlagResponse> {
-    return apiRequest<SubmitFlagResponse>(`/api/challenges/${id}/submit`, {
+    const res = await apiRequest<any>(`/api/challenges/${id}/submit`, {
       method: "POST",
       body: JSON.stringify({ flag }),
     });
+    const correct = Boolean(res.correct ?? res.isCorrect);
+    return {
+      challengeId: String(res.challengeId ?? id),
+      correct,
+      isCorrect: correct,
+      message: String(res.message ?? ""),
+      pointsAdded: Number(res.pointsAdded ?? 0),
+    };
+  },
+
+  async submitFile(challengeId: string, file: File): Promise<SubmitFlagResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await apiRequest<any>(`/api/challenges/${challengeId}/submit-file`, {
+      method: "POST",
+      body: formData,
+    });
+    const correct = Boolean(res.correct ?? res.isCorrect);
+    return {
+      challengeId: String(res.challengeId ?? challengeId),
+      correct,
+      isCorrect: correct,
+      message: String(res.message ?? ""),
+      pointsAdded: Number(res.pointsAdded ?? 0),
+    };
   },
 };
 

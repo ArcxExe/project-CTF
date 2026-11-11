@@ -18,6 +18,12 @@ public class AuditService {
     private final AuditLogRepository auditLogRepository;
 
     @Transactional
+    public AuditLog logEvent(UUID userId, String username, String actionType,
+                             String targetObject, String details, String ipAddress) {
+        return logEvent(userId, username, null, actionType, targetObject, null, details, ipAddress);
+    }
+
+    @Transactional
     public AuditLog logEvent(UUID userId, String username, String role, String actionType,
                              String targetObject, String oldValue, String newValue, String ipAddress) {
         AuditLog entry = AuditLog.builder()

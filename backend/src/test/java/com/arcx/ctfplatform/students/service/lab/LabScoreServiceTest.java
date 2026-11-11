@@ -211,4 +211,20 @@ class LabScoreServiceTest {
             return !lab.isAccepted() && Math.abs(lab.getScore() - 6.00) < 0.001;
         }));
     }
+
+    @Test
+    @DisplayName("StudentLab.isAccepted respects explicit false override even when raw and defense scores are high")
+    void testExplicitFalseOverrideOnStudentLabIsRespected() {
+        StudentLab overriddenFalse = StudentLab.builder()
+                .student(student)
+                .labNumber(1)
+                .rawScore(8.0)
+                .maxRawScore(8.0)
+                .defenseScore(2.0)
+                .maxDefenseScore(2.0)
+                .isAccepted(false)
+                .build();
+
+        assertThat(overriddenFalse.isAccepted()).isFalse();
+    }
 }

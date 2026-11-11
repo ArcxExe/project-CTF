@@ -25,10 +25,16 @@ public class PromoCodeService {
 
     @Transactional
     public PromoCode claimCode(UUID userId, String code) {
+        if (code == null || code.isBlank()) {
+            throw new IllegalArgumentException("Invalid promo code");
+        }
+        String normalizedCode = code.trim().toUpperCase();
+
         Student student = studentRepository.findByUserIdWithLock(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
-        PromoCode promo = promoCodeRepository.findByCode(code)
+        PromoCode promo = promoCodeRepository.findByCodeForUpdate(normalizedCode)
+                .or(() -> promoCodeRepository.findByCode(normalizedCode))
                 .orElseThrow(() -> new IllegalArgumentException("Invalid promo code"));
 
         if (promoCodeClaimRepository.existsByPromoCodeIdAndStudentId(promo.getId(), student.getId())) {

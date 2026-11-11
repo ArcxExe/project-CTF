@@ -49,6 +49,14 @@ public class AcademicFlowService {
         if (!flowRepository.existsById(id)) {
             throw new IllegalArgumentException("Academic flow not found");
         }
+        List<com.arcx.ctfplatform.academic.entity.AcademicGroup> groups = groupRepository.findAllByAcademicFlowId(id);
+        if (groups != null && !groups.isEmpty()) {
+            for (com.arcx.ctfplatform.academic.entity.AcademicGroup group : groups) {
+                group.setAcademicFlow(null);
+            }
+            groupRepository.saveAll(groups);
+        }
+        groupRepository.unlinkGroupsFromFlow(id);
         flowRepository.deleteById(id);
     }
 

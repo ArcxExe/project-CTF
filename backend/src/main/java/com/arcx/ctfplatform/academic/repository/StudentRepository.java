@@ -106,10 +106,12 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     int resetGradebookFieldsByStudentIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = "DELETE FROM competition_hidden_students", nativeQuery = true)
+    @Query(value = "UPDATE competitions SET hidden_student_ids = '[]'::jsonb", nativeQuery = true)
     int deleteAllHiddenStudents();
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = "DELETE FROM competition_hidden_students WHERE student_id IN :studentIds", nativeQuery = true)
+    @Query(value = "UPDATE competitions c SET hidden_student_ids = COALESCE(" +
+            "(SELECT jsonb_agg(elem) FROM jsonb_array_elements_text(COALESCE(c.hidden_student_ids, '[]'::jsonb)) AS elem " +
+            "WHERE elem NOT IN (SELECT CAST(id AS text) FROM students WHERE id IN (:studentIds))), '[]'::jsonb)", nativeQuery = true)
     int deleteHiddenStudentsByStudentIdIn(@Param("studentIds") java.util.Collection<UUID> studentIds);
 }

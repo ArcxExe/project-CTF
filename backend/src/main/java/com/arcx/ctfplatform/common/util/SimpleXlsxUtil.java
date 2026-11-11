@@ -38,13 +38,33 @@ public final class SimpleXlsxUtil {
                 && bytes[3] == 0x04;
     }
 
+    public static final int MAX_ZIP_ENTRIES = 100;
+    public static final long MAX_TOTAL_UNCOMPRESSED_BYTES = 10L * 1024L * 1024L; // 10 MB
+
     public static List<List<String>> readSheet(InputStream xlsxStream) throws IOException {
         Map<String, byte[]> entries = new HashMap<>();
+        int entryCount = 0;
+        long totalUncompressedBytes = 0;
+        byte[] buffer = new byte[8192];
+
         try (ZipInputStream zis = new ZipInputStream(xlsxStream)) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
+                entryCount++;
+                if (entryCount > MAX_ZIP_ENTRIES) {
+                    throw new IOException("XLSX archive exceeds maximum allowed entry count (" + MAX_ZIP_ENTRIES + ")");
+                }
                 if (!entry.isDirectory()) {
-                    entries.put(entry.getName(), zis.readAllBytes());
+                    ByteArrayOutputStream entryOut = new ByteArrayOutputStream();
+                    int read;
+                    while ((read = zis.read(buffer)) != -1) {
+                        totalUncompressedBytes += read;
+                        if (totalUncompressedBytes > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+                            throw new IOException("XLSX archive exceeds maximum uncompressed size (10 MB)");
+                        }
+                        entryOut.write(buffer, 0, read);
+                    }
+                    entries.put(entry.getName(), entryOut.toByteArray());
                 }
             }
         }

@@ -6,6 +6,7 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,11 +34,13 @@ public class AcademicFlowController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<AcademicFlowResponseDTO> createFlow(@Valid @RequestBody AcademicFlowRequestDTO request) {
         return new ResponseEntity<>(flowService.createFlow(request), HttpStatus.CREATED);
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<Void> deleteFlow(@PathVariable UUID id) {
         flowService.deleteFlow(id);
         return ResponseEntity.noContent().build();

@@ -79,6 +79,8 @@ class LeaderboardServiceTest {
                 academicGroupRepository
         );
         lenient().when(competitionRepository.findAll()).thenReturn(Collections.emptyList());
+        lenient().when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(Collections.emptyList());
+        lenient().when(scoreAdjustmentRepository.findAll()).thenReturn(Collections.emptyList());
     }
 
     @org.junit.jupiter.api.Test
@@ -103,8 +105,6 @@ class LeaderboardServiceTest {
                 .submittedAt(Instant.now())
                 .build();
         when(attemptRepository.findAll()).thenReturn(List.of(attempt));
-        when(promoCodeClaimRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
 
         // Control points: 3 KT quizzes totalling 72 points (e.g. 25 + 25 + 22)
         UUID kt1Id = UUID.randomUUID();
@@ -158,8 +158,6 @@ class LeaderboardServiceTest {
                 .submittedAt(Instant.now())
                 .build();
         when(attemptRepository.findAll()).thenReturn(List.of(attempt));
-        when(promoCodeClaimRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
 
         when(testRepository.findAll()).thenReturn(Collections.emptyList());
         when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
@@ -196,8 +194,6 @@ class LeaderboardServiceTest {
                 .submittedAt(Instant.now())
                 .build();
         when(attemptRepository.findAll()).thenReturn(List.of(attempt));
-        when(promoCodeClaimRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
 
         when(testRepository.findAll()).thenReturn(Collections.emptyList());
         when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
@@ -236,8 +232,6 @@ class LeaderboardServiceTest {
         Attempt a1 = Attempt.builder().studentId(s1Id).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(400).build();
         Attempt a2 = Attempt.builder().studentId(s2Id).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(10000).build();
         when(attemptRepository.findAll()).thenReturn(List.of(a1, a2));
-        when(promoCodeClaimRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
 
         when(testRepository.findAll()).thenReturn(Collections.emptyList());
         when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
@@ -273,8 +267,6 @@ class LeaderboardServiceTest {
         when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
 
         when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
-        when(promoCodeClaimRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
 
         // 1 Control point (score 30, capped at 25)
         UUID ktId = UUID.randomUUID();
@@ -328,8 +320,6 @@ class LeaderboardServiceTest {
         Attempt a1 = Attempt.builder().studentId(s1Id).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(500).submittedAt(tAlice).build();
         Attempt a2 = Attempt.builder().studentId(s2Id).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(500).submittedAt(tBob).build();
         when(attemptRepository.findAll()).thenReturn(List.of(a1, a2));
-        when(promoCodeClaimRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
 
         when(testRepository.findAll()).thenReturn(Collections.emptyList());
         when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
@@ -375,8 +365,6 @@ class LeaderboardServiceTest {
         Attempt a2Wrong3 = Attempt.builder().studentId(s2Id).taskId(UUID.randomUUID()).isCorrect(false).submittedAt(sameTime.minusSeconds(100)).build();
 
         when(attemptRepository.findAll()).thenReturn(List.of(a1Correct, a1Wrong, a2Correct, a2Wrong1, a2Wrong2, a2Wrong3));
-        when(promoCodeClaimRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
 
         when(testRepository.findAll()).thenReturn(Collections.emptyList());
         when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
@@ -405,8 +393,6 @@ class LeaderboardServiceTest {
         when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
 
         when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
-        when(promoCodeClaimRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
 
         UUID kt1Id = UUID.randomUUID();
         UUID kt2Id = UUID.randomUUID();
@@ -477,14 +463,13 @@ class LeaderboardServiceTest {
                 .scoreAwarded(100)
                 .build();
         when(attemptRepository.findAll()).thenReturn(List.of(attempt));
-        when(promoCodeClaimRepository.findAllByStudentId(studentId)).thenReturn(Collections.emptyList());
 
         // Penalty adjustment of -500 points
         com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment adj = com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment.builder()
                 .studentId(studentId)
                 .points(-500)
                 .build();
-        when(scoreAdjustmentRepository.findAllByStudentId(studentId)).thenReturn(List.of(adj));
+        when(scoreAdjustmentRepository.findAll()).thenReturn(List.of(adj));
 
         when(testRepository.findAll()).thenReturn(Collections.emptyList());
         when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
@@ -533,32 +518,23 @@ class LeaderboardServiceTest {
         when(userRepository.findAll()).thenReturn(List.of(u1, u2));
         when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
 
-        // s1: Acceptance Criterion 1 (B_lab = 110, B_kt = 72, B_ctf = 560 -> L = 76.92%, K = 72.00%, C = 70.00% -> S = 73.96% -> Grade 4)
         Attempt a1 = Attempt.builder().studentId(s1Id).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(560).build();
-        // s2: Criterion 3 Grade 5: B_lab = 100.1 (L = 70.00%), B_kt = 70 (K = 70.00%), B_ctf = 800 (C = 100.00%) -> S = 0.5*70 + 0.25*70 + 0.25*100 = 77.5...
-        // Let's make s2 have L = 80.00% (114.4), K = 80.00% (80), C = 100.00% (800) -> S = 0.5*80 + 0.25*80 + 0.25*100 = 85.00% -> Grade 5
         Attempt a2 = Attempt.builder().studentId(s2Id).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(800).build();
         when(attemptRepository.findAll()).thenReturn(List.of(a1, a2));
-        when(promoCodeClaimRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
-        when(scoreAdjustmentRepository.findAllByStudentId(any())).thenReturn(Collections.emptyList());
 
         // Control points
         UUID kt1 = UUID.randomUUID();
         UUID kt2 = UUID.randomUUID();
         Test t1 = Test.builder().id(kt1).title("КТ-1").type(TestType.CONTROL_POINT).build();
         Test t2 = Test.builder().id(kt2).title("КТ-2").type(TestType.CONTROL_POINT).build();
-        when(testRepository.findAll()).thenReturn(List.of(t1, t2));
 
-        // s1 has 72 KT points (e.g. 25 + 25 + 22 -> let's make 2 tests 25 + 25 + 22 = 72)
         UUID kt3 = UUID.randomUUID();
         Test t3 = Test.builder().id(kt3).title("КТ-3").type(TestType.CONTROL_POINT).build();
-        when(testRepository.findAll()).thenReturn(List.of(t1, t2, t3));
 
         QuizAttempt qa11 = QuizAttempt.builder().studentId(s1Id).quizId(kt1).status(QuizAttemptStatus.COMPLETED).score(25).build();
         QuizAttempt qa12 = QuizAttempt.builder().studentId(s1Id).quizId(kt2).status(QuizAttemptStatus.COMPLETED).score(25).build();
         QuizAttempt qa13 = QuizAttempt.builder().studentId(s1Id).quizId(kt3).status(QuizAttemptStatus.COMPLETED).score(22).build();
 
-        // s2 has 80 KT points (e.g. 25 + 25 + 25 + 5 -> 3 tests max 25 each = 75 + 5 = 80)
         UUID kt4 = UUID.randomUUID();
         Test t4 = Test.builder().id(kt4).title("КТ-4").type(TestType.CONTROL_POINT).build();
         when(testRepository.findAll()).thenReturn(List.of(t1, t2, t3, t4));
@@ -588,5 +564,104 @@ class LeaderboardServiceTest {
         assertThat(e2.cPercent()).isEqualTo(100.00);
         assertThat(e2.sScore()).isEqualTo(85.00);
         assertThat(e2.recommendedGrade()).isEqualTo(5);
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("OUT_OF_RATING students are excluded for non-admins and DISQUALIFIED students have zeroed scores and grade 2")
+    void testOutOfRatingAndDisqualifiedSemantics() {
+        UUID outId = UUID.randomUUID();
+        UUID disqId = UUID.randomUUID();
+        UUID uOutId = UUID.randomUUID();
+        UUID uDisqId = UUID.randomUUID();
+
+        Student outStudent = Student.builder()
+                .id(outId)
+                .userId(uOutId)
+                .studentCode("S-OUT")
+                .status(com.arcx.ctfplatform.academic.entity.StudentStatus.OUT_OF_RATING)
+                .build();
+        Student disqStudent = Student.builder()
+                .id(disqId)
+                .userId(uDisqId)
+                .studentCode("S-DISQ")
+                .status(com.arcx.ctfplatform.academic.entity.StudentStatus.DISQUALIFIED)
+                .build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(outStudent, disqStudent));
+        when(userRepository.findAll()).thenReturn(List.of(
+                User.builder().id(uOutId).username("out_user").build(),
+                User.builder().id(uDisqId).username("disq_user").build()
+        ));
+        when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
+        when(attemptRepository.findAll()).thenReturn(List.of(
+                Attempt.builder().studentId(disqId).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(500).build()
+        ));
+        when(testRepository.findAll()).thenReturn(Collections.emptyList());
+        when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
+
+        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(null, null);
+
+        assertThat(leaderboard).hasSize(1);
+        LeaderboardService.LeaderboardEntry disqEntry = leaderboard.get(0);
+        assertThat(disqEntry.studentId()).isEqualTo(disqId);
+        assertThat(disqEntry.ctfScore()).isZero();
+        assertThat(disqEntry.solvedCount()).isZero();
+        assertThat(disqEntry.sScore()).isZero();
+        assertThat(disqEntry.recommendedGrade()).isEqualTo(2);
+        assertThat(disqEntry.isEligible()).isFalse();
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("DOUBLE_COEFF with value <= 0 defaults to 2 and activeComp.isSumTestPoints() adds test points")
+    void testDoubleCoeffDefaultAndSumTestPoints() {
+        UUID studentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Student student = Student.builder().id(studentId).userId(userId).studentCode("S1").build();
+        User user = User.builder().id(userId).username("student1").build();
+
+        UUID compId = UUID.randomUUID();
+        com.arcx.ctfplatform.competitions.entity.Competition activeComp =
+                com.arcx.ctfplatform.competitions.entity.Competition.builder()
+                        .id(compId)
+                        .status(com.arcx.ctfplatform.competitions.entity.CompetitionStatus.ACTIVE)
+                        .sumTestPoints(true)
+                        .build();
+        when(competitionRepository.findAll()).thenReturn(List.of(activeComp));
+
+        when(studentRepository.findAll()).thenReturn(List.of(student));
+        when(userRepository.findAll()).thenReturn(List.of(user));
+        when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
+
+        Attempt attempt = Attempt.builder().studentId(studentId).taskId(UUID.randomUUID()).isCorrect(true).scoreAwarded(100).build();
+        when(attemptRepository.findAll()).thenReturn(List.of(attempt));
+
+        UUID testId = UUID.randomUUID();
+        Test test = Test.builder().id(testId).competitionId(compId).type(TestType.LECTURE).build();
+        when(testRepository.findAll()).thenReturn(List.of(test));
+        QuizAttempt qa = QuizAttempt.builder().studentId(studentId).quizId(testId).status(QuizAttemptStatus.COMPLETED).score(50).build();
+        when(quizAttemptRepository.findAll()).thenReturn(List.of(qa));
+
+        com.arcx.ctfplatform.modifiers.entity.PromoCode promo = com.arcx.ctfplatform.modifiers.entity.PromoCode.builder()
+                .id(UUID.randomUUID())
+                .code("DOUBLE")
+                .modifierType(com.arcx.ctfplatform.modifiers.entity.PromoModifierType.DOUBLE_COEFF)
+                .value(0)
+                .build();
+        com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim claim = com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim.builder()
+                .id(UUID.randomUUID())
+                .studentId(studentId)
+                .promoCode(promo)
+                .build();
+        when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(List.of(claim));
+
+        when(labScoreService.getFinalLabScore(studentId)).thenReturn(0.0);
+        when(labScoreService.isEligible(studentId)).thenReturn(true);
+        when(gradingService.calculateGrade(anyDouble(), anyDouble(), anyDouble())).thenReturn(2);
+
+        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(null, null);
+
+        assertThat(leaderboard).hasSize(1);
+        // (100 task + 50 quiz) * 2 (default DOUBLE_COEFF) = 300
+        assertThat(leaderboard.get(0).ctfScore()).isEqualTo(300);
     }
 }

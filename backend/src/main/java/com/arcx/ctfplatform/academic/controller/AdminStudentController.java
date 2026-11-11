@@ -36,7 +36,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @RestController
 @RequestMapping("/api/admin/students")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
 @RequiredArgsConstructor
 public class AdminStudentController {
 

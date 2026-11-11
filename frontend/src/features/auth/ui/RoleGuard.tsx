@@ -10,7 +10,7 @@ interface RoleGuardProps extends PropsWithChildren {
 }
 
 export const RoleGuard = ({ allowedRoles, children }: RoleGuardProps) => {
-  const { currentUser, isLoading, isSessionHydrated, restoreSession } = useAuthStore();
+  const { currentUser, isAuthenticated, isLoading, isSessionHydrated, restoreSession } = useAuthStore();
 
   useEffect(() => {
     if (!isSessionHydrated) {
@@ -22,7 +22,7 @@ export const RoleGuard = ({ allowedRoles, children }: RoleGuardProps) => {
     return <Loader label="Проверяем доступ..." />;
   }
 
-  if (!currentUser) {
+  if (!currentUser || !isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
@@ -35,7 +35,7 @@ export const RoleGuard = ({ allowedRoles, children }: RoleGuardProps) => {
 };
 
 export const RoleRedirect = () => {
-  const { currentUser, isLoading, isSessionHydrated, restoreSession } = useAuthStore();
+  const { currentUser, isAuthenticated, isLoading, isSessionHydrated, restoreSession } = useAuthStore();
 
   useEffect(() => {
     if (!isSessionHydrated) {
@@ -47,7 +47,7 @@ export const RoleRedirect = () => {
     return <Loader label="Проверяем сессию..." />;
   }
 
-  if (!currentUser) {
+  if (!currentUser || !isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 

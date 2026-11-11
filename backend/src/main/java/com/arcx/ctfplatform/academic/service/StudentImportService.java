@@ -78,8 +78,10 @@ public class StudentImportService {
                 rows = readCsvRows(bytes);
             }
             return importRows(rows, targetGroupId, currentUser);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse and import students spreadsheet: " + e.getMessage(), e);
+            throw new IllegalArgumentException("Failed to parse and import students spreadsheet: " + e.getMessage(), e);
         }
     }
 
@@ -171,136 +173,148 @@ public class StudentImportService {
 
         UUID creatorId = currentUser != null ? currentUser.getId() : null;
 
-        for (int r = startDataRow; r < rows.size(); r++) {
-            List<String> row = rows.get(r);
-            if (isEmptyOrSummaryRow(row, colMap)) {
-                skippedRows++;
-                continue;
-            }
-
-            String lastName = "";
-            String firstName = "";
-            String middleName = "";
-
-            if (colMap.fioCol >= 0) {
-                String fio = getCell(row, colMap.fioCol);
-                if (fio.isEmpty() || isSummaryMarker(fio)) {
+        if (labScoreService != null) {
+            labScoreService.setSuppressBroadcast(true);
+        }
+        try {
+            for (int r = startDataRow; r < rows.size(); r++) {
+                List<String> row = rows.get(r);
+                if (isEmptyOrSummaryRow(row, colMap)) {
                     skippedRows++;
                     continue;
                 }
-                String[] parts = fio.trim().split("\\s+");
-                if (parts.length == 1) {
-                    lastName = parts[0];
-                    firstName = "-";
-                } else if (parts.length == 2) {
-                    lastName = parts[0];
-                    firstName = parts[1];
+
+                String lastName = "";
+                String firstName = "";
+                String middleName = "";
+
+                if (colMap.fioCol >= 0) {
+                    String fio = getCell(row, colMap.fioCol);
+                    if (fio.isEmpty() || isSummaryMarker(fio)) {
+                        skippedRows++;
+                        continue;
+                    }
+                    String[] parts = fio.trim().split("\\s+");
+                    if (parts.length == 1) {
+                        lastName = parts[0];
+                        firstName = "-";
+                    } else if (parts.length == 2) {
+                        lastName = parts[0];
+                        firstName = parts[1];
+                    } else {
+                        lastName = parts[0];
+                        firstName = parts[1];
+                        StringBuilder mid = new StringBuilder();
+                        for (int i = 2; i < parts.length; i++) {
+                            if (!mid.isEmpty()) mid.append(" ");
+                            mid.append(parts[i]);
+                        }
+                        middleName = mid.toString();
+                    }
                 } else {
-                    lastName = parts[0];
-                    firstName = parts[1];
-                    StringBuilder mid = new StringBuilder();
-                    for (int i = 2; i < parts.length; i++) {
-                        if (!mid.isEmpty()) mid.append(" ");
-                        mid.append(parts[i]);
+                    lastName = getCell(row, colMap.lastNameCol);
+                    firstName = getCell(row, colMap.firstNameCol);
+                    middleName = getCell(row, colMap.middleNameCol);
+                }
+
+                if (lastName.isEmpty() || firstName.isEmpty() || isSummaryMarker(lastName) || isSummaryMarker(firstName)) {
+                    skippedRows++;
+                    continue;
+                }
+
+                String studentCode = getCell(row, colMap.studentCodeCol);
+                String groupName = getCell(row, colMap.groupNameCol);
+                String flowName = getCell(row, colMap.flowNameCol);
+
+                AcademicGroup group = resolveGroup(groupName, flowName, defaultGroup);
+                if (group == null) {
+                    skippedRows++;
+                    continue;
+                }
+
+                Integer pairNumber = parsePositiveInt(getCell(row, colMap.pairCol));
+                String tokenVal = getCell(row, colMap.tokenCol);
+
+                Optional<Student> existingOpt = findExistingStudent(studentCode, lastName, firstName, middleName, group.getId());
+                Student student;
+                boolean isNew = false;
+
+                if (existingOpt.isPresent()) {
+                    student = existingOpt.get();
+                    student.setLastName(lastName);
+                    student.setFirstName(firstName);
+                    student.setMiddleName(middleName.isEmpty() ? null : middleName);
+                    student.setAcademicGroup(group);
+                    if (pairNumber != null) {
+                        student.setPairNumber(pairNumber);
                     }
-                    middleName = mid.toString();
-                }
-            } else {
-                lastName = getCell(row, colMap.lastNameCol);
-                firstName = getCell(row, colMap.firstNameCol);
-                middleName = getCell(row, colMap.middleNameCol);
-            }
-
-            if (lastName.isEmpty() || firstName.isEmpty() || isSummaryMarker(lastName) || isSummaryMarker(firstName)) {
-                skippedRows++;
-                continue;
-            }
-
-            String studentCode = getCell(row, colMap.studentCodeCol);
-            String groupName = getCell(row, colMap.groupNameCol);
-            String flowName = getCell(row, colMap.flowNameCol);
-
-            AcademicGroup group = resolveGroup(groupName, flowName, defaultGroup);
-            if (group == null) {
-                skippedRows++;
-                continue;
-            }
-
-            Integer pairNumber = parsePositiveInt(getCell(row, colMap.pairCol));
-            String tokenVal = getCell(row, colMap.tokenCol);
-
-            Optional<Student> existingOpt = findExistingStudent(studentCode, lastName, firstName, middleName, group.getId());
-            Student student;
-            boolean isNew = false;
-
-            if (existingOpt.isPresent()) {
-                student = existingOpt.get();
-                student.setLastName(lastName);
-                student.setFirstName(firstName);
-                student.setMiddleName(middleName.isEmpty() ? null : middleName);
-                student.setAcademicGroup(group);
-                if (pairNumber != null) {
-                    student.setPairNumber(pairNumber);
-                }
-                if (student.getCreatedBy() == null && creatorId != null) {
-                    student.setCreatedBy(creatorId);
-                }
-            } else {
-                isNew = true;
-                String finalCode = (studentCode != null && !studentCode.isEmpty())
-                        ? studentCode
-                        : generateStudentCode(group.getName(), r + 1);
-                student = Student.builder()
-                        .lastName(lastName)
-                        .firstName(firstName)
-                        .middleName(middleName.isEmpty() ? null : middleName)
-                        .studentCode(finalCode)
-                        .academicGroup(group)
-                        .pairNumber(pairNumber)
-                        .status(StudentStatus.ACTIVE)
-                        .createdBy(creatorId)
-                        .build();
-            }
-
-            if (colMap.tokenCol >= 0 && !tokenVal.isEmpty()) {
-                student.setTokenInfo(tokenVal);
-            }
-
-            for (Map.Entry<Integer, Integer> ktEntry : colMap.ktCols.entrySet()) {
-                int ktNum = ktEntry.getKey();
-                String rawKt = getCell(row, ktEntry.getValue());
-                Double val = parseDoubleOrNull(rawKt);
-                if (val != null) {
-                    double clamped = Math.max(0.0, Math.min(val, 25.0));
-                    switch (ktNum) {
-                        case 1 -> student.setKt1(clamped);
-                        case 2 -> student.setKt2(clamped);
-                        case 3 -> student.setKt3(clamped);
-                        case 4 -> student.setKt4(clamped);
+                    if (student.getCreatedBy() == null && creatorId != null) {
+                        student.setCreatedBy(creatorId);
                     }
-                    ktImported++;
+                } else {
+                    isNew = true;
+                    String finalCode = (studentCode != null && !studentCode.isEmpty())
+                            ? studentCode
+                            : generateStudentCode(group.getName(), r + 1);
+                    student = Student.builder()
+                            .lastName(lastName)
+                            .firstName(firstName)
+                            .middleName(middleName.isEmpty() ? null : middleName)
+                            .studentCode(finalCode)
+                            .academicGroup(group)
+                            .pairNumber(pairNumber)
+                            .status(StudentStatus.ACTIVE)
+                            .createdBy(creatorId)
+                            .build();
                 }
-            }
 
-            student = studentRepository.save(student);
-            if (isNew) {
-                importedCount++;
-            } else {
-                updatedCount++;
-            }
+                if (colMap.tokenCol >= 0 && !tokenVal.isEmpty()) {
+                    student.setTokenInfo(tokenVal);
+                }
 
-            if (labScoreService != null && !colMap.labCols.isEmpty() && student.getId() != null) {
-                for (Map.Entry<Integer, Integer> labEntry : colMap.labCols.entrySet()) {
-                    int labNum = labEntry.getKey();
-                    String rawLab = getCell(row, labEntry.getValue());
-                    Double val = parseDoubleOrNull(rawLab);
+                for (Map.Entry<Integer, Integer> ktEntry : colMap.ktCols.entrySet()) {
+                    int ktNum = ktEntry.getKey();
+                    String rawKt = getCell(row, ktEntry.getValue());
+                    Double val = parseDoubleOrNull(rawKt);
                     if (val != null) {
-                        LabScoreService.LabSpec spec = LabScoreService.getLabSpec(labNum);
-                        double clamped = Math.max(0.0, Math.min(val, spec.maxTotal()));
-                        boolean accepted = clamped >= 0.40 * spec.maxTotal();
-                        labScoreService.recordLab(student.getId(), labNum, clamped, accepted);
-                        labsImported++;
+                        double clamped = Math.max(0.0, Math.min(val, 25.0));
+                        switch (ktNum) {
+                            case 1 -> student.setKt1(clamped);
+                            case 2 -> student.setKt2(clamped);
+                            case 3 -> student.setKt3(clamped);
+                            case 4 -> student.setKt4(clamped);
+                        }
+                        ktImported++;
                     }
+                }
+
+                student = studentRepository.save(student);
+                if (isNew) {
+                    importedCount++;
+                } else {
+                    updatedCount++;
+                }
+
+                if (labScoreService != null && !colMap.labCols.isEmpty() && student.getId() != null) {
+                    for (Map.Entry<Integer, Integer> labEntry : colMap.labCols.entrySet()) {
+                        int labNum = labEntry.getKey();
+                        String rawLab = getCell(row, labEntry.getValue());
+                        Double val = parseDoubleOrNull(rawLab);
+                        if (val != null) {
+                            LabScoreService.LabSpec spec = LabScoreService.getLabSpec(labNum);
+                            double clamped = Math.max(0.0, Math.min(val, spec.maxTotal()));
+                            boolean accepted = clamped >= 0.40 * spec.maxTotal();
+                            labScoreService.recordLab(student.getId(), labNum, clamped, accepted);
+                            labsImported++;
+                        }
+                    }
+                }
+            }
+        } finally {
+            if (labScoreService != null) {
+                labScoreService.setSuppressBroadcast(false);
+                if (importedCount > 0 || updatedCount > 0 || labsImported > 0 || ktImported > 0) {
+                    labScoreService.broadcastAfterBulkUpdate();
                 }
             }
         }

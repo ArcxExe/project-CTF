@@ -16,7 +16,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin/quizzes")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
 @RequiredArgsConstructor
 public class AdminQuizController {
 
@@ -64,8 +64,9 @@ public class AdminQuizController {
         if (payload.containsKey("optionText")) {
             option.setOptionText((String) payload.get("optionText"));
         }
-        if (payload.containsKey("correct")) {
-            boolean newCorrect = (Boolean) payload.get("correct");
+        if (payload.containsKey("correct") || payload.containsKey("isCorrect")) {
+            Object rawVal = payload.containsKey("isCorrect") ? payload.get("isCorrect") : payload.get("correct");
+            boolean newCorrect = Boolean.TRUE.equals(rawVal);
             option.setCorrect(newCorrect);
             
             if (newCorrect) {

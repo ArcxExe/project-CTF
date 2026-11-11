@@ -10,7 +10,7 @@ import "./pages.css";
 export const LoginPage = () => {
   const { currentUser, login, isLoading } = useAuthStore();
   const { push } = useToastStore();
-  const [email, setEmail] = useState("admin@ctf.local");
+  const [identifier, setIdentifier] = useState("admin@ctf.local");
   const [password, setPassword] = useState("password");
 
   if (currentUser) {
@@ -22,7 +22,7 @@ export const LoginPage = () => {
     event.preventDefault();
 
     try {
-      await login({ email, password });
+      await login({ email: identifier, password });
       push({ title: "Вход выполнен", variant: "success" });
     } catch (error) {
       push({
@@ -39,16 +39,17 @@ export const LoginPage = () => {
           <div>
             <h1>Вход в платформу</h1>
             <p className="muted">
-              Тестовые учётные записи: admin@ctf.local / password и student@ctf.local / password
+              Тестовые учётные записи: admin / password или student@ctf.local / password
             </p>
           </div>
 
           <form className="page-stack" onSubmit={handleSubmit}>
             <Input
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              label="Email или имя пользователя"
+              placeholder="admin@ctf.local или admin"
+              type="text"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
             />
             <Input
               label="Пароль"

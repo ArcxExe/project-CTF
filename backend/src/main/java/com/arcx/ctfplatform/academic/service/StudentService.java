@@ -1,7 +1,9 @@
 package com.arcx.ctfplatform.academic.service;
 
+import java.util.List;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -15,21 +17,52 @@ import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
+import com.arcx.ctfplatform.audit.service.AuditService;
 import com.arcx.ctfplatform.common.config.IMapping;
-
-import lombok.RequiredArgsConstructor;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
 
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 
 @Service
-@RequiredArgsConstructor
 public class StudentService {
 
     private final StudentRepository studentRepository;
     private final AcademicGroupRepository groupRepository;
     private final UserRepository userRepository;
     private final IMapping<Student, StudentResponse> studentMapper;
+    private PromoCodeRepository promoCodeRepository;
+    private PromoCodeClaimRepository promoCodeClaimRepository;
+    private AuditService auditService;
+
+    public StudentService(
+            StudentRepository studentRepository,
+            AcademicGroupRepository groupRepository,
+            UserRepository userRepository,
+            IMapping<Student, StudentResponse> studentMapper
+    ) {
+        this(studentRepository, groupRepository, userRepository, studentMapper, null, null, null);
+    }
+
+    @Autowired
+    public StudentService(
+            StudentRepository studentRepository,
+            AcademicGroupRepository groupRepository,
+            UserRepository userRepository,
+            IMapping<Student, StudentResponse> studentMapper,
+            @Autowired(required = false) PromoCodeRepository promoCodeRepository,
+            @Autowired(required = false) PromoCodeClaimRepository promoCodeClaimRepository,
+            @Autowired(required = false) AuditService auditService
+    ) {
+        this.studentRepository = studentRepository;
+        this.groupRepository = groupRepository;
+        this.userRepository = userRepository;
+        this.studentMapper = studentMapper;
+        this.promoCodeRepository = promoCodeRepository;
+        this.promoCodeClaimRepository = promoCodeClaimRepository;
+        this.auditService = auditService;
+    }
 
     @Transactional
     public StudentResponse createStudent(StudentCreateRequest request, User currentUser) {
@@ -48,10 +81,15 @@ public class StudentService {
                 .studentCode(request.studentCode())
                 .academicGroup(group)
                 .status(StudentStatus.ACTIVE)
-                .createdBy(currentUser.getId())
+                .createdBy(currentUser != null ? currentUser.getId() : null)
                 .pairNumber(request.pairNumber())
                 .build();
-        return studentMapper.mapping(studentRepository.save(student));
+        Student saved = studentRepository.save(student);
+        if (auditService != null && currentUser != null) {
+            auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_CREATED", saved.getId().toString(),
+                    "Created student " + saved.getStudentCode(), null);
+        }
+        return studentMapper.mapping(saved);
     }
 
 
@@ -71,7 +109,12 @@ public class StudentService {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
         student.setStatus(status);
-        return studentMapper.mapping(studentRepository.save(student));
+        Student saved = studentRepository.save(student);
+        if (auditService != null && currentUser != null) {
+            auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_STATUS_UPDATED", saved.getId().toString(),
+                    "Status updated to " + status, null);
+        }
+        return studentMapper.mapping(saved);
     }
 
     @Transactional(readOnly = true)
@@ -89,6 +132,10 @@ public class StudentService {
         }
         student.setStatus(StudentStatus.ACTIVE);
         studentRepository.save(student);
+        if (auditService != null && currentUser != null) {
+            auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_BINDING_APPROVED", student.getId().toString(),
+                    "Approved binding for student " + student.getStudentCode(), null);
+        }
     }
 
     @Transactional
@@ -106,6 +153,10 @@ public class StudentService {
         
         if (userId != null) {
             userRepository.deleteById(userId);
+        }
+        if (auditService != null && currentUser != null) {
+            auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_BINDING_REJECTED", student.getId().toString(),
+                    "Rejected binding for student " + student.getStudentCode(), null);
         }
     }
 
@@ -132,7 +183,12 @@ public class StudentService {
         student.setAcademicGroup(group);
         student.setPairNumber(request.pairNumber());
         
-        return studentMapper.mapping(studentRepository.save(student));
+        Student saved = studentRepository.save(student);
+        if (auditService != null && currentUser != null) {
+            auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_UPDATED", saved.getId().toString(),
+                    "Updated student " + saved.getStudentCode(), null);
+        }
+        return studentMapper.mapping(saved);
     }
 
     @Transactional
@@ -150,9 +206,16 @@ public class StudentService {
         studentRepository.deleteManualSubmissionsByStudentId(studentId);
         studentRepository.deleteQuizAttemptsByStudentId(studentId);
         studentRepository.deleteScoreAdjustmentsByStudentId(studentId);
+        if (promoCodeClaimRepository != null) {
+            promoCodeClaimRepository.deleteByStudentIdIn(List.of(studentId));
+        }
         
         // Delete student
         studentRepository.delete(student);
+
+        if (promoCodeRepository != null) {
+            promoCodeRepository.recalculateUsedCounts();
+        }
         
         // Delete user if exists
         if (userId != null) {

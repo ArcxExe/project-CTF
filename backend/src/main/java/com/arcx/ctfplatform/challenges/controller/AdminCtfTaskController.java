@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,6 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.arcx.ctfplatform.challenges.dto.CtfTaskRequest;
 import com.arcx.ctfplatform.challenges.dto.CtfTaskResponse;
 import com.arcx.ctfplatform.challenges.service.CtfTaskService;
+import com.arcx.ctfplatform.users.entity.Role;
+import com.arcx.ctfplatform.users.entity.User;
 
 import lombok.RequiredArgsConstructor;
 
@@ -31,37 +35,58 @@ public class AdminCtfTaskController {
 
     @GetMapping
     public ResponseEntity<List<CtfTaskResponse>> getAllTasks() {
+        if (!isAdminOrInstructor()) {
+            return ResponseEntity.ok(ctfTaskService.getStudentVisibleTasks());
+        }
         return ResponseEntity.ok(ctfTaskService.getAllTasks());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<CtfTaskResponse> getTaskById(@PathVariable UUID id) {
+        if (!isAdminOrInstructor()) {
+            return ResponseEntity.ok(ctfTaskService.getStudentVisibleTaskById(id));
+        }
         return ResponseEntity.ok(ctfTaskService.getTaskById(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'TEACHER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<CtfTaskResponse> createTask(@Valid @RequestBody CtfTaskRequest request) {
         CtfTaskResponse response = ctfTaskService.createTask(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'TEACHER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<CtfTaskResponse> updateTask(@PathVariable UUID id, @Valid @RequestBody CtfTaskRequest request) {
         return ResponseEntity.ok(ctfTaskService.updateTask(id, request));
     }
 
     @GetMapping("/{id}/flag")
-    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'TEACHER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<java.util.Map<String, String>> getTaskFlag(@PathVariable UUID id) {
         return ResponseEntity.ok(java.util.Map.of("flag", ctfTaskService.getTaskFlag(id)));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'TEACHER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<Void> deleteTask(@PathVariable UUID id) {
         ctfTaskService.deleteTask(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private boolean isAdminOrInstructor() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        if (auth.getPrincipal() instanceof User u) {
+            return u.getRole() == Role.ADMIN || u.getRole() == Role.INSTRUCTOR;
+        }
+        return auth.getAuthorities().stream().anyMatch(a -> {
+            String r = a.getAuthority();
+            return "ROLE_ADMIN".equals(r) || "ADMIN".equals(r)
+                    || "ROLE_INSTRUCTOR".equals(r) || "INSTRUCTOR".equals(r);
+        });
     }
 }

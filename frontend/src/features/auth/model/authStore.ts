@@ -1,20 +1,22 @@
 import { create } from "zustand";
-import { authTokenStorage } from "@/shared/api/client";
-import { authApi } from "@/shared/api/services/auth";
+import { authTokenStorage, onUnauthorized } from "@/shared/api/client";
+import { authApi, type RegisterPayload } from "@/shared/api/services/auth";
 import type { AuthPayload, User } from "@/shared/types/user";
 
 interface AuthState {
   currentUser: User | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
   isSessionHydrated: boolean;
   login: (payload: AuthPayload) => Promise<void>;
-  register: (payload: AuthPayload & { studentCode: string }) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
   logout: () => void;
   restoreSession: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   currentUser: null,
+  isAuthenticated: false,
   isLoading: false,
   isSessionHydrated: false,
 
@@ -22,7 +24,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const session = await authApi.login(payload);
-      set({ currentUser: session.user, isLoading: false, isSessionHydrated: true });
+      set({ currentUser: session.user, isAuthenticated: true, isLoading: false, isSessionHydrated: true });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -33,7 +35,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const session = await authApi.register(payload);
-      set({ currentUser: session.user, isLoading: false, isSessionHydrated: true });
+      set({ currentUser: session.user, isAuthenticated: true, isLoading: false, isSessionHydrated: true });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -42,7 +44,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: () => {
     authTokenStorage.clear();
-    set({ currentUser: null, isSessionHydrated: true });
+    set({ currentUser: null, isAuthenticated: false, isSessionHydrated: true });
   },
 
   restoreSession: async () => {
@@ -55,17 +57,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       if (!authTokenStorage.get()) {
-        set({ currentUser: null });
+        set({ currentUser: null, isAuthenticated: false });
         return;
       }
 
       const user = await authApi.getCurrentUser();
-      set({ currentUser: user });
+      set({ currentUser: user, isAuthenticated: true });
     } catch {
       authTokenStorage.clear();
-      set({ currentUser: null });
+      set({ currentUser: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false, isSessionHydrated: true });
     }
   },
 }));
+
+onUnauthorized(() => {
+  useAuthStore.setState({ currentUser: null, isAuthenticated: false, isSessionHydrated: true });
+});
+
+if (typeof window !== "undefined") {
+  window.addEventListener("auth:unauthorized", () => {
+    useAuthStore.setState({ currentUser: null, isAuthenticated: false, isSessionHydrated: true });
+  });
+}

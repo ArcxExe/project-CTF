@@ -181,10 +181,11 @@ public class GradebookService {
             student.setTokenInfo(req.token().trim().isEmpty() ? null : req.token().trim());
         }
         if (req.examScore() != null) {
-            student.setExamScore(req.examScore() >= 2 && req.examScore() <= 5 ? req.examScore() : null);
+            student.setExamScore(req.examScore() >= 0 && req.examScore() <= 100 ? req.examScore() : null);
         }
         studentRepository.save(student);
 
+        boolean labsChanged = false;
         if (req.labScores() != null) {
             for (Map.Entry<Integer, Double> entry : req.labScores().entrySet()) {
                 int labNum = entry.getKey();
@@ -200,28 +201,33 @@ public class GradebookService {
                     accepted = clampedScore >= 0.40 * spec.maxTotal();
                 }
 
-                StudentLab lab = studentLabRepository.findByStudentIdAndLabNumber(studentId, labNum)
+                Optional<StudentLab> existingLabOpt = studentLabRepository.findByStudentIdAndLabNumber(studentId, labNum);
+                StudentLab lab = existingLabOpt
                         .orElseGet(() -> StudentLab.builder().student(student).labNumber(labNum).build());
                 lab.setMaxRawScore(spec.maxRawScore());
                 lab.setMaxDefenseScore(spec.maxDefenseScore());
-                double ratio = spec.maxTotal() > 0 ? (clampedScore / spec.maxTotal()) : 0.0;
-                lab.setRawScore(roundToTwoDecimals(spec.maxRawScore() * ratio));
-                lab.setDefenseScore(roundToTwoDecimals(clampedScore - lab.getRawScore()));
-                lab.setPenaltyCoefficient(1.0);
+
+                boolean hasDetailedBreakdown = existingLabOpt.isPresent()
+                        && (lab.getRawScore() > 0 || lab.getDefenseScore() > 0 || lab.getPenaltyCoefficient() != 1.0);
+                if (!hasDetailedBreakdown) {
+                    double ratio = spec.maxTotal() > 0 ? (clampedScore / spec.maxTotal()) : 0.0;
+                    lab.setRawScore(roundToTwoDecimals(spec.maxRawScore() * ratio));
+                    lab.setDefenseScore(roundToTwoDecimals(clampedScore - lab.getRawScore()));
+                    lab.setPenaltyCoefficient(1.0);
+                }
                 lab.setScore(clampedScore);
                 lab.setAccepted(accepted);
                 studentLabRepository.save(lab);
+                labsChanged = true;
             }
-            // Refresh LabScore summary row
-            double sum = studentLabRepository.findAllByStudentId(studentId).stream()
-                    .mapToDouble(StudentLab::getScore)
-                    .sum();
-            boolean eligible = labScoreService.isEligible(studentId);
-            labScoreService.setScore(studentId, (int) Math.round(sum), eligible, "Gradebook update", null);
-        } else if (req.labAccepted() != null && !req.labAccepted().isEmpty()) {
+        }
+        if (req.labAccepted() != null && !req.labAccepted().isEmpty()) {
             for (Map.Entry<Integer, Boolean> entry : req.labAccepted().entrySet()) {
                 int labNum = entry.getKey();
                 if (labNum < 1 || labNum > 8 || entry.getValue() == null) {
+                    continue;
+                }
+                if (req.labScores() != null && req.labScores().get(labNum) != null) {
                     continue;
                 }
                 LabScoreService.LabSpec spec = LabScoreService.getLabSpec(labNum);
@@ -235,7 +241,11 @@ public class GradebookService {
                                 .build());
                 lab.setAccepted(entry.getValue());
                 studentLabRepository.save(lab);
+                labsChanged = true;
             }
+        }
+        if (labsChanged) {
+            labScoreService.updateAggregatedLabScore(student);
         }
 
         leaderboardService.broadcastUpdate();
@@ -257,14 +267,18 @@ public class GradebookService {
         }
         double penalty = req.penaltyCoefficient() > 0 ? req.penaltyCoefficient() : 1.0;
         labScoreService.recordLab(req.studentId(), req.labNumber(), req.rawScore(), req.defenseScore(), penalty);
+        Student student = studentRepository.findById(req.studentId()).orElseThrow();
         if (req.acceptedOverride() != null) {
             studentLabRepository.findByStudentIdAndLabNumber(req.studentId(), req.labNumber())
                     .ifPresent(lab -> {
                         lab.setAccepted(req.acceptedOverride());
                         studentLabRepository.save(lab);
                     });
+            labScoreService.updateAggregatedLabScore(student);
+            if (leaderboardService != null) {
+                leaderboardService.broadcastUpdate();
+            }
         }
-        Student student = studentRepository.findById(req.studentId()).orElseThrow();
         return getGradebook(student.getGroupId(), null).stream()
                 .filter(r -> r.studentId().equals(req.studentId()))
                 .findFirst()
@@ -473,11 +487,12 @@ public class GradebookService {
         double multiplier = 1.0;
         for (PromoCodeClaim claim : claims) {
             PromoCode promo = claim.getPromoCode();
-            if (promo != null) {
+            if (promo != null && promo.getModifierType() != null) {
+                int val = promo.getValue() != null ? promo.getValue() : 0;
                 switch (promo.getModifierType()) {
-                    case FIXED_ADD -> additions += promo.getValue();
-                    case FIXED_SUB -> subtractions += promo.getValue();
-                    case DOUBLE_COEFF -> multiplier *= promo.getValue();
+                    case FIXED_ADD -> additions += val;
+                    case FIXED_SUB -> subtractions += val;
+                    case DOUBLE_COEFF, TEMP_MULTIPLIER -> multiplier *= (val > 0 ? val : 2);
                 }
             }
         }
@@ -493,13 +508,9 @@ public class GradebookService {
 
         Integer recommendedGrade = null;
         if (isEligible) {
-            Integer baseGrade = gradingService.calculateGrade(sScore, lPercent, kPercent);
-            if (student.getExamScore() != null && baseGrade != null) {
-                int clampedExam = Math.max(2, Math.min(5, student.getExamScore()));
-                recommendedGrade = Math.max(baseGrade, clampedExam);
-            } else {
-                recommendedGrade = baseGrade;
-            }
+            recommendedGrade = gradingService.calculateFinalGradeWithExam(
+                    sScore, lPercent, kPercent, true, student.getExamScore()
+            );
         }
         int numericGrade = (recommendedGrade != null) ? recommendedGrade : 2;
 
@@ -544,11 +555,16 @@ public class GradebookService {
     }
 
     private String escapeCsv(String val) {
-        if (val == null) return "";
-        if (val.contains(",") || val.contains("\"") || val.contains("\n")) {
-            return "\"" + val.replace("\"", "\"\"") + "\"";
+        if (val == null || val.isEmpty()) return "";
+        String sanitized = val;
+        char first = sanitized.charAt(0);
+        if (first == '=' || first == '+' || first == '-' || first == '@') {
+            sanitized = "'" + sanitized;
         }
-        return val;
+        if (sanitized.contains(",") || sanitized.contains("\"") || sanitized.contains("\n") || sanitized.contains("\r")) {
+            return "\"" + sanitized.replace("\"", "\"\"") + "\"";
+        }
+        return sanitized;
     }
 
     private double roundToTwoDecimals(double value) {

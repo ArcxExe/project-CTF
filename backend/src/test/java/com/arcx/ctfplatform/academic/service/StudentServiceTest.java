@@ -62,4 +62,32 @@ class StudentServiceTest {
         verify(studentRepository).delete(student);
         verify(userRepository).deleteById(userId);
     }
+
+    @Test
+    @DisplayName("deleteStudent recalculates promo code used counts when PromoCodeRepository is injected")
+    void testDeleteStudentRecalculatesPromoCodeUsedCounts() {
+        com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository promoCodeRepository =
+                mock(com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository.class);
+        com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository promoCodeClaimRepository =
+                mock(com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository.class);
+
+        StudentService serviceWithPromo = new StudentService(
+                studentRepository,
+                groupRepository,
+                userRepository,
+                studentMapper,
+                promoCodeRepository,
+                promoCodeClaimRepository,
+                null
+        );
+
+        UUID studentId = UUID.randomUUID();
+        Student student = Student.builder().id(studentId).build();
+        when(studentRepository.findById(studentId)).thenReturn(Optional.of(student));
+
+        serviceWithPromo.deleteStudent(studentId);
+
+        verify(promoCodeClaimRepository).deleteByStudentIdIn(java.util.List.of(studentId));
+        verify(promoCodeRepository).recalculateUsedCounts();
+    }
 }

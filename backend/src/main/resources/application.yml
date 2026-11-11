@@ -1,6 +1,10 @@
 spring:
   application:
     name: ctf-platform
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ctf_platform}
     username: ${DB_USER:ctf_user}

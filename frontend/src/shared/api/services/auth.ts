@@ -23,9 +23,14 @@ interface BackendUserResponse {
   status: "ACTIVE" | "BLOCKED" | "PENDING_VERIFICATION";
 }
 
-interface AuthSession {
+export interface AuthSession {
   token: string;
   user: User;
+}
+
+export interface RegisterPayload extends AuthPayload {
+  studentCode: string;
+  username?: string;
 }
 
 /**
@@ -91,13 +96,14 @@ export const authApi = {
     }
   },
 
-  async register(payload: AuthPayload & { studentCode: string }): Promise<AuthSession> {
+  async register(payload: RegisterPayload): Promise<AuthSession> {
     const auth = await apiRequest<BackendAuthResponse>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
         email: payload.email,
         password: payload.password,
         studentCode: payload.studentCode,
+        ...(payload.username ? { username: payload.username } : {}),
       }),
     });
 

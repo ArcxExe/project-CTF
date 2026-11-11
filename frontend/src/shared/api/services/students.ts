@@ -114,7 +114,7 @@ export const studentsApi = {
   },
 
   async getAll(): Promise<Student[]> {
-    const response = await apiRequest<any>("/api/admin/students");
+    const response = await apiRequest<any>("/api/admin/students?size=1000");
     return extractContent(response).map(toStudent);
   },
 
@@ -137,7 +137,7 @@ export const studentsApi = {
   },
 
   async getPending(): Promise<Student[]> {
-    const response = await apiRequest<any>("/api/admin/students/pending-bindings");
+    const response = await apiRequest<any>("/api/admin/students/pending-bindings?size=1000");
     return extractContent(response).map(toStudent);
   },
 

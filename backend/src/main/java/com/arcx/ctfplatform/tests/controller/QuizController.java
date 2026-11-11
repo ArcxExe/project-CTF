@@ -42,44 +42,16 @@ public class QuizController {
     public ResponseEntity<QuizAttempt> submitAnswers(
             @PathVariable UUID quizId,
             @AuthenticationPrincipal User user,
-            @RequestBody List<QuestionAnswerDTO> answers) {
+            @RequestBody(required = false) List<QuestionAnswerDTO> answers) {
         return ResponseEntity.ok(quizService.submitAnswers(quizId, user.getId(), answers));
     }
 
-    @PutMapping("/questions/{questionId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<com.arcx.ctfplatform.tests.entity.QuizQuestion> updateQuestion(
-            @PathVariable UUID questionId,
-            @RequestBody com.arcx.ctfplatform.tests.entity.QuizQuestion questionUpdates) {
-        return ResponseEntity.ok(quizService.updateQuestion(questionId, questionUpdates));
-    }
-
-    @DeleteMapping("/questions/{questionId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteQuestion(@PathVariable UUID questionId) {
-        quizService.deleteQuestion(questionId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PutMapping("/options/{optionId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<com.arcx.ctfplatform.tests.entity.QuizOption> updateOption(
-            @PathVariable UUID optionId,
-            @RequestBody com.arcx.ctfplatform.tests.entity.QuizOption optionUpdates) {
-        return ResponseEntity.ok(quizService.updateOption(optionId, optionUpdates));
-    }
-
-    @DeleteMapping("/options/{optionId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteOption(@PathVariable UUID optionId) {
-        quizService.deleteOption(optionId);
-        return ResponseEntity.noContent().build();
-    }
-
     @GetMapping("/{quizId}/questions")
-    @PreAuthorize("hasAnyRole('STUDENT', 'TEACHER', 'ADMIN')")
-    public ResponseEntity<List<QuestionForStudentDTO>> getTestQuestions(@PathVariable UUID quizId) {
-        List<Map<String, Object>> data = quizService.getQuestionsWithOptions(quizId);
+    @PreAuthorize("hasAnyRole('STUDENT', 'INSTRUCTOR', 'ADMIN')")
+    public ResponseEntity<List<QuestionForStudentDTO>> getTestQuestions(
+            @PathVariable UUID quizId,
+            @AuthenticationPrincipal User user) {
+        List<Map<String, Object>> data = quizService.getQuestionsForCaller(quizId, user);
         
         List<QuestionForStudentDTO> response = data.stream().map(map -> {
             var q = (com.arcx.ctfplatform.tests.entity.QuizQuestion) map.get("question");
@@ -87,7 +59,7 @@ public class QuizController {
             var opts = (List<com.arcx.ctfplatform.tests.entity.QuizOption>) map.get("options");
             
             List<OptionForStudentDTO> studentOpts = opts.stream().map(o ->
-                new OptionForStudentDTO(o.getId(), o.getQuestionId(), o.getOptionText(), o.getSequenceOrder())
+                new OptionForStudentDTO(o.getId(), o.getQuestionId(), o.getOptionText(), null)
             ).toList();
             
             return new QuestionForStudentDTO(
@@ -102,5 +74,9 @@ public class QuizController {
         }).toList();
         
         return ResponseEntity.ok(response);
+    }
+
+    public ResponseEntity<List<QuestionForStudentDTO>> getTestQuestions(UUID quizId) {
+        return getTestQuestions(quizId, null);
     }
 }

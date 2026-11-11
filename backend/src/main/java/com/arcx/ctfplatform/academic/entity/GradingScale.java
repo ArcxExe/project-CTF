@@ -25,10 +25,10 @@ public class GradingScale {
     @UuidGenerator
     private UUID id;
 
-    @Column(name = "min_coefficient", nullable = false, precision = 3, scale = 2)
+    @Column(name = "min_coefficient", nullable = false, precision = 5, scale = 2)
     private BigDecimal minCoefficient;
 
-    @Column(name = "max_coefficient", nullable = false, precision = 3, scale = 2)
+    @Column(name = "max_coefficient", nullable = false, precision = 5, scale = 2)
     private BigDecimal maxCoefficient;
 
     @Column(nullable = false)
@@ -36,4 +36,10 @@ public class GradingScale {
 
     @Column(length = 150)
     private String description;
+
+    @Column(name = "flow_id")
+    private UUID flowId;
+
+    @Column(name = "grade_name", length = 64)
+    private String gradeName;
 }

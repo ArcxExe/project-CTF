@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { testsApi } from "@/shared/api/services/tests";
@@ -18,6 +18,9 @@ export const ParticipantTestRunnerPage = () => {
   const [attempt, setAttempt] = useState<QuizAttempt | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const answersRef = useRef<Record<string, string[]>>(answers);
+  answersRef.current = answers;
+  const autoSubmittedRef = useRef(false);
   const [sequenceInputs, setSequenceInputs] = useState<Record<string, string>>({});
   
   const [isLoading, setIsLoading] = useState(true);
@@ -81,31 +84,13 @@ export const ParticipantTestRunnerPage = () => {
     void loadData();
   }, [testId, navigate, push]);
 
-  // Timer effect
-  useEffect(() => {
-    if (!attempt || !test || attempt.status === "COMPLETED") return;
-
-    const endTime = new Date(attempt.startedAt).getTime() + test.timeLimitMinutes * 60000;
-
-    const updateTimer = () => {
-      const remaining = Math.max(0, endTime - Date.now());
-      setTimeLeft(remaining);
-      if (remaining === 0) {
-        void handleAutoSubmit();
-      }
-    };
-
-    updateTimer(); // Initial call
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [attempt, test]);
-
-  const handleSubmit = async (isAuto = false) => {
+  const handleSubmit = useCallback(async (isAuto = false, overrideAnswers?: Record<string, string[]>) => {
     if (!attempt || attempt.status === "COMPLETED" || isSubmitting || !testId) return;
 
     setIsSubmitting(true);
     try {
-      const result = await testsApi.submitAnswers(testId, answers);
+      const payloadAnswers = overrideAnswers ?? answersRef.current;
+      const result = await testsApi.submitAnswers(testId, payloadAnswers);
       setAttempt(result);
       if (testId) {
         localStorage.removeItem(`quiz_answers_${testId}`);
@@ -122,11 +107,45 @@ export const ParticipantTestRunnerPage = () => {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [attempt, isSubmitting, testId, push]);
 
   const handleAutoSubmit = useCallback(async () => {
-    await handleSubmit(true);
-  }, [attempt, answers, isSubmitting]);
+    await handleSubmit(true, answersRef.current);
+  }, [handleSubmit]);
+
+  // Timer effect
+  useEffect(() => {
+    if (!attempt || !test || attempt.status === "COMPLETED") return;
+
+    autoSubmittedRef.current = false;
+    const endTime = new Date(attempt.startedAt).getTime() + test.timeLimitMinutes * 60000;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const updateTimer = () => {
+      const remaining = Math.max(0, endTime - Date.now());
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        if (intervalId !== null) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        if (!autoSubmittedRef.current) {
+          autoSubmittedRef.current = true;
+          void handleAutoSubmit();
+        }
+      }
+    };
+
+    updateTimer(); // Initial call
+    if (endTime - Date.now() > 0) {
+      intervalId = setInterval(updateTimer, 1000);
+    }
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [attempt, test, handleAutoSubmit]);
 
   // Save answers to local storage whenever they change
   useEffect(() => {

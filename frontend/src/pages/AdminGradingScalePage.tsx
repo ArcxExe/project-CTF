@@ -50,7 +50,14 @@ export const AdminGradingScalePage = () => {
     setIsLoading(true);
     try {
       const data = await gradingScalesApi.getAll(selectedFlowId || undefined);
-      setScales(data.sort((a, b) => a.minScore - b.minScore));
+      const normalized: GradingScale[] = data.map((s: any) => ({
+        id: s.id,
+        flowId: s.flowId ?? "",
+        minScore: Number(s.minScore ?? s.minCoefficient ?? 0),
+        maxScore: Number(s.maxScore ?? s.maxCoefficient ?? 0),
+        gradeName: String(s.gradeName ?? (s.grade != null ? s.grade : s.description ?? "")),
+      }));
+      setScales(normalized.sort((a, b) => a.minScore - b.minScore));
     } catch (error) {
       push({ title: "Ошибка загрузки шкал оценок", variant: "error" });
     } finally {
@@ -59,16 +66,23 @@ export const AdminGradingScalePage = () => {
   };
 
   const validateScale = (currentForm: GradingScalePayload, skipId: string | null): boolean => {
+    if (!Number.isFinite(currentForm.minScore) || !Number.isFinite(currentForm.maxScore)) {
+      push({ title: "Укажите корректные числовые значения баллов", variant: "error" });
+      return false;
+    }
+
     if (currentForm.minScore >= currentForm.maxScore) {
       push({ title: "Минимальный балл должен быть меньше максимального", variant: "error" });
       return false;
     }
 
+    const targetFlowId = currentForm.flowId || "";
     const overlap = scales.find((scale) => {
       if (skipId && scale.id === skipId) return false;
+      if ((scale.flowId || "") !== targetFlowId) return false;
       return (
-        (currentForm.minScore >= scale.minScore && currentForm.minScore <= scale.maxScore) ||
-        (currentForm.maxScore >= scale.minScore && currentForm.maxScore <= scale.maxScore) ||
+        (currentForm.minScore >= scale.minScore && currentForm.minScore < scale.maxScore) ||
+        (currentForm.maxScore > scale.minScore && currentForm.maxScore <= scale.maxScore) ||
         (currentForm.minScore <= scale.minScore && currentForm.maxScore >= scale.maxScore)
       );
     });
@@ -83,12 +97,23 @@ export const AdminGradingScalePage = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!validateScale(form, editingId)) return;
+    const minScore = Number(form.minScore);
+    const maxScore = Number(form.maxScore);
+    const gradeName = String(form.gradeName ?? "").trim();
 
-    const payload = {
-      ...form,
-      flowId: form.flowId || undefined
+    if (!gradeName) {
+      push({ title: "Укажите оценку", variant: "error" });
+      return;
+    }
+
+    const payload: GradingScalePayload = {
+      flowId: form.flowId || undefined,
+      gradeName,
+      minScore,
+      maxScore,
     };
+
+    if (!validateScale(payload, editingId)) return;
 
     setIsSaving(true);
     try {
@@ -109,12 +134,13 @@ export const AdminGradingScalePage = () => {
   };
 
   const handleEdit = (scale: GradingScale) => {
+    const raw = scale as any;
     setEditingId(scale.id);
     setForm({
       flowId: scale.flowId || "",
-      minScore: scale.minScore,
-      maxScore: scale.maxScore,
-      gradeName: scale.gradeName,
+      minScore: Number(scale.minScore ?? raw.minCoefficient ?? 0),
+      maxScore: Number(scale.maxScore ?? raw.maxCoefficient ?? 100),
+      gradeName: String(scale.gradeName ?? (raw.grade != null ? raw.grade : raw.description ?? "")),
     });
     setIsModalOpen(true);
   };
@@ -230,15 +256,31 @@ export const AdminGradingScalePage = () => {
           <Input
             label="Мин. Балл (0-100)"
             type="number"
+            min={0}
+            max={100}
+            step="0.01"
             value={form.minScore}
-            onChange={(e: any) => setForm((curr) => ({ ...curr, minScore: parseInt(e.target.value, 10) }))}
+            onChange={(e: any) =>
+              setForm((curr) => ({
+                ...curr,
+                minScore: e.target.value === "" ? 0 : Number(e.target.value),
+              }))
+            }
             required
           />
           <Input
             label="Макс. Балл (0-100)"
             type="number"
+            min={0}
+            max={100}
+            step="0.01"
             value={form.maxScore}
-            onChange={(e: any) => setForm((curr) => ({ ...curr, maxScore: parseInt(e.target.value, 10) }))}
+            onChange={(e: any) =>
+              setForm((curr) => ({
+                ...curr,
+                maxScore: e.target.value === "" ? 0 : Number(e.target.value),
+              }))
+            }
             required
           />
           <Input

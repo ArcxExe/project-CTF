@@ -46,12 +46,12 @@ services:
       DB_NAME: ${DB_NAME:-ctf_platform}
       DB_USER: ${DB_USER:-ctf_user}
       DB_PASSWORD: ${DB_PASSWORD:-ctf_password}
-      JWT_SECRET: ${JWT_SECRET:-Y3RmLWRldi1zZWNyZXQta2V5LWNoYW5nZS1tZS1iZWZvcmUtcHJvZA==}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-3600000}
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:-health,info}
     mem_limit: 480m
     ports:
-      - "0.0.0.0:${BACKEND_PORT:-8080}:8080"
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
 
   frontend:
     build:

@@ -3,6 +3,9 @@ package com.arcx.ctfplatform.tests.service;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +21,7 @@ import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.entity.TestStatus;
 import com.arcx.ctfplatform.tests.entity.TestType;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
+import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
 
@@ -43,6 +47,20 @@ public class TestService {
     public List<CtfTaskResponse> getChallengesForTest(UUID testId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && !isAdminOrInstructor(null) && test.getStatus() != TestStatus.PUBLISHED) {
+            throw new AccessDeniedException("Test is not published");
+        }
+        return ctfTaskMapper.mappingList(test.getTasks());
+    }
+
+    @Transactional(readOnly = true)
+    public List<CtfTaskResponse> getChallengesForTestForCaller(UUID testId, User user) {
+        Test test = testRepository.findById(testId)
+                .orElseThrow(() -> new IllegalArgumentException("Test not found"));
+        if (!isAdminOrInstructor(user) && test.getStatus() != TestStatus.PUBLISHED) {
+            throw new AccessDeniedException("Test is not published");
+        }
         return ctfTaskMapper.mappingList(test.getTasks());
     }
 
@@ -50,6 +68,10 @@ public class TestService {
     public ChallengeSubmitResponse submitChallengeFlag(UUID testId, UUID challengeId, String flag, User user) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
+
+        if (test.getStatus() != TestStatus.PUBLISHED) {
+            throw new IllegalStateException("Test is not published");
+        }
 
         boolean hasChallenge = test.getTasks().stream().anyMatch(c -> c.getId().equals(challengeId));
         if (!hasChallenge) {
@@ -85,7 +107,7 @@ public class TestService {
                 .questionsCount(request.questionsCount())
                 .competitionId(request.competitionId())
                 .type(type)
-                .ktNumber(type == TestType.CONTROL_POINT ? request.ktNumber() : null)
+                .ktNumber(type != null && type.isControlPoint() ? request.ktNumber() : null)
                 .build();
         return testMapper.mapping(testRepository.save(test));
     }
@@ -107,7 +129,7 @@ public class TestService {
         } else if (test.getType() == null) {
             test.setType(determineTestType(null, request.title() != null ? request.title() : test.getTitle()));
         }
-        if (test.getType() == TestType.CONTROL_POINT) {
+        if (test.getType() != null && test.getType().isControlPoint()) {
             if (request.ktNumber() != null) {
                 test.setKtNumber(request.ktNumber());
             }
@@ -116,6 +138,25 @@ public class TestService {
         }
 
         return testMapper.mapping(testRepository.save(test));
+    }
+
+    private boolean isAdminOrInstructor(User user) {
+        if (user != null) {
+            return user.getRole() == Role.ADMIN || user.getRole() == Role.INSTRUCTOR;
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        if (auth.getPrincipal() instanceof User u) {
+            return u.getRole() == Role.ADMIN || u.getRole() == Role.INSTRUCTOR;
+        }
+        return auth.getAuthorities().stream().anyMatch(a -> {
+            String r = a.getAuthority();
+            return "ROLE_ADMIN".equals(r) || "ADMIN".equals(r)
+                    || "ROLE_INSTRUCTOR".equals(r) || "INSTRUCTOR".equals(r)
+                    || "ROLE_TEACHER".equals(r) || "TEACHER".equals(r);
+        });
     }
 
     private TestType determineTestType(TestType explicitType, String title) {

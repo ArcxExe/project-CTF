@@ -461,7 +461,7 @@ export const StudentsPage = () => {
               onChange={(e) => setEditGroupId(e.target.value)}
             >
               <option value="">
-                Выберите группу
+                Без группы (Вольнослушатель)
               </option>
               {groupedGroups.map((grouping) => (
                 <optgroup key={grouping.streamId || "no-stream"} label={grouping.streamName}>
@@ -480,7 +480,7 @@ export const StudentsPage = () => {
             </Button>
             <Button
               onClick={handleUpdateStudent}
-              disabled={!editFirstName || !editLastName || !editStudentCode || !editGroupId}
+              disabled={!editFirstName || !editLastName || !editStudentCode}
             >
               Сохранить
             </Button>

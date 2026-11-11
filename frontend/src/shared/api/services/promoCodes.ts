@@ -1,9 +1,12 @@
 import { apiRequest } from "@/shared/api/client";
 
+export type PromoEffectType = "FIXED_ADD" | "FIXED_SUB" | "DOUBLE_COEFF" | "TEMP_MULTIPLIER";
+export type ModifierType = PromoEffectType;
+
 export interface PromoCode {
   id: string;
   code: string;
-  modifierType: "FIXED_ADD" | "FIXED_SUB" | "DOUBLE_COEFF";
+  modifierType: PromoEffectType;
   value: number;
   isUsed: boolean;
   usedByStudentId?: string;
@@ -15,7 +18,7 @@ export interface PromoCode {
 
 export interface PromoCodePayload {
   code: string;
-  modifierType: PromoCode["modifierType"];
+  modifierType: PromoEffectType;
   value: number;
   maxUses?: number;
 }
@@ -23,7 +26,7 @@ export interface PromoCodePayload {
 interface BackendPromoCodeResponse {
   id: string;
   code: string;
-  modifierType: "FIXED_ADD" | "FIXED_SUB" | "DOUBLE_COEFF";
+  modifierType: PromoEffectType;
   value: number;
   isUsed: boolean;
   usedByStudentId?: string;

@@ -8,4 +8,11 @@ public record OptionForStudentDTO(
         String optionText,
         Integer sequenceOrder
 ) {
+    public OptionForStudentDTO {
+        sequenceOrder = null;
+    }
+
+    public OptionForStudentDTO(UUID id, UUID questionId, String optionText) {
+        this(id, questionId, optionText, null);
+    }
 }

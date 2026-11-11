@@ -34,7 +34,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/admin/promo-codes")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
 @RequiredArgsConstructor
 public class AdminPromoCodeController {
 
@@ -56,8 +56,9 @@ public class AdminPromoCodeController {
                         (s1, s2) -> s1
                 ));
 
-        List<PromoCodeClaim> allClaims = promoCodeClaimRepository.findAll();
+        List<PromoCodeClaim> allClaims = promoCodeClaimRepository.findAllWithPromoCode();
         Map<UUID, List<PromoCodeClaim>> claimsByPromoCode = allClaims.stream()
+                .filter(c -> c.getPromoCode() != null && c.getPromoCode().getId() != null)
                 .collect(Collectors.groupingBy(c -> c.getPromoCode().getId()));
 
         List<PromoCodeResponse> responseList = promoCodeRepository.findAll().stream()
@@ -96,12 +97,18 @@ public class AdminPromoCodeController {
     }
 
     @PostMapping
-    public ResponseEntity<PromoCodeResponse> createPromoCode(@RequestBody PromoCodeCreateRequest request) {
+    public ResponseEntity<PromoCodeResponse> createPromoCode(@jakarta.validation.Valid @RequestBody PromoCodeCreateRequest request) {
+        int effectiveValue = request.value() != null ? request.value() : 0;
+        if ((request.modifierType() == com.arcx.ctfplatform.modifiers.entity.PromoModifierType.DOUBLE_COEFF
+                || request.modifierType() == com.arcx.ctfplatform.modifiers.entity.PromoModifierType.TEMP_MULTIPLIER)
+                && effectiveValue <= 0) {
+            effectiveValue = 2;
+        }
         PromoCode promo = PromoCode.builder()
                 .code(request.code().trim().toUpperCase())
                 .modifierType(request.modifierType())
-                .value(request.value() != null ? request.value() : 0)
-                .maxUses(request.maxUses() != null ? request.maxUses() : 1)
+                .value(effectiveValue)
+                .maxUses(request.maxUses() != null && request.maxUses() > 0 ? request.maxUses() : 1)
                 .usedCount(0)
                 .build();
 

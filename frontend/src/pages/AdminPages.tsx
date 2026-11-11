@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useToastStore } from "@/entities/notification/model/toastStore";
+import { authTokenStorage } from "@/shared/api/client";
 import { adminChallengesApi } from "@/shared/api/services/challenges";
 import type { Challenge } from "@/shared/api/services/challenges";
 import { adminCompetitionsApi } from "@/shared/api/services/competitions";
@@ -692,7 +693,10 @@ const AdminTestsManagerPage = () => {
       });
       setQuestions(current => current.map(q => {
         if (q.id === selectedQuestionId) {
-          return { ...q, options: [...q.options, created] };
+          const existingOptions = q.type === "RADIO" && created.isCorrect
+            ? q.options.map(o => ({ ...o, isCorrect: false }))
+            : q.options;
+          return { ...q, options: [...existingOptions, created] };
         }
         return q;
       }));
@@ -1194,7 +1198,16 @@ const AdminTestsManagerPage = () => {
                             required
                         />
                         </label>
-                      ) : <div />}
+                      ) : (
+                        <label className="ui-field" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "0.5rem", margin: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={optionForm.isCorrect}
+                            onChange={(e) => setOptionForm(c => ({ ...c, isCorrect: e.target.checked }))}
+                          />
+                          <span style={{ fontSize: "0.85rem" }}>Правильный ответ</span>
+                        </label>
+                      )}
                       <Button type="submit" disabled={isSaving}>
                         {isSaving ? "Добавление..." : "Добавить"}
                       </Button>
@@ -1331,13 +1344,15 @@ const AdminPromoCodesManagerPage = () => {
             key: "modifierType",
             title: "Тип бонуса",
             render: (promoCode) => {
-              switch (promoCode.modifierType) {
+              switch (promoCode.modifierType as string) {
                 case "FIXED_ADD":
                   return "Добавить баллы";
                 case "FIXED_SUB":
                   return "Вычесть баллы";
                 case "DOUBLE_COEFF":
                   return "Умножить (x2)";
+                case "TEMP_MULTIPLIER":
+                  return "Временный множитель";
                 default:
                   return promoCode.modifierType;
               }
@@ -1407,6 +1422,7 @@ const AdminPromoCodesManagerPage = () => {
                 <option value="FIXED_ADD">Добавить баллы</option>
                 <option value="FIXED_SUB">Вычесть баллы</option>
                 <option value="DOUBLE_COEFF">Умножить (x2)</option>
+                <option value="TEMP_MULTIPLIER">Временный множитель</option>
               </select>
             </label>
             <Input
@@ -1524,8 +1540,16 @@ export const AdminGroupsPage = () => {
               <Button variant="danger" onClick={async () => {
                 if(!confirm("Удалить?")) return;
 
-                await groupsApi.delete(g.id);
-                await loadData();
+                try {
+                  await groupsApi.delete(g.id);
+                  push({ title: "Группа удалена", variant: "success" });
+                  await loadData();
+                } catch (error) {
+                  push({
+                    title: error instanceof Error ? error.message : "Не удалось удалить группу",
+                    variant: "error",
+                  });
+                }
               }}>Удалить</Button>
             </div>
           ) }
@@ -1647,8 +1671,16 @@ export const AdminStreamsPage = () => {
           { key: "actions", title: "Действия", render: (s) => <Button variant="danger" onClick={async () => {
             if(!confirm("Удалить?")) return;
 
-            await streamsApi.delete(s.id);
-            await loadData();
+            try {
+              await streamsApi.delete(s.id);
+              push({ title: "Поток удален", variant: "success" });
+              await loadData();
+            } catch (error) {
+              push({
+                title: error instanceof Error ? error.message : "Не удалось удалить поток",
+                variant: "error",
+              });
+            }
           }}>Удалить</Button> }
         ]}
         rows={filtered}
@@ -1727,7 +1759,11 @@ export const AdminRatingPage = () => {
     void loadAdjustments();
 
     setIsLoading(true);
-    const eventSource = new EventSource("/api/leaderboard/live");
+    const token = authTokenStorage.get();
+    const sseUrl = token
+      ? `/api/leaderboard/live?token=${encodeURIComponent(token)}`
+      : "/api/leaderboard/live";
+    const eventSource = new EventSource(sseUrl);
 
     const parseAndSetRows = (data: string) => {
       try {

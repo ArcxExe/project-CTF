@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -28,7 +29,27 @@ public class GradebookController {
             @RequestParam(required = false) UUID groupId,
             @RequestParam(required = false) UUID flowId
     ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && isStudentOnly(auth)) {
+            return ResponseEntity.ok(
+                    gradebookService.getMyGradebookRow(auth.getName())
+                            .map(List::of)
+                            .orElseGet(List::of)
+            );
+        }
         return ResponseEntity.ok(gradebookService.getGradebook(groupId, flowId));
+    }
+
+    private boolean isStudentOnly(Authentication auth) {
+        if (auth.getAuthorities() == null || auth.getAuthorities().isEmpty()) {
+            return false;
+        }
+        boolean isAdminOrInstructor = auth.getAuthorities().stream()
+                .anyMatch(a -> {
+                    String role = a.getAuthority().toUpperCase();
+                    return role.contains("ADMIN") || role.contains("INSTRUCTOR");
+                });
+        return !isAdminOrInstructor;
     }
 
     @GetMapping("/me")

@@ -41,6 +41,47 @@ public class LabScoreService {
     @org.springframework.context.annotation.Lazy
     private com.arcx.ctfplatform.leaderboard.service.LeaderboardService leaderboardService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.arcx.ctfplatform.users.repository.UserRepository userRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.arcx.ctfplatform.audit.service.AuditService auditService;
+
+    private final ThreadLocal<Boolean> suppressBroadcast = new ThreadLocal<>();
+
+    public void setSuppressBroadcast(boolean suppress) {
+        if (suppress) {
+            suppressBroadcast.set(Boolean.TRUE);
+        } else {
+            suppressBroadcast.remove();
+        }
+    }
+
+    public void broadcastAfterBulkUpdate() {
+        if (!Boolean.TRUE.equals(suppressBroadcast.get()) && leaderboardService != null) {
+            leaderboardService.broadcastUpdate();
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public UUID resolveStudentIdForAuth(org.springframework.security.core.Authentication auth) {
+        if (auth == null) {
+            return null;
+        }
+        if (auth.getPrincipal() instanceof com.arcx.ctfplatform.users.entity.User u && u.getId() != null) {
+            return studentRepository.findByUserId(u.getId()).map(Student::getId).orElse(null);
+        }
+        String name = auth.getName();
+        if (name != null && !name.isBlank() && userRepository != null) {
+            return userRepository.findByUsername(name)
+                    .or(() -> userRepository.findByEmail(name))
+                    .flatMap(u -> studentRepository.findByUserId(u.getId()))
+                    .map(Student::getId)
+                    .orElse(null);
+        }
+        return null;
+    }
+
     public record LabSpec(int labNumber, double maxRawScore, double maxDefenseScore) {
         public double maxTotal() {
             return maxRawScore + maxDefenseScore;
@@ -149,9 +190,18 @@ public class LabScoreService {
             maxDefenseScore = spec.maxDefenseScore();
         }
 
+        maxRawScore = Math.max(0.0, maxRawScore);
+        maxDefenseScore = Math.max(0.0, maxDefenseScore);
+        rawScore = Math.max(0.0, maxRawScore > 0 ? Math.min(rawScore, maxRawScore) : rawScore);
+        defenseScore = Math.max(0.0, maxDefenseScore > 0 ? Math.min(defenseScore, maxDefenseScore) : defenseScore);
+        penaltyCoefficient = Math.max(0.0, Math.min(penaltyCoefficient, 1.0));
+
         double maxTotal = maxRawScore + maxDefenseScore;
         double totalRaw = rawScore + defenseScore;
         double calculatedScore = totalRaw * penaltyCoefficient;
+        if (maxTotal > 0) {
+            calculatedScore = Math.max(0.0, Math.min(calculatedScore, maxTotal));
+        }
 
         boolean defensePassed = (maxDefenseScore <= 0) || (defenseScore >= 0.50 * maxDefenseScore);
         if (!defensePassed) {
@@ -177,9 +227,7 @@ public class LabScoreService {
 
         studentLabRepository.save(lab);
         updateAggregatedLabScore(student);
-        if (leaderboardService != null) {
-            leaderboardService.broadcastUpdate();
-        }
+        broadcastAfterBulkUpdate();
     }
 
     @Transactional
@@ -209,25 +257,45 @@ public class LabScoreService {
         lab.setAccepted(accepted);
         studentLabRepository.save(lab);
         updateAggregatedLabScore(student);
-        if (leaderboardService != null) {
-            leaderboardService.broadcastUpdate();
-        }
+        broadcastAfterBulkUpdate();
     }
 
     @Transactional
     public void setEligibility(UUID studentId, boolean isEligible) {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        List<StudentLab> existingLabs = studentLabRepository.findAllByStudentId(studentId);
+        if (existingLabs != null && !existingLabs.isEmpty()) {
+            Map<Integer, StudentLab> byNum = existingLabs.stream()
+                    .collect(Collectors.toMap(StudentLab::getLabNumber, l -> l, (a, b) -> b));
+            for (int i = 1; i <= 8; i++) {
+                LabSpec spec = LAB_SPECS.get(i);
+                StudentLab sl = byNum.get(i);
+                if (sl == null && isEligible) {
+                    sl = StudentLab.builder()
+                            .student(student)
+                            .labNumber(i)
+                            .maxRawScore(spec.maxRawScore())
+                            .maxDefenseScore(spec.maxDefenseScore())
+                            .isAccepted(true)
+                            .score(0.0)
+                            .build();
+                } else if (sl != null) {
+                    sl.setAccepted(isEligible);
+                }
+                if (sl != null) {
+                    studentLabRepository.save(sl);
+                }
+            }
+        }
         LabScore labScore = labScoreRepository.findByStudentId(studentId)
                 .orElseGet(() -> LabScore.builder().student(student).build());
         labScore.setEligible(isEligible);
         labScoreRepository.save(labScore);
-        if (leaderboardService != null) {
-            leaderboardService.broadcastUpdate();
-        }
+        broadcastAfterBulkUpdate();
     }
 
-    private void updateAggregatedLabScore(Student student) {
+    public void updateAggregatedLabScore(Student student) {
         List<StudentLab> labs = studentLabRepository.findAllByStudentId(student.getId());
         double totalScore = labs.stream().mapToDouble(StudentLab::getScore).sum();
         totalScore = roundToTwoDecimals(totalScore);
@@ -250,11 +318,42 @@ public class LabScoreService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
+        int clampedScore = Math.max(0, Math.min(score, 143));
+
         Optional<LabScore> existingScoreOpt = labScoreRepository.findByStudentId(studentId);
         int oldScore = existingScoreOpt.map(LabScore::getScore).orElse(0);
 
+        List<StudentLab> existingLabs = studentLabRepository.findAllByStudentId(studentId);
+        if (existingLabs != null && !existingLabs.isEmpty()) {
+            Map<Integer, StudentLab> byNum = existingLabs.stream()
+                    .collect(Collectors.toMap(StudentLab::getLabNumber, l -> l, (a, b) -> b));
+            double ratio = clampedScore / 143.0;
+            double runningSum = 0.0;
+            for (int i = 1; i <= 8; i++) {
+                LabSpec spec = LAB_SPECS.get(i);
+                StudentLab sl = byNum.getOrDefault(i, StudentLab.builder()
+                        .student(student)
+                        .labNumber(i)
+                        .maxRawScore(spec.maxRawScore())
+                        .maxDefenseScore(spec.maxDefenseScore())
+                        .penaltyCoefficient(1.0)
+                        .build());
+                double labScoreVal = (i < 8)
+                        ? roundToTwoDecimals(spec.maxTotal() * ratio)
+                        : roundToTwoDecimals(Math.max(0.0, clampedScore - runningSum));
+                runningSum = roundToTwoDecimals(runningSum + labScoreVal);
+                sl.setMaxRawScore(spec.maxRawScore());
+                sl.setMaxDefenseScore(spec.maxDefenseScore());
+                sl.setRawScore(roundToTwoDecimals(spec.maxRawScore() * ratio));
+                sl.setDefenseScore(roundToTwoDecimals(Math.max(0.0, labScoreVal - sl.getRawScore())));
+                sl.setScore(labScoreVal);
+                sl.setAccepted(isEligible);
+                studentLabRepository.save(sl);
+            }
+        }
+
         LabScore labScore = existingScoreOpt.orElseGet(() -> LabScore.builder().student(student).build());
-        labScore.setScore(score);
+        labScore.setScore(clampedScore);
         labScore.setEligible(isEligible);
 
         labScoreRepository.save(labScore);
@@ -262,45 +361,86 @@ public class LabScoreService {
         LabScoreHistory history = LabScoreHistory.builder()
                 .student(student)
                 .oldScore(oldScore)
-                .newScore(score)
+                .newScore(clampedScore)
                 .changedByUserId(adminUserId)
-                .reason(reason)
+                .reason(reason != null && !reason.isBlank() ? reason : "Manual update")
                 .build();
         labScoreHistoryRepository.save(history);
-        if (leaderboardService != null) {
-            leaderboardService.broadcastUpdate();
+        if (auditService != null) {
+            auditService.logEvent(
+                    adminUserId,
+                    "ADMIN",
+                    "ADMIN",
+                    "LAB_SCORE_UPDATE",
+                    "STUDENT:" + studentId,
+                    String.valueOf(oldScore),
+                    String.valueOf(clampedScore),
+                    null
+            );
         }
+        broadcastAfterBulkUpdate();
     }
 
     @Transactional
     public void importLabScores(InputStream csvStream, UUID adminUserId) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(csvStream))) {
+        setSuppressBroadcast(true);
+        boolean anyUpdated = false;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(csvStream, java.nio.charset.StandardCharsets.UTF_8))) {
             String line;
             boolean firstLine = true;
             while ((line = reader.readLine()) != null) {
                 if (firstLine) {
                     firstLine = false;
-                    continue; // Skip header
-                }
-
-                String[] parts = line.split(",");
-                if (parts.length >= 2) {
-                    String studentCode = parts[0].trim();
-                    int score = Integer.parseInt(parts[1].trim());
-
-                    if (score < 0) {
+                    if (line.startsWith("\uFEFF")) {
+                        line = line.substring(1);
+                    }
+                    String[] headerParts = line.split("[,;]");
+                    if (headerParts.length < 2) {
                         continue;
                     }
-
-                    Optional<Student> studentOpt = studentRepository.findByStudentCode(studentCode);
-                    if (studentOpt.isPresent()) {
-                        Student student = studentOpt.get();
-                        setScore(student.getId(), score, "CSV Import", adminUserId);
+                    try {
+                        Integer.parseInt(headerParts[1].trim());
+                    } catch (NumberFormatException ignored) {
+                        continue; // Skip header row
                     }
                 }
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+
+                String[] parts = line.split("[,;]");
+                if (parts.length < 2) {
+                    throw new IllegalArgumentException("Invalid CSV row: expected studentCode and score");
+                }
+                String studentCode = parts[0].replace("\uFEFF", "").trim();
+                int score;
+                try {
+                    score = Integer.parseInt(parts[1].trim());
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Invalid score in CSV for student '" + studentCode + "': " + parts[1], e);
+                }
+
+                if (score < 0) {
+                    continue;
+                }
+
+                Optional<Student> studentOpt = studentRepository.findByStudentCode(studentCode);
+                if (studentOpt.isPresent()) {
+                    Student student = studentOpt.get();
+                    setScore(student.getId(), score, "CSV Import", adminUserId);
+                    anyUpdated = true;
+                }
             }
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to import CSV", e);
+            throw new IllegalArgumentException("Failed to import CSV: " + e.getMessage(), e);
+        } finally {
+            setSuppressBroadcast(false);
+            if (anyUpdated) {
+                broadcastAfterBulkUpdate();
+            }
         }
     }
 

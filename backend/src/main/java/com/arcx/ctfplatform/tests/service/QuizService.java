@@ -1,18 +1,27 @@
 package com.arcx.ctfplatform.tests.service;
 
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.entity.StudentStatus;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
+import com.arcx.ctfplatform.audit.service.AuditService;
+import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
 import com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
 import com.arcx.ctfplatform.tests.entity.QuizOption;
 import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.entity.TestStatus;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.repository.QuizOptionRepository;
 import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
-import com.arcx.ctfplatform.academic.entity.Student;
-import com.arcx.ctfplatform.academic.repository.StudentRepository;
-import lombok.RequiredArgsConstructor;
+import com.arcx.ctfplatform.users.entity.Role;
+import com.arcx.ctfplatform.users.entity.User;
+import com.arcx.ctfplatform.users.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +31,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class QuizService {
 
     private final QuizAttemptRepository attemptRepository;
@@ -30,14 +38,57 @@ public class QuizService {
     private final QuizOptionRepository optionRepository;
     private final TestRepository testRepository;
     private final StudentRepository studentRepository;
+    private final LeaderboardService leaderboardService;
+    private final AuditService auditService;
+    private final UserRepository userRepository;
+
+    public QuizService(
+            QuizAttemptRepository attemptRepository,
+            QuizQuestionRepository questionRepository,
+            QuizOptionRepository optionRepository,
+            TestRepository testRepository,
+            StudentRepository studentRepository
+    ) {
+        this(attemptRepository, questionRepository, optionRepository, testRepository, studentRepository, null, null, null);
+    }
+
+    @Autowired
+    public QuizService(
+            QuizAttemptRepository attemptRepository,
+            QuizQuestionRepository questionRepository,
+            QuizOptionRepository optionRepository,
+            TestRepository testRepository,
+            StudentRepository studentRepository,
+            @Autowired(required = false) LeaderboardService leaderboardService,
+            @Autowired(required = false) AuditService auditService,
+            @Autowired(required = false) UserRepository userRepository
+    ) {
+        this.attemptRepository = attemptRepository;
+        this.questionRepository = questionRepository;
+        this.optionRepository = optionRepository;
+        this.testRepository = testRepository;
+        this.studentRepository = studentRepository;
+        this.leaderboardService = leaderboardService;
+        this.auditService = auditService;
+        this.userRepository = userRepository;
+    }
 
     @Transactional
     public QuizAttempt startQuiz(UUID quizId, UUID userId) {
         Student student = studentRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+        if (student.getStatus() == StudentStatus.PENDING_BINDING_VERIFICATION
+                || student.getStatus() == StudentStatus.BLOCKED
+                || student.getStatus() == StudentStatus.DISQUALIFIED) {
+            throw new IllegalStateException("Student is not allowed to start quiz in status: " + student.getStatus());
+        }
         
         Test test = testRepository.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (test.getStatus() != TestStatus.PUBLISHED) {
+            throw new IllegalStateException("Quiz is not published");
+        }
 
         List<QuizAttempt> attempts = attemptRepository.findAllByQuizIdAndStudentId(quizId, student.getId());
         
@@ -84,29 +135,50 @@ public class QuizService {
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
 
         Instant now = Instant.now();
+        if (test.getTimeLimitMinutes() != null && test.getTimeLimitMinutes() > 0 && attempt.getStartedAt() != null) {
+            Instant deadline = attempt.getStartedAt()
+                    .plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES)
+                    .plusSeconds(30);
+            if (now.isAfter(deadline)) {
+                throw new IllegalStateException("Quiz time limit exceeded");
+            }
+        }
         
         List<QuizQuestion> questions = questionRepository.findAllByTestIdOrderByOrderingAsc(test.getId());
         List<UUID> questionIds = questions.stream().map(QuizQuestion::getId).collect(Collectors.toList());
-        List<QuizOption> options = optionRepository.findAllByQuestionIdIn(questionIds);
+        List<QuizOption> options = questionIds.isEmpty()
+                ? Collections.emptyList()
+                : optionRepository.findAllByQuestionIdIn(questionIds);
 
-        Map<UUID, List<String>> answerMap = answers.stream()
-                .collect(Collectors.toMap(QuestionAnswerDTO::questionId, QuestionAnswerDTO::answers));
+        Map<UUID, List<String>> answerMap = (answers == null ? Collections.<QuestionAnswerDTO>emptyList() : answers)
+                .stream()
+                .filter(Objects::nonNull)
+                .filter(a -> a.questionId() != null)
+                .collect(Collectors.toMap(
+                        QuestionAnswerDTO::questionId,
+                        a -> a.answers() != null ? a.answers() : Collections.emptyList(),
+                        (a, b) -> b
+                ));
 
         int totalScore = 0;
 
         for (QuizQuestion q : questions) {
             List<String> studentAnswer = answerMap.getOrDefault(q.getId(), Collections.emptyList());
+            if (studentAnswer == null) {
+                studentAnswer = Collections.emptyList();
+            }
+            int qPoints = q.getPoints() != null ? q.getPoints() : 0;
             List<QuizOption> qOptions = options.stream()
                     .filter(o -> o.getQuestionId().equals(q.getId()))
                     .collect(Collectors.toList());
 
             if ("SEQUENCE".equalsIgnoreCase(q.getType())) {
                 List<String> correctSequence = qOptions.stream()
-                        .sorted(Comparator.comparing(QuizOption::getSequenceOrder))
+                        .sorted(Comparator.comparing(QuizOption::getSequenceOrder, Comparator.nullsLast(Comparator.naturalOrder())))
                         .map(o -> o.getId().toString())
                         .collect(Collectors.toList());
-                if (correctSequence.equals(studentAnswer)) {
-                    totalScore += q.getPoints();
+                if (!correctSequence.isEmpty() && correctSequence.equals(studentAnswer)) {
+                    totalScore += qPoints;
                 }
             } else {
                 List<String> correctOptionIds = qOptions.stream()
@@ -115,8 +187,8 @@ public class QuizService {
                         .collect(Collectors.toList());
                 
                 // For choice/multiple choice, exact match required
-                if (new HashSet<>(correctOptionIds).equals(new HashSet<>(studentAnswer))) {
-                    totalScore += q.getPoints();
+                if (!correctOptionIds.isEmpty() && new HashSet<>(correctOptionIds).equals(new HashSet<>(studentAnswer))) {
+                    totalScore += qPoints;
                 }
             }
         }
@@ -125,7 +197,23 @@ public class QuizService {
         attempt.setCompletedAt(now);
         attempt.setStatus(QuizAttemptStatus.COMPLETED);
 
-        return attemptRepository.save(attempt);
+        QuizAttempt saved = attemptRepository.save(attempt);
+        if (leaderboardService != null) {
+            leaderboardService.broadcastUpdate();
+        }
+        if (auditService != null) {
+            auditService.logEvent(
+                    userId,
+                    student.getStudentCode() != null ? student.getStudentCode() : userId.toString(),
+                    "STUDENT",
+                    "QUIZ_SUBMIT",
+                    quizId.toString(),
+                    "IN_PROGRESS",
+                    "COMPLETED (score=" + totalScore + ")",
+                    null
+            );
+        }
+        return saved;
     }
 
     @Transactional
@@ -165,6 +253,32 @@ public class QuizService {
         optionRepository.deleteById(optionId);
     }
 
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getQuestionsForCaller(UUID testId, User user) {
+        Test test = testRepository.findById(testId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+
+        if (!isAdminOrInstructor(user)) {
+            if (test.getStatus() != TestStatus.PUBLISHED) {
+                throw new IllegalStateException("Test is not published");
+            }
+            UUID resolvedUserId = resolveUserId(user);
+            if (resolvedUserId == null) {
+                throw new IllegalStateException("Active quiz attempt is required to view questions");
+            }
+            Student student = studentRepository.findByUserId(resolvedUserId)
+                    .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+            boolean hasInProgress = attemptRepository.findByQuizIdAndStudentIdAndStatus(
+                    testId, student.getId(), QuizAttemptStatus.IN_PROGRESS).isPresent()
+                    || attemptRepository.findAllByQuizIdAndStudentId(testId, student.getId()).stream()
+                            .anyMatch(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS);
+            if (!hasInProgress) {
+                throw new IllegalStateException("Active quiz attempt is required to view questions");
+            }
+        }
+        return getQuestionsWithOptions(testId);
+    }
+
     public List<Map<String, Object>> getQuestionsWithOptions(UUID testId) {
         List<QuizQuestion> questions = questionRepository.findAllByTestIdOrderByOrderingAsc(testId);
         List<UUID> qIds = questions.stream().map(QuizQuestion::getId).collect(Collectors.toList());
@@ -188,19 +302,71 @@ public class QuizService {
 
         for (QuizAttempt attempt : activeAttempts) {
             testRepository.findById(attempt.getQuizId()).ifPresent(test -> {
-                Instant deadline = attempt.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
+                int timeLimit = test.getTimeLimitMinutes() != null ? test.getTimeLimitMinutes() : 60;
+                Instant deadline = attempt.getStartedAt().plus(timeLimit, ChronoUnit.MINUTES).plusSeconds(30);
                 if (now.isAfter(deadline)) {
-                    studentRepository.findById(attempt.getStudentId()).ifPresent(student -> {
-                        if (student.getUserId() != null) {
-                            try {
-                                submitAnswers(attempt.getQuizId(), student.getUserId(), Collections.emptyList());
-                            } catch (Exception e) {
-                                // In case of error (like already submitted concurrently), ignore
-                            }
-                        }
-                    });
+                    attempt.setScore(attempt.getScore() != null ? attempt.getScore() : 0);
+                    attempt.setCompletedAt(now);
+                    attempt.setStatus(QuizAttemptStatus.COMPLETED);
+                    attemptRepository.save(attempt);
+                    if (leaderboardService != null) {
+                        leaderboardService.broadcastUpdate();
+                    }
+                    if (auditService != null) {
+                        UUID userId = studentRepository.findById(attempt.getStudentId())
+                                .map(Student::getUserId)
+                                .orElse(null);
+                        auditService.logEvent(
+                                userId,
+                                "SYSTEM",
+                                "SYSTEM",
+                                "QUIZ_AUTO_SUBMIT",
+                                attempt.getQuizId().toString(),
+                                "IN_PROGRESS",
+                                "COMPLETED (score=" + attempt.getScore() + ")",
+                                null
+                        );
+                    }
                 }
             });
         }
+    }
+
+    private boolean isAdminOrInstructor(User user) {
+        if (user != null) {
+            return user.getRole() == Role.ADMIN || user.getRole() == Role.INSTRUCTOR;
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        if (auth.getPrincipal() instanceof User u) {
+            return u.getRole() == Role.ADMIN || u.getRole() == Role.INSTRUCTOR;
+        }
+        return auth.getAuthorities().stream().anyMatch(a -> {
+            String r = a.getAuthority();
+            return "ROLE_ADMIN".equals(r) || "ADMIN".equals(r)
+                    || "ROLE_INSTRUCTOR".equals(r) || "INSTRUCTOR".equals(r)
+                    || "ROLE_TEACHER".equals(r) || "TEACHER".equals(r);
+        });
+    }
+
+    private UUID resolveUserId(User user) {
+        if (user != null && user.getId() != null) {
+            return user.getId();
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null) {
+            if (auth.getPrincipal() instanceof User u) {
+                return u.getId();
+            }
+            if (userRepository != null && auth.getName() != null) {
+                return userRepository.findByUsername(auth.getName())
+                        .or(() -> userRepository.findByEmail(auth.getName()))
+                        .map(User::getId)
+                        .orElse(null);
+            }
+        }
+        return null;
     }
 }

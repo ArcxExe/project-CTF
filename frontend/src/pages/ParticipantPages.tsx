@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { useAuthStore } from "@/features/auth/model/authStore";
+import { apiRequest, authTokenStorage } from "@/shared/api/client";
 import { attemptsApi } from "@/shared/api/services/attempts";
 import type { AttemptHistoryEntry } from "@/shared/api/services/attempts";
 import { challengesApi } from "@/shared/api/services/challenges";
@@ -33,6 +34,7 @@ import "./pages.css";
 export const RegisterPage = () => {
   const { push } = useToastStore();
   const { currentUser, register, isLoading } = useAuthStore();
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [studentCode, setStudentCode] = useState("");
   const [password, setPassword] = useState("");
@@ -45,7 +47,19 @@ export const RegisterPage = () => {
     event.preventDefault();
 
     try {
-      await register({ email, password, studentCode });
+      await (
+        register as (payload: {
+          username?: string;
+          email: string;
+          password: string;
+          studentCode: string;
+        }) => Promise<void>
+      )({
+        username: username.trim() || undefined,
+        email,
+        password,
+        studentCode,
+      });
       push({
         title: "Регистрация выполнена",
         variant: "success",
@@ -68,6 +82,12 @@ export const RegisterPage = () => {
           </div>
 
           <form className="page-stack" onSubmit={handleSubmit}>
+            <Input
+              label="Имя пользователя (логин)"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
             <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
             <Input label="Шифр студента" value={studentCode} onChange={(event) => setStudentCode(event.target.value)} required />
             <Input
@@ -136,6 +156,7 @@ export const ParticipantCompetitionPage = () => {
           {competitions.map((competition) => {
             const linkedTest = tests.find(t => t.competitionId === competition.id);
             const testUrl = linkedTest ? `/participant/test/${linkedTest.id}` : "/participant/test";
+            const isActive = competition.status === "active" || competition.status === "published";
 
             return (
               <div key={competition.id} className="grid grid-2">
@@ -151,19 +172,41 @@ export const ParticipantCompetitionPage = () => {
                       <span>Финиш</span>
                       <strong>{new Date(competition.endsAt).toLocaleString("ru-RU")}</strong>
                       <span>Статус</span>
-                      <strong>{competition.status === "published" ? "Активно" : competition.status}</strong>
+                      <strong>{isActive ? "Активно" : competition.status}</strong>
                     </div>
                   </div>
                 </Card>
 
                 <Card>
                   <div className="action-grid">
-                    <Link className="page-link-button" to={testUrl}>
-                      Перейти к тесту
-                    </Link>
-                    <Link className="page-link-button" to="/participant/ctf">
-                      Открыть CTF
-                    </Link>
+                    {isActive ? (
+                      <Link className="page-link-button" to={testUrl}>
+                        Перейти к тесту
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="page-link-button"
+                        disabled
+                        style={{ opacity: 0.5, cursor: "not-allowed" }}
+                      >
+                        Перейти к тесту
+                      </button>
+                    )}
+                    {isActive ? (
+                      <Link className="page-link-button" to="/participant/ctf">
+                        Открыть CTF
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="page-link-button"
+                        disabled
+                        style={{ opacity: 0.5, cursor: "not-allowed" }}
+                      >
+                        Открыть CTF
+                      </button>
+                    )}
                     <Link className="page-link-button" to="/participant/rating">
                       Смотреть рейтинг
                     </Link>
@@ -187,6 +230,7 @@ export const ParticipantCompetitionPage = () => {
 
 export const ParticipantTestPage = () => {
   const { push } = useToastStore();
+  const navigate = useNavigate();
   const [tests, setTests] = useState<CtfTest[]>([]);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -249,7 +293,7 @@ export const ParticipantTestPage = () => {
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                     <Button 
-                      onClick={() => window.location.href = `/participant/test/${test.id}`}
+                      onClick={() => navigate(`/participant/test/${test.id}`)}
                       disabled={isCompleted}
                     >
                       {btnText}
@@ -294,7 +338,9 @@ export const ParticipantCtfPage = () => {
   }, [push]);
 
   const renderTaskCard = (task: Challenge) => {
-    const isSolved = history.some(h => h.challengeId === task.id && h.correct);
+    const isSolved = history.some(
+      (h) => (h.challengeId || (h as any).taskId) === task.id && Boolean(h.correct ?? (h as any).isCorrect),
+    );
 
     return (
       <Card key={task.id} className={isSolved ? "task-card-solved" : ""}>
@@ -331,7 +377,7 @@ export const ParticipantCtfPage = () => {
   const activeCompetitions = competitions.filter(comp => {
     const start = new Date(comp.startsAt);
     const end = new Date(comp.endsAt);
-    return comp.status === "active" && start <= now && now <= end;
+    return (comp.status === "active" || comp.status === "published") && start <= now && now <= end;
   });
 
   const hasAnyActiveTasks = activeCompetitions.some(c => (c.tasks || []).length > 0);
@@ -382,8 +428,11 @@ export const ParticipantTaskPage = () => {
   const [task, setTask] = useState<Challenge | null>(null);
   const [history, setHistory] = useState<AttemptHistoryEntry[]>([]);
   const [flag, setFlag] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!taskId) {
@@ -404,7 +453,11 @@ export const ParticipantTaskPage = () => {
       .finally(() => setIsLoading(false));
 
     // Listen for FIRST_BLOOD
-    const eventSource = new EventSource("/api/leaderboard/live");
+    const token = authTokenStorage.get();
+    const sseUrl = token
+      ? `/api/leaderboard/live?token=${encodeURIComponent(token)}`
+      : "/api/leaderboard/live";
+    const eventSource = new EventSource(sseUrl);
     eventSource.addEventListener("FIRST_BLOOD", (event) => {
       try {
         const data = JSON.parse((event as MessageEvent).data);
@@ -440,9 +493,10 @@ export const ParticipantTaskPage = () => {
     setIsSubmitting(true);
     try {
       const response = await challengesApi.submitFlag(task.id, flag);
+      const isCorrect = Boolean(response.correct ?? (response as any).isCorrect);
       push({
         title: response.pointsAdded ? `${response.message}: +${response.pointsAdded} pts` : response.message,
-        variant: response.correct ? "success" : "error",
+        variant: isCorrect ? "success" : "error",
       });
       const attemptHistory = await attemptsApi.getHistory(task.id);
       setHistory(attemptHistory);
@@ -457,6 +511,54 @@ export const ParticipantTaskPage = () => {
     }
   };
 
+  const handleFileUpload = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!task || !selectedFile) {
+      push({ title: "Выберите файл для отправки (.pdf, .zip, .txt)", variant: "error" });
+      return;
+    }
+
+    const lowerName = selectedFile.name.toLowerCase();
+    if (!lowerName.endsWith(".pdf") && !lowerName.endsWith(".zip") && !lowerName.endsWith(".txt")) {
+      push({ title: "Допустимые форматы файлов: .pdf, .zip, .txt", variant: "error" });
+      return;
+    }
+
+    setIsUploadingFile(true);
+    try {
+      const submitFileFn = (challengesApi as any).submitFile ?? (attemptsApi as any).submitFile;
+      let response: any;
+      if (typeof submitFileFn === "function") {
+        response = await submitFileFn(task.id, selectedFile);
+      } else {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        response = await apiRequest<any>(`/api/challenges/${task.id}/submit-file`, {
+          method: "POST",
+          body: formData,
+        });
+      }
+      push({
+        title: response?.message || "Файл успешно отправлен на проверку",
+        variant: "success",
+      });
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      const attemptHistory = await attemptsApi.getHistory(task.id);
+      setHistory(attemptHistory);
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось загрузить файл",
+        variant: "error",
+      });
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
   if (isLoading) {
     return <Loader label="Загружаем задание..." />;
   }
@@ -464,6 +566,8 @@ export const ParticipantTaskPage = () => {
   if (!task) {
     return <Navigate to="/participant/ctf" replace />;
   }
+
+  const isFileUploadTask = (task as any).taskType === "FILE_UPLOAD";
 
   return (
     <div className="page-stack">
@@ -492,32 +596,59 @@ export const ParticipantTaskPage = () => {
         </Card>
 
         <Card>
-          <form className="page-stack" onSubmit={handleSubmit}>
-            <Input
-              label="Флаг"
-              placeholder="CTF{...}"
-              value={flag}
-              onChange={(event) => setFlag(event.target.value)}
-            />
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Отправляем..." : "Отправить флаг"}
-            </Button>
-          </form>
-
-          <div className="hint-box">
-            <strong>История попыток</strong>
-            {history.length > 0 ? (
-              <ul className="page-list">
-                {history.map((item) => (
-                  <li key={item.attemptId}>
-                    {new Date(item.submittedAt).toLocaleString("ru-RU")} -{" "}
-                    {item.correct ? `верно (+${item.earnedPoints})` : "неверно"}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <span>Попыток пока нет.</span>
+          <div className="page-stack">
+            {!isFileUploadTask && (
+              <form className="page-stack" onSubmit={handleSubmit}>
+                <Input
+                  label="Флаг"
+                  placeholder="CTF{...}"
+                  value={flag}
+                  onChange={(event) => setFlag(event.target.value)}
+                />
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Отправляем..." : "Отправить флаг"}
+                </Button>
+              </form>
             )}
+
+            <form
+              className="page-stack"
+              onSubmit={handleFileUpload}
+              style={!isFileUploadTask ? { borderTop: "1px solid var(--border)", paddingTop: "1rem" } : undefined}
+            >
+              <label className="ui-field">
+                <span className="ui-field__label">Загрузить файл решения (.pdf, .zip, .txt)</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.zip,.txt"
+                  className="ui-input"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              <Button type="submit" variant={isFileUploadTask ? "primary" : "secondary"} disabled={isUploadingFile || !selectedFile}>
+                {isUploadingFile ? "Загружаем..." : "Отправить файл"}
+              </Button>
+            </form>
+
+            <div className="hint-box">
+              <strong>История попыток</strong>
+              {history.length > 0 ? (
+                <ul className="page-list">
+                  {history.map((item) => {
+                    const isItemCorrect = Boolean(item.correct ?? (item as any).isCorrect);
+                    return (
+                      <li key={item.attemptId}>
+                        {new Date(item.submittedAt).toLocaleString("ru-RU")} -{" "}
+                        {isItemCorrect ? `верно (+${item.earnedPoints ?? 0})` : "неверно"}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <span>Попыток пока нет.</span>
+              )}
+            </div>
           </div>
         </Card>
       </div>
@@ -559,7 +690,11 @@ export const ParticipantRatingPage = () => {
       .catch((err) => console.error("Failed to load score adjustments", err));
 
     setIsLoading(true);
-    const eventSource = new EventSource("/api/leaderboard/live");
+    const token = authTokenStorage.get();
+    const sseUrl = token
+      ? `/api/leaderboard/live?token=${encodeURIComponent(token)}`
+      : "/api/leaderboard/live";
+    const eventSource = new EventSource(sseUrl);
 
     const parseAndSetRows = (data: string) => {
       try {

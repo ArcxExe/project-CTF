@@ -29,7 +29,13 @@ public class CompetitionController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<CompetitionResponse> getCompetitionById(@PathVariable UUID id) {
-        return ResponseEntity.ok(competitionService.getCompetitionById(id));
+    public ResponseEntity<CompetitionResponse> getCompetitionById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(competitionService.getCompetitionByIdForUser(id, user));
+    }
+
+    public ResponseEntity<CompetitionResponse> getCompetitionById(UUID id) {
+        return getCompetitionById(id, null);
     }
 }

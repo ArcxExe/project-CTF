@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/admin/score-adjustments")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
 @RequiredArgsConstructor
 public class AdminScoreAdjustmentController {
 

@@ -67,13 +67,24 @@ public class StudentLab {
     private double penaltyCoefficient = 1.0;
 
     @Column(name = "is_accepted", nullable = false)
-    @Builder.Default
-    private boolean isAccepted = false;
+    private Boolean isAccepted;
+
+    public void setAccepted(boolean isAccepted) {
+        this.isAccepted = isAccepted;
+    }
+
+    public void setAccepted(Boolean isAccepted) {
+        this.isAccepted = isAccepted;
+    }
 
     public boolean isAccepted() {
-        if (this.isAccepted) {
-            return true;
+        if (this.isAccepted != null) {
+            return this.isAccepted;
         }
+        return computeAcceptedByScores();
+    }
+
+    private boolean computeAcceptedByScores() {
         if (maxRawScore > 0 || maxDefenseScore > 0) {
             double maxTotal = maxRawScore + maxDefenseScore;
             double totalRaw = rawScore + defenseScore;
@@ -97,12 +108,18 @@ public class StudentLab {
 
     @PrePersist
     protected void onCreate() {
+        if (this.isAccepted == null) {
+            this.isAccepted = computeAcceptedByScores();
+        }
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
 
     @PreUpdate
     protected void onUpdate() {
+        if (this.isAccepted == null) {
+            this.isAccepted = computeAcceptedByScores();
+        }
         this.updatedAt = Instant.now();
     }
 }

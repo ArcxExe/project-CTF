@@ -166,11 +166,16 @@ public class AttendanceService {
     }
 
     private String escapeCsv(String val) {
-        if (val == null) return "";
-        if (val.contains(",") || val.contains("\"") || val.contains("\n")) {
-            return "\"" + val.replace("\"", "\"\"") + "\"";
+        if (val == null || val.isEmpty()) return "";
+        String sanitized = val;
+        char first = sanitized.charAt(0);
+        if (first == '=' || first == '+' || first == '-' || first == '@') {
+            sanitized = "'" + sanitized;
         }
-        return val;
+        if (sanitized.contains(",") || sanitized.contains("\"") || sanitized.contains("\n") || sanitized.contains("\r")) {
+            return "\"" + sanitized.replace("\"", "\"\"") + "\"";
+        }
+        return sanitized;
     }
 
     /**

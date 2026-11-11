@@ -30,19 +30,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        String jwtToken = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwtToken = authHeader.substring(7);
+        } else {
+            String tokenParam = request.getParameter("token");
+            if (tokenParam != null && !tokenParam.isBlank()) {
+                jwtToken = tokenParam.startsWith("Bearer ") ? tokenParam.substring(7).trim() : tokenParam.trim();
+            }
+        }
+
+        if (jwtToken == null || jwtToken.isEmpty()) {
             filterChain.doFilter(request, response);
             return;
         }
-
-        String jwtToken = authHeader.substring(7);
 
         try {
             String username = jwtService.extractUsername(jwtToken);
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                if (jwtService.isTokenValid(jwtToken, userDetails)) {
+                if (jwtService.isTokenValid(jwtToken, userDetails)
+                        && userDetails.isEnabled()
+                        && userDetails.isAccountNonLocked()) {
                     UsernamePasswordAuthenticationToken authenticationToken =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails,

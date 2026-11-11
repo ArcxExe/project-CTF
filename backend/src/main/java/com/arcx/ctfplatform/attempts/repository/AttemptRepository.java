@@ -11,8 +11,11 @@ import com.arcx.ctfplatform.attempts.dto.AttemptHistoryResponse;
 @Repository
 public interface AttemptRepository extends JpaRepository<Attempt, UUID> {
     boolean existsByTaskIdAndStudentIdAndIsCorrect(UUID taskId, UUID studentId, boolean isCorrect);
+    boolean existsByTaskIdAndIsCorrectTrue(UUID taskId);
     long countByTaskIdAndIsCorrect(UUID taskId, boolean isCorrect);
     long countByTaskIdAndSubmittedAtBefore(UUID taskId, java.time.Instant submittedAt);
+    long countByTaskIdAndIsCorrectTrueAndSubmittedAtBefore(UUID taskId, java.time.Instant submittedAt);
+    long countByTaskIdAndStudentIdAndIsCorrectFalseAndSubmittedAtAfter(UUID taskId, UUID studentId, java.time.Instant submittedAt);
 
     java.util.List<Attempt> findAllByFilePathIsNotNullAndIsCorrectFalse();
 

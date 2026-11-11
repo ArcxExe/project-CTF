@@ -24,11 +24,16 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .or(() -> userRepository.findByUsername(normalized))
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
+        if (user.getStatus() == com.arcx.ctfplatform.users.entity.UserStatus.BLOCKED
+                || !user.isEnabled()
+                || !user.isAccountNonLocked()) {
+            throw new UsernameNotFoundException("User is blocked: " + username);
+        }
+
         if (user.getRole() == com.arcx.ctfplatform.users.entity.Role.STUDENT) {
             studentRepository.findByUserId(user.getId()).ifPresent(student -> {
-                if (student.getStatus() == com.arcx.ctfplatform.academic.entity.StudentStatus.BLOCKED ||
-                    student.getStatus() == com.arcx.ctfplatform.academic.entity.StudentStatus.DISQUALIFIED) {
-                    throw new UsernameNotFoundException("Student is blocked or disqualified");
+                if (student.getStatus() == com.arcx.ctfplatform.academic.entity.StudentStatus.BLOCKED) {
+                    throw new UsernameNotFoundException("Student is blocked");
                 }
             });
         }

@@ -120,5 +120,39 @@ class GradingServiceTest {
 
         // Exam not taken (null): returns course grade
         assertThat(gradingService.calculateFinalGradeWithExam(75.0, 70.0, 70.0, true, null)).isEqualTo(4);
+
+        // Direct 2..5 exam grade works identically to 0..100 scale
+        assertThat(gradingService.calculateFinalGradeWithExam(65.0, 60.0, 60.0, true, 5)).isEqualTo(5);
+        assertThat(gradingService.calculateFinalGradeWithExam(75.0, 70.0, 70.0, true, 3)).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("Dynamic grading scale rules from repository override defaults while preserving honors threshold")
+    void testDynamicGradingScaleRules() {
+        com.arcx.ctfplatform.academic.entity.GradingScale rule5 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(java.math.BigDecimal.valueOf(90.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(100.0))
+                .grade(5)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale rule4 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(java.math.BigDecimal.valueOf(75.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(89.99))
+                .grade(4)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale rule3 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(java.math.BigDecimal.valueOf(55.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(74.99))
+                .grade(3)
+                .build();
+
+        org.mockito.Mockito.when(gradingScaleRepository.findAll())
+                .thenReturn(java.util.List.of(rule5, rule4, rule3));
+
+        // 86.0 is < 90.0 custom rule for 5 -> grade 4
+        assertThat(gradingService.calculateGrade(86.0, 80.0, 80.0)).isEqualTo(4);
+        // 92.0 is >= 90.0 custom rule for 5 -> grade 5
+        assertThat(gradingService.calculateGrade(92.0, 80.0, 80.0)).isEqualTo(5);
+        // 92.0 with L < 60 -> lowered to 4
+        assertThat(gradingService.calculateGrade(92.0, 55.0, 80.0)).isEqualTo(4);
     }
 }

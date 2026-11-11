@@ -16,6 +16,9 @@ public interface PromoCodeClaimRepository extends JpaRepository<PromoCodeClaim, 
     @Query("SELECT c FROM PromoCodeClaim c JOIN FETCH c.promoCode")
     List<PromoCodeClaim> findAllWithPromoCode();
 
+    @Query("SELECT c FROM PromoCodeClaim c JOIN FETCH c.promoCode WHERE c.studentId = :studentId")
+    List<PromoCodeClaim> findAllByStudentIdWithPromoCode(@org.springframework.data.repository.query.Param("studentId") UUID studentId);
+
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM PromoCodeClaim c")
     int deleteAllClaims();

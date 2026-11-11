@@ -1,33 +1,40 @@
 package com.arcx.ctfplatform.leaderboard.service;
 
+import com.arcx.ctfplatform.academic.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.entity.StudentStatus;
+import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
+import com.arcx.ctfplatform.academic.repository.StudentRepository;
+import com.arcx.ctfplatform.academic.service.GradingService;
 import com.arcx.ctfplatform.attempts.entity.Attempt;
 import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.competitions.entity.Competition;
+import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
 import com.arcx.ctfplatform.modifiers.entity.PromoCode;
 import com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim;
-import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
-import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
 import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
-import com.arcx.ctfplatform.academic.entity.Student;
-import com.arcx.ctfplatform.academic.entity.AcademicGroup;
-import com.arcx.ctfplatform.academic.repository.StudentRepository;
-import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
+import com.arcx.ctfplatform.students.service.lab.LabScoreService;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
-import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
+import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import com.arcx.ctfplatform.academic.service.GradingService;
-import com.arcx.ctfplatform.students.service.lab.LabScoreService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -36,11 +43,12 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LeaderboardService {
 
     private final StudentRepository studentRepository;
@@ -55,8 +63,81 @@ public class LeaderboardService {
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
     private final CompetitionRepository competitionRepository;
     private final AcademicGroupRepository academicGroupRepository;
+    private final TransactionTemplate transactionTemplate;
 
-    private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
+    private record Subscriber(
+            SseEmitter emitter,
+            String scopeType,
+            UUID scopeId,
+            boolean isAdmin,
+            UUID studentId,
+            String username
+    ) {
+    }
+
+    private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
+
+    public LeaderboardService(
+            StudentRepository studentRepository,
+            UserRepository userRepository,
+            LabScoreService labScoreService,
+            GradingService gradingService,
+            AttemptRepository attemptRepository,
+            QuizAttemptRepository quizAttemptRepository,
+            TestRepository testRepository,
+            PromoCodeRepository promoCodeRepository,
+            PromoCodeClaimRepository promoCodeClaimRepository,
+            ScoreAdjustmentRepository scoreAdjustmentRepository,
+            CompetitionRepository competitionRepository,
+            AcademicGroupRepository academicGroupRepository
+    ) {
+        this(
+                studentRepository,
+                userRepository,
+                labScoreService,
+                gradingService,
+                attemptRepository,
+                quizAttemptRepository,
+                testRepository,
+                promoCodeRepository,
+                promoCodeClaimRepository,
+                scoreAdjustmentRepository,
+                competitionRepository,
+                academicGroupRepository,
+                null
+        );
+    }
+
+    @Autowired
+    public LeaderboardService(
+            StudentRepository studentRepository,
+            UserRepository userRepository,
+            LabScoreService labScoreService,
+            GradingService gradingService,
+            AttemptRepository attemptRepository,
+            QuizAttemptRepository quizAttemptRepository,
+            TestRepository testRepository,
+            PromoCodeRepository promoCodeRepository,
+            PromoCodeClaimRepository promoCodeClaimRepository,
+            ScoreAdjustmentRepository scoreAdjustmentRepository,
+            CompetitionRepository competitionRepository,
+            AcademicGroupRepository academicGroupRepository,
+            @Autowired(required = false) TransactionTemplate transactionTemplate
+    ) {
+        this.studentRepository = studentRepository;
+        this.userRepository = userRepository;
+        this.labScoreService = labScoreService;
+        this.gradingService = gradingService;
+        this.attemptRepository = attemptRepository;
+        this.quizAttemptRepository = quizAttemptRepository;
+        this.testRepository = testRepository;
+        this.promoCodeRepository = promoCodeRepository;
+        this.promoCodeClaimRepository = promoCodeClaimRepository;
+        this.scoreAdjustmentRepository = scoreAdjustmentRepository;
+        this.competitionRepository = competitionRepository;
+        this.academicGroupRepository = academicGroupRepository;
+        this.transactionTemplate = transactionTemplate;
+    }
 
     public record LeaderboardEntry(
             UUID studentId,
@@ -75,26 +156,34 @@ public class LeaderboardService {
 
     public SseEmitter subscribe(String scopeType, UUID scopeId) {
         SseEmitter emitter = new SseEmitter(60 * 60 * 1000L); // 1 hour timeout
-        emitters.add(emitter);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = resolveIsAdmin(auth);
+        String username = resolveUsername(auth);
+        UUID studentId = runInTransaction(() -> resolveStudentId(auth, username));
 
-        emitter.onCompletion(() -> emitters.remove(emitter));
-        emitter.onTimeout(() -> emitters.remove(emitter));
-        emitter.onError((e) -> emitters.remove(emitter));
+        Subscriber subscriber = new Subscriber(emitter, scopeType, scopeId, isAdmin, studentId, username);
+        subscribers.add(subscriber);
 
-        // Send initial state
+        emitter.onCompletion(() -> subscribers.remove(subscriber));
+        emitter.onTimeout(() -> subscribers.remove(subscriber));
+        emitter.onError((e) -> subscribers.remove(subscriber));
+
+        // Send initial state within transaction
         try {
-            emitter.send(SseEmitter.event().name("INIT").data(getLeaderboardSnapshot(scopeType, scopeId)));
+            List<LeaderboardEntry> initialSnapshot = runInTransaction(() ->
+                    getLeaderboardSnapshotForViewer(scopeType, scopeId, isAdmin, studentId, username));
+            emitter.send(SseEmitter.event().name("INIT").data(initialSnapshot));
         } catch (IOException e) {
-            emitters.remove(emitter);
+            subscribers.remove(subscriber);
         }
 
         return emitter;
     }
 
     public void broadcastUpdate() {
-        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
-            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
-                new org.springframework.transaction.support.TransactionSynchronization() {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
                         executeBroadcast();
@@ -107,39 +196,75 @@ public class LeaderboardService {
     }
 
     private void executeBroadcast() {
-        List<LeaderboardEntry> snapshot = getLeaderboardSnapshot(null, null);
-        List<SseEmitter> deadEmitters = new ArrayList<>();
-        
-        emitters.forEach(emitter -> {
-            try {
-                emitter.send(SseEmitter.event().name("UPDATE").data(snapshot));
-            } catch (Exception e) {
-                deadEmitters.add(emitter);
+        if (subscribers.isEmpty()) {
+            return;
+        }
+        List<Subscriber> deadSubscribers = new ArrayList<>();
+
+        runInTransaction(() -> {
+            for (Subscriber sub : subscribers) {
+                try {
+                    List<LeaderboardEntry> snapshot = getLeaderboardSnapshotForViewer(
+                            sub.scopeType(),
+                            sub.scopeId(),
+                            sub.isAdmin(),
+                            sub.studentId(),
+                            sub.username()
+                    );
+                    sub.emitter().send(SseEmitter.event().name("UPDATE").data(snapshot));
+                } catch (Exception e) {
+                    deadSubscribers.add(sub);
+                }
             }
+            return null;
         });
-        
-        emitters.removeAll(deadEmitters);
+
+        subscribers.removeAll(deadSubscribers);
     }
 
     public void broadcastFirstBlood(String username, String challengeTitle) {
+        if (subscribers.isEmpty()) {
+            return;
+        }
         Map<String, String> data = Map.of("username", username, "challengeTitle", challengeTitle);
-        List<SseEmitter> deadEmitters = new ArrayList<>();
-        emitters.forEach(emitter -> {
+        List<Subscriber> deadSubscribers = new ArrayList<>();
+        subscribers.forEach(sub -> {
             try {
-                emitter.send(SseEmitter.event().name("FIRST_BLOOD").data(data));
+                sub.emitter().send(SseEmitter.event().name("FIRST_BLOOD").data(data));
             } catch (Exception e) {
-                deadEmitters.add(emitter);
+                deadSubscribers.add(sub);
             }
         });
-        emitters.removeAll(deadEmitters);
+        subscribers.removeAll(deadSubscribers);
     }
 
-    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @Transactional(readOnly = true)
     public List<LeaderboardEntry> getLeaderboardSnapshot(String scopeType, UUID scopeId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = resolveIsAdmin(auth);
+        String currentUsername = resolveUsername(auth);
+        UUID currentStudentId = resolveStudentId(auth, currentUsername);
+        return getLeaderboardSnapshotForViewer(scopeType, scopeId, isAdmin, currentStudentId, currentUsername);
+    }
+
+    private List<LeaderboardEntry> getLeaderboardSnapshotForViewer(
+            String scopeType,
+            UUID scopeId,
+            boolean isAdmin,
+            UUID viewerStudentId,
+            String viewerUsername
+    ) {
         List<Student> allStudents = studentRepository.findAll();
         List<QuizAttempt> allQuizzes = quizAttemptRepository.findAll();
         List<Test> allTests = testRepository.findAll();
-        Map<UUID, Test> testMap = allTests.stream().collect(Collectors.toMap(Test::getId, t -> t));
+        Map<UUID, Test> testMap = allTests.stream()
+                .collect(Collectors.toMap(Test::getId, Function.identity(), (a, b) -> a));
+
+        List<AcademicGroup> allGroups = academicGroupRepository.findAll();
+        Map<UUID, AcademicGroup> groupMap = allGroups.stream()
+                .collect(Collectors.toMap(AcademicGroup::getId, Function.identity(), (a, b) -> a));
+        Map<UUID, String> groupIdToGroupName = allGroups.stream()
+                .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName, (a, b) -> a));
 
         if (scopeType != null && scopeId != null) {
             if ("GROUP".equalsIgnoreCase(scopeType)) {
@@ -148,7 +273,7 @@ public class LeaderboardService {
                 allStudents = allStudents.stream()
                         .filter(s -> s.getGroupId() != null)
                         .filter(s -> {
-                            AcademicGroup group = academicGroupRepository.findById(s.getGroupId()).orElse(null);
+                            AcademicGroup group = groupMap.get(s.getGroupId());
                             return group != null && scopeId.equals(group.getStreamId());
                         }).toList();
             }
@@ -156,26 +281,18 @@ public class LeaderboardService {
 
         List<User> allUsers = userRepository.findAll();
         Map<UUID, String> userIdToUsername = allUsers.stream()
-                .collect(Collectors.toMap(User::getId, u -> u.getUsername() != null ? u.getUsername() : u.getEmail()));
-        List<AcademicGroup> allGroups = academicGroupRepository.findAll();
-        Map<UUID, String> groupIdToGroupName = allGroups.stream()
-                .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName));
+                .collect(Collectors.toMap(
+                        User::getId,
+                        u -> u.getUsername() != null ? u.getUsername() : u.getEmail(),
+                        (a, b) -> a
+                ));
 
-        // Determine active competition
+        // Determine active competition (prefer CompetitionStatus.ACTIVE)
         List<Competition> competitions = competitionRepository.findAll();
         Instant now = Instant.now();
-        Competition activeComp = competitions.stream()
-                .filter(c -> c.getStartDate() != null && c.getEndDate() != null &&
-                             !now.isBefore(c.getStartDate()) && !now.isAfter(c.getEndDate()))
-                .findFirst()
-                .orElse(competitions.isEmpty() ? null : competitions.get(0));
+        Competition activeComp = selectActiveCompetition(competitions, now);
 
         boolean leaderboardHiddenGlobally = activeComp != null && activeComp.isLeaderboardHidden();
-
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean isAdmin = auth != null && auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ADMIN"));
-        String currentUsername = auth != null ? auth.getName() : null;
 
         List<Attempt> allAttempts = attemptRepository.findAll();
         Map<UUID, List<Attempt>> attemptsByStudent = allAttempts.stream()
@@ -184,23 +301,61 @@ public class LeaderboardService {
         Map<UUID, List<QuizAttempt>> quizzesByStudent = allQuizzes.stream()
                 .collect(Collectors.groupingBy(QuizAttempt::getStudentId));
 
+        List<PromoCodeClaim> allClaims = promoCodeClaimRepository.findAllWithPromoCode();
+        Map<UUID, List<PromoCodeClaim>> claimsByStudent = allClaims.stream()
+                .collect(Collectors.groupingBy(PromoCodeClaim::getStudentId));
+
+        List<ScoreAdjustment> allAdjustments = scoreAdjustmentRepository.findAll();
+        Map<UUID, List<ScoreAdjustment>> adjustmentsByStudent = allAdjustments.stream()
+                .collect(Collectors.groupingBy(ScoreAdjustment::getStudentId));
+
         Map<UUID, Instant> studentLastTxTime = new HashMap<>();
         Map<UUID, Long> studentWrongAttempts = new HashMap<>();
         List<LeaderboardEntry> entries = new ArrayList<>();
 
         for (Student student : allStudents) {
+            // Exclude OUT_OF_RATING students from non-admin leaderboards
+            if (student.getStatus() == StudentStatus.OUT_OF_RATING && !isAdmin) {
+                continue;
+            }
+
             // Check if student is individually hidden
-            boolean isIndividuallyHidden = activeComp != null && activeComp.getHiddenStudentIds() != null && 
-                                           activeComp.getHiddenStudentIds().contains(student.getId());
+            boolean isIndividuallyHidden = activeComp != null
+                    && activeComp.getHiddenStudentIds() != null
+                    && activeComp.getHiddenStudentIds().contains(student.getId());
             if (isIndividuallyHidden && !isAdmin) {
                 continue;
             }
 
             String studentUsername = userIdToUsername.get(student.getUserId());
-            boolean isCurrentUser = studentUsername != null && studentUsername.equalsIgnoreCase(currentUsername);
+            boolean isCurrentUser = (viewerStudentId != null && viewerStudentId.equals(student.getId()))
+                    || (studentUsername != null && viewerUsername != null && studentUsername.equalsIgnoreCase(viewerUsername));
 
             // If leaderboard is hidden globally, students can only see their own entry
             if (leaderboardHiddenGlobally && !isAdmin && !isCurrentUser) {
+                continue;
+            }
+
+            String username = userIdToUsername.getOrDefault(student.getUserId(), "Unknown");
+            String groupName = student.getGroupId() != null
+                    ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы")
+                    : "Без группы";
+
+            // Zero out scores/grade=2 for DISQUALIFIED students
+            if (student.getStatus() == StudentStatus.DISQUALIFIED) {
+                entries.add(new LeaderboardEntry(
+                        student.getId(),
+                        username,
+                        groupName,
+                        0,
+                        0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        2,
+                        false
+                ));
                 continue;
             }
 
@@ -213,18 +368,36 @@ public class LeaderboardService {
                     .mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded())
                     .sum();
 
-            // Promo codes
-            List<PromoCodeClaim> claims = promoCodeClaimRepository.findAllByStudentId(student.getId());
+            List<QuizAttempt> studentQuizzes = quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList());
+            if (activeComp != null && activeComp.isSumTestPoints()) {
+                for (QuizAttempt qa : studentQuizzes) {
+                    if (qa.getStatus() == QuizAttemptStatus.COMPLETED && qa.getScore() != null) {
+                        Test t = testMap.get(qa.getQuizId());
+                        boolean includeQuiz = (t == null)
+                                || (activeComp.getId() != null && activeComp.getId().equals(t.getCompetitionId()))
+                                || (t.getCompetitionId() == null && !t.isControlPoint());
+                        if (includeQuiz) {
+                            rawCtfScore += Math.max(0, (int) Math.round(qa.getScore().doubleValue()));
+                        }
+                    }
+                }
+            }
+
+            // Promo codes (batch-fetched with JOIN FETCH promoCode)
+            List<PromoCodeClaim> claims = claimsByStudent.getOrDefault(student.getId(), Collections.emptyList());
             int additions = 0;
             int subtractions = 0;
             double multiplier = 1.0;
             for (PromoCodeClaim claim : claims) {
                 PromoCode promo = claim.getPromoCode();
-                if (promo != null) {
+                if (promo != null && promo.getModifierType() != null) {
                     switch (promo.getModifierType()) {
                         case FIXED_ADD -> additions += promo.getValue();
                         case FIXED_SUB -> subtractions += promo.getValue();
-                        case DOUBLE_COEFF -> multiplier *= promo.getValue();
+                        case DOUBLE_COEFF, TEMP_MULTIPLIER -> {
+                            int coeff = promo.getValue() <= 0 ? 2 : promo.getValue();
+                            multiplier *= coeff;
+                        }
                     }
                 }
             }
@@ -233,8 +406,8 @@ public class LeaderboardService {
                 ctfScore = 0;
             }
 
-            // Score adjustments
-            List<ScoreAdjustment> adjustments = scoreAdjustmentRepository.findAllByStudentId(student.getId());
+            // Score adjustments (batch-fetched)
+            List<ScoreAdjustment> adjustments = adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList());
             ctfScore += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
             if (ctfScore < 0) {
                 ctfScore = 0;
@@ -268,12 +441,11 @@ public class LeaderboardService {
 
             // --- 2. CONTROL POINTS (K) ---
             double[] slotKt = new double[] {
-                 Math.max(0.0, Math.min(student.getKt1(), 25.0)),
+                Math.max(0.0, Math.min(student.getKt1(), 25.0)),
                 Math.max(0.0, Math.min(student.getKt2(), 25.0)),
                 Math.max(0.0, Math.min(student.getKt3(), 25.0)),
                 Math.max(0.0, Math.min(student.getKt4(), 25.0))
             };
-            List<QuizAttempt> studentQuizzes = quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList());
             Map<UUID, Double> unslottedKtScores = new HashMap<>();
             for (QuizAttempt qa : studentQuizzes) {
                 if (qa.getStatus() == QuizAttemptStatus.COMPLETED) {
@@ -310,15 +482,15 @@ public class LeaderboardService {
             if (isEligible) {
                 Integer baseGrade = gradingService.calculateGrade(sScore, lPercent, kPercent);
                 if (student.getExamScore() != null && baseGrade != null) {
-                    int clampedExam = Math.max(2, Math.min(5, student.getExamScore()));
-                    recommendedGrade = Math.max(baseGrade, clampedExam);
+                    Integer mappedExam = gradingService.mapExamScoreToGrade(student.getExamScore());
+                    int examGrade = (mappedExam != null && mappedExam >= 2)
+                            ? mappedExam
+                            : mapExamScoreFallback(student.getExamScore());
+                    recommendedGrade = Math.max(baseGrade, examGrade);
                 } else {
                     recommendedGrade = baseGrade;
                 }
             }
-
-            String username = userIdToUsername.getOrDefault(student.getUserId(), "Unknown");
-            String groupName = student.getGroupId() != null ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы") : "Без группы";
 
             entries.add(new LeaderboardEntry(
                     student.getId(),
@@ -367,6 +539,88 @@ public class LeaderboardService {
         });
 
         return entries;
+    }
+
+    private Competition selectActiveCompetition(List<Competition> competitions, Instant now) {
+        if (competitions == null || competitions.isEmpty()) {
+            return null;
+        }
+        return competitions.stream()
+                .filter(c -> c.getStatus() == CompetitionStatus.ACTIVE)
+                .filter(c -> (c.getStartDate() == null || !now.isBefore(c.getStartDate()))
+                        && (c.getEndDate() == null || !now.isAfter(c.getEndDate())))
+                .findFirst()
+                .or(() -> competitions.stream()
+                        .filter(c -> c.getStatus() == CompetitionStatus.ACTIVE)
+                        .findFirst())
+                .or(() -> competitions.stream()
+                        .filter(c -> c.getStatus() == null)
+                        .filter(c -> (c.getStartDate() == null || !now.isBefore(c.getStartDate()))
+                                && (c.getEndDate() == null || !now.isAfter(c.getEndDate())))
+                        .findFirst())
+                .orElse(null);
+    }
+
+    private boolean resolveIsAdmin(Authentication auth) {
+        if (auth == null) {
+            return false;
+        }
+        if (auth.getPrincipal() instanceof User u) {
+            return u.getRole() == Role.ADMIN || u.getRole() == Role.INSTRUCTOR;
+        }
+        return auth.getAuthorities().stream().anyMatch(a -> {
+            String r = a.getAuthority();
+            return "ROLE_ADMIN".equals(r) || "ADMIN".equals(r)
+                    || "ROLE_INSTRUCTOR".equals(r) || "INSTRUCTOR".equals(r);
+        });
+    }
+
+    private String resolveUsername(Authentication auth) {
+        if (auth == null) {
+            return null;
+        }
+        if (auth.getPrincipal() instanceof User u) {
+            return u.getUsername() != null ? u.getUsername() : u.getEmail();
+        }
+        return auth.getName();
+    }
+
+    private UUID resolveStudentId(Authentication auth, String username) {
+        if (auth == null) {
+            return null;
+        }
+        if (auth.getPrincipal() instanceof User u && u.getId() != null) {
+            return studentRepository.findByUserId(u.getId()).map(Student::getId).orElse(null);
+        }
+        if (username != null && !username.isBlank()) {
+            return userRepository.findByUsername(username)
+                    .or(() -> userRepository.findByEmail(username))
+                    .flatMap(u -> studentRepository.findByUserId(u.getId()))
+                    .map(Student::getId)
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    private <T> T runInTransaction(Supplier<T> supplier) {
+        if (transactionTemplate != null) {
+            return transactionTemplate.execute(status -> supplier.get());
+        }
+        return supplier.get();
+    }
+
+    private int mapExamScoreFallback(int examScore) {
+        if (examScore >= 2 && examScore <= 5) {
+            return examScore;
+        }
+        if (examScore < 50) {
+            return 2;
+        } else if (examScore < 70) {
+            return 3;
+        } else if (examScore < 85) {
+            return 4;
+        }
+        return 5;
     }
 
     private double roundToTwoDecimals(double value) {

@@ -194,7 +194,7 @@ export const GradebookView = ({
         kt3: parseNum(d.kt3),
         kt4: parseNum(d.kt4),
         token: d.token,
-        examScore: examInt && examInt >= 2 && examInt <= 5 ? examInt : 0,
+        examScore: examInt != null && Number.isFinite(examInt) && examInt >= 0 && examInt <= 100 ? examInt : null,
       });
 
       setRows((curr) =>
@@ -584,6 +584,9 @@ export const GradebookView = ({
                   >
                     Успеваемость
                   </th>
+                  <th style={cellStyle} title="Оценка или балл за добровольный экзамен (2–5 или 0–100)">
+                    Экзамен
+                  </th>
                   <th style={{ ...cellStyle, fontWeight: 700 }}>Оценка</th>
                   {editable && <th style={cellStyle}>Действия</th>}
                 </tr>
@@ -593,7 +596,7 @@ export const GradebookView = ({
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={editable ? 23 : 22}
+                      colSpan={editable ? 24 : 23}
                       style={{ ...cellStyle, padding: "2rem", textAlign: "center" }}
                     >
                       Нет студентов для отображения. Импортируйте список студентов или выберите другую группу.
@@ -818,6 +821,28 @@ export const GradebookView = ({
                         </td>
 
                         <td style={cellStyle}>
+                          {editable && draft ? (
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              style={{ ...compactInputStyle, width: 52 }}
+                              value={draft.examScore}
+                              placeholder="—"
+                              title="Оценка за экзамен (2–5 или 0–100)"
+                              onChange={(e) =>
+                                updateDraftField(row.studentId, (prev) => ({
+                                  ...prev,
+                                  examScore: e.target.value,
+                                }))
+                              }
+                            />
+                          ) : (
+                            row.examScore != null && row.examScore > 0 ? row.examScore : "—"
+                          )}
+                        </td>
+
+                        <td style={cellStyle}>
                           {renderGradeBadge(row.grade, row.isEligible)}
                         </td>
 
@@ -879,6 +904,7 @@ export const GradebookView = ({
                   <td style={{ ...cellStyle, background: "rgba(16, 185, 129, 0.2)" }}>
                     100,00
                   </td>
+                  <td style={cellStyle}>5</td>
                   <td style={cellStyle}>5</td>
                   {editable && <td style={cellStyle}></td>}
                 </tr>

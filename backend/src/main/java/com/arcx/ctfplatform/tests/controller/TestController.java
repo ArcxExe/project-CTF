@@ -36,8 +36,18 @@ public class TestController {
     }
 
     @GetMapping("/{testId}/challenges")
-    public ResponseEntity<List<CtfTaskResponse>> getChallengesForTest(@PathVariable UUID testId) {
-        return ResponseEntity.ok(testService.getChallengesForTest(testId));
+    public ResponseEntity<List<CtfTaskResponse>> getChallengesForTest(
+            @PathVariable UUID testId,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(testService.getChallengesForTestForCaller(testId, user));
+    }
+
+    public ResponseEntity<List<CtfTaskResponse>> getChallengesForTest(UUID testId) {
+        return getChallengesForTest(testId, null);
+    }
+
+    public ResponseEntity<List<CtfTaskResponse>> getTestChallenges(UUID testId) {
+        return getChallengesForTest(testId, null);
     }
 
     @PostMapping("/{testId}/challenges/{challengeId}/submit")

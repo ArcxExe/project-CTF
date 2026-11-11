@@ -177,6 +177,15 @@ export const adminTestsApi = {
     return response.map(toTest);
   },
 
+  async getById(testId: string): Promise<CtfTest> {
+    const all = await this.getAll();
+    const found = all.find((t) => t.id === testId);
+    if (!found) {
+      throw new Error(`Test with id ${testId} not found`);
+    }
+    return found;
+  },
+
   async create(payload: CtfTestPayload): Promise<CtfTest> {
     const response = await apiRequest<BackendTestResponse>("/api/admin/tests", {
       method: "POST",
@@ -191,18 +200,18 @@ export const adminTestsApi = {
   },
 
   async addChallenge(testId: string, challengeId: string): Promise<CtfTest> {
-    const response = await apiRequest<BackendTestResponse>(`/api/admin/tests/${testId}/challenges/${challengeId}`, {
+    await apiRequest<void>(`/api/admin/tests/${testId}/challenges/${challengeId}`, {
       method: "POST",
       body: JSON.stringify({}),
     });
-    return toTest(response);
+    return this.getById(testId);
   },
 
   async removeChallenge(testId: string, challengeId: string): Promise<CtfTest> {
-    const response = await apiRequest<BackendTestResponse>(`/api/admin/tests/${testId}/challenges/${challengeId}`, {
+    await apiRequest<void>(`/api/admin/tests/${testId}/challenges/${challengeId}`, {
       method: "DELETE",
     });
-    return toTest(response);
+    return this.getById(testId);
   },
 
   async update(id: string, payload: CtfTestPayload): Promise<CtfTest> {
@@ -277,9 +286,17 @@ export const adminTestsApi = {
   },
 
   async addOption(questionId: string, payload: { optionText: string, isCorrect: boolean, sequenceOrder?: number }): Promise<QuizOption> {
+    const body: Record<string, any> = {
+      optionText: payload.optionText,
+      isCorrect: payload.isCorrect,
+      correct: payload.isCorrect,
+    };
+    if (payload.sequenceOrder !== undefined) {
+      body.sequenceOrder = payload.sequenceOrder;
+    }
     const response = await apiRequest<any>(`/api/admin/quizzes/questions/${questionId}/options`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     return {
       id: response.id,
@@ -293,7 +310,10 @@ export const adminTestsApi = {
   async updateOption(id: string, payload: Partial<QuizOption>): Promise<QuizOption> {
     const body: any = {};
     if (payload.text !== undefined) body.optionText = payload.text;
-    if (payload.isCorrect !== undefined) body.correct = payload.isCorrect;
+    if (payload.isCorrect !== undefined) {
+      body.isCorrect = payload.isCorrect;
+      body.correct = payload.isCorrect;
+    }
     if (payload.sequenceOrder !== undefined) body.sequenceOrder = payload.sequenceOrder;
     if (payload.questionId !== undefined) body.questionId = payload.questionId;
 
