@@ -296,9 +296,16 @@ public class AcademicResetService {
         }
     }
 
+    private static final UUID DEMO_STUDENT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+
     private boolean isProtectedUser(User user) {
         if (user == null) {
             return false;
+        }
+        if (DEMO_STUDENT_USER_ID.equals(user.getId())
+                || "student@ctf.local".equalsIgnoreCase(user.getEmail())
+                || "student".equalsIgnoreCase(user.getUsername())) {
+            return true;
         }
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.INSTRUCTOR) {
             return true;

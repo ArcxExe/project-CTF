@@ -251,7 +251,7 @@ export const StudentsPage = () => {
   const filteredStudents = useMemo(
     () =>
       students.filter((student) => {
-        const matchesSearch = [student.fullName, student.group, student.stream, student.nickname]
+        const matchesSearch = [student.fullName, student.group, student.stream, student.nickname, student.studentCode]
           .join(" ")
           .toLowerCase()
           .includes(search.toLowerCase());
@@ -495,6 +495,7 @@ export const StudentsPage = () => {
             <DataTable
               columns={[
                 { key: "fullName", title: "ФИО" },
+                { key: "studentCode", title: "Код / Токен", render: (s) => s.studentCode || "—" },
                 { key: "nickname", title: "Ник" },
                 { key: "email", title: "Email" },
                 { key: "group", title: "Группа" },
@@ -518,7 +519,7 @@ export const StudentsPage = () => {
           <div style={{flex: 1}}>
             <Input
               label="Поиск"
-              placeholder="ФИО, группа, поток, ник"
+              placeholder="ФИО, код, группа, поток, ник"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -538,6 +539,7 @@ export const StudentsPage = () => {
       <DataTable
         columns={[
           { key: "fullName", title: "ФИО" },
+          { key: "studentCode", title: "Код / Токен", render: (student) => student.studentCode || "—" },
           { key: "pairNumber", title: "Пара", render: (student) => student.pairNumber ?? "—" },
           { key: "nickname", title: "Ник" },
           { key: "group", title: "Группа" },
@@ -557,6 +559,7 @@ export const StudentsPage = () => {
                     onChange={(e) => handleUpdateStatus(student.id, e.target.value)}
                   >
                     <option value="active">Активен</option>
+                    <option value="pending_binding_verification">Ожидает подтверждения</option>
                     <option value="blocked">Заблокирован</option>
                     <option value="out_of_rating">Вне рейтинга</option>
                     <option value="disqualified">Дисквалифицирован</option>

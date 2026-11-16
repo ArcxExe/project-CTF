@@ -187,6 +187,11 @@ public class CompetitionService {
         if (resp == null) {
             return null;
         }
+        List<com.arcx.ctfplatform.challenges.dto.CtfTaskResponse> visibleTasks = resp.tasks() != null
+                ? resp.tasks().stream()
+                    .filter(t -> t != null && !"RESERVE".equalsIgnoreCase(t.pool()))
+                    .toList()
+                : Collections.emptyList();
         return new CompetitionResponse(
                 resp.id(),
                 resp.title(),
@@ -198,7 +203,7 @@ public class CompetitionService {
                 resp.sumTestPoints(),
                 resp.leaderboardHidden(),
                 Collections.emptyList(),
-                resp.tasks()
+                visibleTasks
         );
     }
 

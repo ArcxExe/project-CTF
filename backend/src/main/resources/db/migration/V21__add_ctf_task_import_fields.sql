@@ -1,0 +1,10 @@
+ALTER TABLE ctf_tasks
+    ADD COLUMN IF NOT EXISTS task_code VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS bank_id VARCHAR(50) DEFAULT 'GLOBAL',
+    ADD COLUMN IF NOT EXISTS pool VARCHAR(30) DEFAULT 'MAIN',
+    ADD COLUMN IF NOT EXISTS wave INTEGER,
+    ADD COLUMN IF NOT EXISTS solution_internal TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ctf_tasks_task_code
+    ON ctf_tasks (LOWER(task_code))
+    WHERE task_code IS NOT NULL;

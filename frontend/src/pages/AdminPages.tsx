@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { authTokenStorage } from "@/shared/api/client";
 import { adminChallengesApi } from "@/shared/api/services/challenges";
-import type { Challenge } from "@/shared/api/services/challenges";
+import type { Challenge, TaskImportResultDto } from "@/shared/api/services/challenges";
 import { adminCompetitionsApi } from "@/shared/api/services/competitions";
 import { adminPromoCodesApi } from "@/shared/api/services/promoCodes";
 import type { PromoCode } from "@/shared/api/services/promoCodes";
@@ -41,32 +41,55 @@ export const testStatusLabels: Record<CtfTest["status"], string> = {
 
 const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString("ru-RU") : "—");
 
+const emptyTaskForm = {
+  taskCode: "",
+  title: "",
+  description: "",
+  baseScore: "100",
+  flag: "",
+  category: "",
+  difficulty: "easy",
+  isFirstBloodOnly: false,
+  bankId: "GLOBAL",
+  pool: "MAIN",
+  wave: "",
+  artifactUrl: "",
+  solutionInternal: "",
+};
+
 const AdminTasksManagerPage = () => {
   const { push } = useToastStore();
   const [tasks, setTasks] = useState<Challenge[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [poolFilter, setPoolFilter] = useState("");
+  const [bankFilter, setBankFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Challenge | null>(null);
   const [previousFlag, setPreviousFlag] = useState<string>("");
-  const [form, setForm] = useState({
-    title: "",
-    description: "",
-    baseScore: "100",
-    flag: "",
-    category: "",
-    difficulty: "easy",
-    isFirstBloodOnly: false,
-  });
+  const [form, setForm] = useState(emptyTaskForm);
+
+  // Bulk Import Modal state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importCompetitionId, setImportCompetitionId] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<TaskImportResultDto | null>(null);
+
+  const loadTasksData = async () => {
+    const [challengeRows, competitionRows] = await Promise.all([
+      adminChallengesApi.getAll(),
+      adminCompetitionsApi.getAll(),
+    ]);
+    setTasks(challengeRows);
+    setCompetitions(competitionRows);
+  };
 
   useEffect(() => {
-    void Promise.all([adminChallengesApi.getAll(), adminCompetitionsApi.getAll()])
-      .then(([challengeRows, competitionRows]) => {
-        setTasks(challengeRows);
-        setCompetitions(competitionRows);
-      })
+    void loadTasksData()
       .catch((error: unknown) => {
         push({
           title: error instanceof Error ? error.message : "Не удалось загрузить задания",
@@ -76,15 +99,40 @@ const AdminTasksManagerPage = () => {
       .finally(() => setIsLoading(false));
   }, [push]);
 
+  const categories = useMemo(
+    () => Array.from(new Set(tasks.map((t) => t.category).filter((c): c is string => Boolean(c)))).sort(),
+    [tasks],
+  );
+
+  const banks = useMemo(
+    () =>
+      Array.from(
+        new Set(["GLOBAL", "G1", "G2", "G3", ...tasks.map((t) => t.bankId).filter((b): b is string => Boolean(b))]),
+      ),
+    [tasks],
+  );
+
   const filteredTasks = useMemo(
     () =>
-      tasks.filter((task) =>
-        [task.title, task.description, task.category, task.difficulty]
+      tasks.filter((task) => {
+        const matchesSearch = [
+          task.taskCode,
+          task.title,
+          task.description,
+          task.category,
+          task.difficulty,
+          task.bankId,
+          task.pool,
+        ]
           .join(" ")
           .toLowerCase()
-          .includes(search.toLowerCase()),
-      ),
-    [search, tasks],
+          .includes(search.toLowerCase());
+        const matchesCategory = categoryFilter ? task.category === categoryFilter : true;
+        const matchesPool = poolFilter ? (task.pool || "MAIN").toUpperCase() === poolFilter : true;
+        const matchesBank = bankFilter ? (task.bankId || "GLOBAL").toUpperCase() === bankFilter : true;
+        return matchesSearch && matchesCategory && matchesPool && matchesBank;
+      }),
+    [search, categoryFilter, poolFilter, bankFilter, tasks],
   );
 
   const handleCreate = async (event: FormEvent) => {
@@ -92,7 +140,14 @@ const AdminTasksManagerPage = () => {
     setIsSaving(true);
 
     try {
+      const parsedWave = form.wave.trim() ? Number(form.wave.trim()) : undefined;
+      const attachments = form.artifactUrl
+        .split(/[;\n]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
       const payload = {
+        taskCode: form.taskCode.trim() || undefined,
         title: form.title,
         description: form.description || undefined,
         category: form.category || undefined,
@@ -100,6 +155,11 @@ const AdminTasksManagerPage = () => {
         baseScore: Number(form.baseScore),
         flag: form.flag,
         isFirstBloodOnly: form.isFirstBloodOnly,
+        bankId: form.bankId.trim() || "GLOBAL",
+        pool: form.pool || "MAIN",
+        wave: parsedWave && Number.isFinite(parsedWave) ? parsedWave : undefined,
+        attachments,
+        solutionInternal: form.solutionInternal || undefined,
       };
 
       if (editingTask) {
@@ -112,15 +172,7 @@ const AdminTasksManagerPage = () => {
         push({ title: "Задание создано", variant: "success" });
       }
 
-      setForm({
-        title: "",
-        description: "",
-        baseScore: "100",
-        flag: "",
-        category: "",
-        difficulty: "easy",
-        isFirstBloodOnly: false,
-      });
+      setForm(emptyTaskForm);
       setEditingTask(null);
       setPreviousFlag("");
       setIsModalOpen(false);
@@ -137,6 +189,7 @@ const AdminTasksManagerPage = () => {
   const handleEditClick = async (task: Challenge) => {
     setEditingTask(task);
     setForm({
+      taskCode: task.taskCode || "",
       title: task.title,
       description: task.description || "",
       baseScore: String(task.baseScore),
@@ -144,6 +197,11 @@ const AdminTasksManagerPage = () => {
       category: task.category || "",
       difficulty: task.difficulty || "easy",
       isFirstBloodOnly: Boolean(task.isFirstBloodOnly),
+      bankId: task.bankId || "GLOBAL",
+      pool: task.pool || "MAIN",
+      wave: task.wave != null ? String(task.wave) : "",
+      artifactUrl: (task.attachments || []).join("; "),
+      solutionInternal: "",
     });
     setPreviousFlag("");
     setIsModalOpen(true);
@@ -151,7 +209,11 @@ const AdminTasksManagerPage = () => {
     try {
       const response = await adminChallengesApi.getFlag(task.id);
       setPreviousFlag(response.flag);
-      setForm((current) => ({ ...current, flag: response.flag }));
+      setForm((current) => ({
+        ...current,
+        flag: response.flag,
+        solutionInternal: response.solutionInternal ?? "",
+      }));
     } catch (err) {
       console.error("Failed to load task flag", err);
     }
@@ -174,47 +236,124 @@ const AdminTasksManagerPage = () => {
     }
   };
 
+  const handleRunImport = async (dryRun: boolean) => {
+    if (!importFile) {
+      push({ title: "Выберите файл .xlsx или .csv", variant: "error" });
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const res = await adminChallengesApi.importTasks(importFile, {
+        dryRun,
+        competitionId: importCompetitionId || undefined,
+      });
+      setImportResult(res);
+
+      if (res.errors.length > 0) {
+        push({
+          title: `Найдено ошибок: ${res.errors.length}. Импорт не выполнен.`,
+          variant: "error",
+        });
+      } else if (dryRun) {
+        push({
+          title: `Проверка завершена: новых ${res.createdCount}, обновлений ${res.updatedCount}`,
+          variant: "success",
+        });
+      } else {
+        push({
+          title: `Импорт завершён: добавлено ${res.createdCount}, обновлено ${res.updatedCount}`,
+          variant: "success",
+        });
+        await loadTasksData();
+      }
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось выполнить импорт",
+        variant: "error",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      await adminChallengesApi.downloadTemplate();
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось скачать шаблон",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleExportTasks = async () => {
+    try {
+      await adminChallengesApi.exportTasks();
+    } catch (error) {
+      push({
+        title: error instanceof Error ? error.message : "Не удалось экспортировать задания",
+        variant: "error",
+      });
+    }
+  };
+
   if (isLoading) {
     return <Loader label="Загружаем задания..." />;
   }
+
+  const mainPoolTasksCount = tasks.filter((t) => (t.pool || "MAIN").toUpperCase() !== "RESERVE").length;
+  const reservePoolTasksCount = tasks.filter((t) => (t.pool || "MAIN").toUpperCase() === "RESERVE").length;
 
   return (
     <div className="page-stack">
       <PageHeader
         title="Задания"
-        subtitle="Банк CTF-заданий из backend API: создание, публикация и удаление."
+        subtitle="Банк CTF-заданий из backend API: создание, массовый импорт (.xlsx / .csv), экспорт и публикация."
         actions={
-          <Button
-            onClick={() => {
-              setEditingTask(null);
-              setForm({
-                title: "",
-                description: "",
-                baseScore: "100",
-                flag: "",
-                category: "",
-                difficulty: "easy",
-                isFirstBloodOnly: false,
-              });
-              setIsModalOpen(true);
-            }}
-          >
-            Создать задание
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <Button variant="secondary" onClick={() => void handleDownloadTemplate()}>
+              Шаблон (.xlsx)
+            </Button>
+            <Button variant="secondary" onClick={() => void handleExportTasks()}>
+              Экспорт (.xlsx)
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setImportFile(null);
+                setImportResult(null);
+                setIsImportModalOpen(true);
+              }}
+            >
+              Импорт (.xlsx / .csv)
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingTask(null);
+                setForm(emptyTaskForm);
+                setIsModalOpen(true);
+              }}
+            >
+              Создать задание
+            </Button>
+          </div>
         }
       />
 
       <div className="metric-grid">
         <Card>
           <div className="metric-card">
-            <span className="muted">Всего</span>
+            <span className="muted">Всего в банке</span>
             <strong>{tasks.length}</strong>
           </div>
         </Card>
         <Card>
           <div className="metric-card">
-            <span className="muted">Опубликовано</span>
-            <strong>{tasks.length}</strong>
+            <span className="muted">Основной пул (MAIN / RESERVE)</span>
+            <strong>
+              {mainPoolTasksCount} / {reservePoolTasksCount}
+            </strong>
           </div>
         </Card>
         <Card>
@@ -226,16 +365,57 @@ const AdminTasksManagerPage = () => {
       </div>
 
       <Card>
-        <Input
-          label="Поиск"
-          placeholder="Название, категория, описание"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
+        <div className="admin-toolbar" style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <div style={{ flex: 2, minWidth: "220px" }}>
+            <Input
+              label="Поиск"
+              placeholder="Код (IR-013), название, категория, описание"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+          <div style={{ minWidth: "160px" }}>
+            <label className="ui-field">
+              <span className="ui-field__label">Категория</span>
+              <select className="ui-input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                <option value="">Все категории</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div style={{ minWidth: "130px" }}>
+            <label className="ui-field">
+              <span className="ui-field__label">Пул</span>
+              <select className="ui-input" value={poolFilter} onChange={(e) => setPoolFilter(e.target.value)}>
+                <option value="">Все пулы</option>
+                <option value="MAIN">MAIN</option>
+                <option value="RESERVE">RESERVE</option>
+              </select>
+            </label>
+          </div>
+          <div style={{ minWidth: "130px" }}>
+            <label className="ui-field">
+              <span className="ui-field__label">Банк</span>
+              <select className="ui-input" value={bankFilter} onChange={(e) => setBankFilter(e.target.value)}>
+                <option value="">Все банки</option>
+                {banks.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
       </Card>
 
       <DataTable
         columns={[
+          { key: "taskCode", title: "Код", render: (task) => task.taskCode || "—" },
           { key: "title", title: "Задание" },
           { key: "category", title: "Категория", render: (task) => task.category || "—" },
           {
@@ -251,6 +431,11 @@ const AdminTasksManagerPage = () => {
             },
           },
           { key: "baseScore", title: "Баллы", render: (task) => task.baseScore },
+          {
+            key: "pool",
+            title: "Пул / Банк",
+            render: (task) => `${task.pool || "MAIN"} · ${task.bankId || "GLOBAL"}`,
+          },
           {
             key: "isFirstBloodOnly",
             title: "Режим",
@@ -283,35 +468,143 @@ const AdminTasksManagerPage = () => {
       />
 
       <Modal
+        open={isImportModalOpen}
+        title="Массовый импорт заданий (.xlsx, .csv)"
+        onClose={() => setIsImportModalOpen(false)}
+      >
+        <div className="page-stack">
+          <p className="muted" style={{ margin: 0, fontSize: "0.88rem" }}>
+            Поддерживаются таблицы Excel (<code>.xlsx</code>) и <code>.csv</code> (UTF-8) с заголовками:{" "}
+            <code>task_id</code>, <code>title</code>, <code>description</code>, <code>category</code>,{" "}
+            <code>difficulty</code>, <code>points</code>, <code>first_blood_only</code>, <code>flag</code>,{" "}
+            <code>bank_id</code>, <code>pool</code>, <code>wave</code>, <code>artifact_url</code>,{" "}
+            <code>solution_internal</code>. Повторный импорт с тем же <code>task_id</code> обновляет задание без дублей.
+            Нижние сводные таблицы плана автоматически игнорируются.
+          </p>
+
+          <label className="ui-field">
+            <span className="ui-field__label">Автоматически привязать пул MAIN к соревнованию (опционально)</span>
+            <select
+              className="ui-input"
+              value={importCompetitionId}
+              onChange={(e) => setImportCompetitionId(e.target.value)}
+            >
+              <option value="">Не привязывать (только загрузить в банк)</option>
+              {competitions.map((comp) => (
+                <option key={comp.id} value={comp.id}>
+                  {comp.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="ui-field">
+            <span className="ui-field__label">Файл таблицы (.xlsx или .csv)</span>
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              className="ui-input"
+              onChange={(e) => {
+                setImportFile(e.target.files?.[0] ?? null);
+                setImportResult(null);
+              }}
+            />
+          </label>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", flexWrap: "wrap" }}>
+            <Button variant="secondary" onClick={() => setIsImportModalOpen(false)}>
+              Закрыть
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!importFile || isImporting}
+              onClick={() => void handleRunImport(true)}
+            >
+              {isImporting ? "Проверяем..." : "Проверить (Dry-Run)"}
+            </Button>
+            <Button disabled={!importFile || isImporting} onClick={() => void handleRunImport(false)}>
+              {isImporting ? "Импортируем..." : "Импортировать"}
+            </Button>
+          </div>
+
+          {importResult && (
+            <Card>
+              <div className="page-stack" style={{ gap: "0.5rem", fontSize: "0.9rem" }}>
+                <strong>
+                  {importResult.dryRun ? "Результат проверки (Dry-Run)" : "Результат импорта"}
+                </strong>
+                <div>
+                  Новых: <strong>{importResult.createdCount}</strong> · Обновлено:{" "}
+                  <strong>{importResult.updatedCount}</strong> · MAIN: <strong>{importResult.mainPoolCount}</strong> ·
+                  RESERVE: <strong>{importResult.reservePoolCount}</strong> · Сумма баллов:{" "}
+                  <strong>{importResult.totalPoints}</strong> · Пропущено строк:{" "}
+                  <strong>{importResult.skippedRows}</strong>
+                  {importCompetitionId && (
+                    <>
+                      {" "}
+                      · Привязано к соревнованию: <strong>{importResult.linkedToCompetitionCount}</strong>
+                    </>
+                  )}
+                </div>
+
+                {importResult.errors.length > 0 && (
+                  <div style={{ color: "var(--danger)" }}>
+                    <strong>Ошибки ({importResult.errors.length}):</strong>
+                    <ul className="page-list" style={{ maxHeight: "140px", overflowY: "auto", marginTop: "0.25rem" }}>
+                      {importResult.errors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {importResult.warnings.length > 0 && (
+                  <div style={{ color: "#f59e0b" }}>
+                    <strong>Предупреждения ({importResult.warnings.length}):</strong>
+                    <ul className="page-list" style={{ maxHeight: "140px", overflowY: "auto", marginTop: "0.25rem" }}>
+                      {importResult.warnings.map((warn, idx) => (
+                        <li key={idx}>{warn}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
         open={isModalOpen}
         title={editingTask ? "Редактировать задание" : "Новое задание"}
         onClose={() => {
           setIsModalOpen(false);
           setEditingTask(null);
           setPreviousFlag("");
-          setForm({
-            title: "",
-            description: "",
-            baseScore: "100",
-            flag: "",
-            category: "",
-            difficulty: "easy",
-            isFirstBloodOnly: false,
-          });
+          setForm(emptyTaskForm);
         }}
       >
         <form className="admin-form" onSubmit={handleCreate}>
-          <Input
-            label="Название"
-            value={form.title}
-            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-            required
-          />
+          <div className="admin-form-grid">
+            <Input
+              label="Код задания (task_id)"
+              placeholder="IR-013"
+              value={form.taskCode}
+              onChange={(event) => setForm((current) => ({ ...current, taskCode: event.target.value }))}
+            />
+            <Input
+              label="Название"
+              value={form.title}
+              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              required
+            />
+          </div>
 
           <label className="ui-field">
             <span className="ui-field__label">Описание</span>
             <textarea
               className="ui-input ui-textarea"
+              rows={6}
               value={form.description}
               onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
             />
@@ -320,7 +613,7 @@ const AdminTasksManagerPage = () => {
           <div className="admin-form-grid">
             <Input
               label="Категория"
-              placeholder="Web, Crypto, Pwn, Reverse..."
+              placeholder="Linux, Recon, Auth, Network, Web, Crypto, Containers, Forensics"
               value={form.category}
               onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
             />
@@ -358,6 +651,40 @@ const AdminTasksManagerPage = () => {
             </label>
           </div>
 
+          <div className="admin-form-grid">
+            <Input
+              label="Банк (bank_id)"
+              placeholder="GLOBAL"
+              value={form.bankId}
+              onChange={(event) => setForm((current) => ({ ...current, bankId: event.target.value }))}
+            />
+            <label className="ui-field">
+              <span className="ui-field__label">Пул (pool)</span>
+              <select
+                className="ui-input"
+                value={form.pool}
+                onChange={(event) => setForm((current) => ({ ...current, pool: event.target.value }))}
+              >
+                <option value="MAIN">MAIN (Основной)</option>
+                <option value="RESERVE">RESERVE (Резерв, скрыт от студентов)</option>
+              </select>
+            </label>
+            <Input
+              label="Волна (wave)"
+              type="number"
+              min={1}
+              value={form.wave}
+              onChange={(event) => setForm((current) => ({ ...current, wave: event.target.value }))}
+            />
+          </div>
+
+          <Input
+            label="Ссылка на артефакт (artifact_url)"
+            placeholder="https://... (несколько через ;)"
+            value={form.artifactUrl}
+            onChange={(event) => setForm((current) => ({ ...current, artifactUrl: event.target.value }))}
+          />
+
           <Input
             label="Флаг"
             placeholder={editingTask ? "Введите флаг повторно для сохранения изменений" : "CTF{example}"}
@@ -370,6 +697,16 @@ const AdminTasksManagerPage = () => {
               Предыдущий ответ: <strong style={{ color: "var(--primary)" }}>{previousFlag}</strong>
             </div>
           )}
+
+          <label className="ui-field">
+            <span className="ui-field__label">Внутренний разбор решения (solution_internal, скрыто от студентов)</span>
+            <textarea
+              className="ui-input ui-textarea"
+              rows={2}
+              value={form.solutionInternal}
+              onChange={(event) => setForm((current) => ({ ...current, solutionInternal: event.target.value }))}
+            />
+          </label>
 
           <Button type="submit" disabled={isSaving}>
             {isSaving ? "Сохраняем..." : editingTask ? "Сохранить" : "Создать"}

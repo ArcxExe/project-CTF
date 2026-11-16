@@ -18,4 +18,7 @@ public interface CtfTaskRepository extends JpaRepository<CtfTask, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM CtfTask c WHERE c.id = :id")
     Optional<CtfTask> findByIdWithLock(@Param("id") UUID id);
+
+    @Query("SELECT c FROM CtfTask c WHERE LOWER(c.taskCode) = LOWER(:taskCode)")
+    Optional<CtfTask> findByTaskCodeIgnoreCase(@Param("taskCode") String taskCode);
 }

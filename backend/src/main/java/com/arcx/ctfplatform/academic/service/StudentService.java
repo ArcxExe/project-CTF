@@ -22,11 +22,14 @@ import com.arcx.ctfplatform.common.config.IMapping;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
 
+import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 
 @Service
 public class StudentService {
+
+    private static final UUID DEMO_STUDENT_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
     private final StudentRepository studentRepository;
     private final AcademicGroupRepository groupRepository;
@@ -217,9 +220,21 @@ public class StudentService {
             promoCodeRepository.recalculateUsedCounts();
         }
         
-        // Delete user if exists
-        if (userId != null) {
+        // Delete user if exists (preserve demo/privileged accounts)
+        if (userId != null && !isProtectedUserId(userId)) {
             userRepository.deleteById(userId);
         }
+    }
+
+    private boolean isProtectedUserId(UUID userId) {
+        if (DEMO_STUDENT_USER_ID.equals(userId)) {
+            return true;
+        }
+        return userRepository.findById(userId)
+                .map(u -> u.getRole() == Role.ADMIN
+                        || u.getRole() == Role.INSTRUCTOR
+                        || "student@ctf.local".equalsIgnoreCase(u.getEmail())
+                        || "student".equalsIgnoreCase(u.getUsername()))
+                .orElse(false);
     }
 }

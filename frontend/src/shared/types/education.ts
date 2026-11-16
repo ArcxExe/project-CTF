@@ -35,7 +35,7 @@ export interface Student {
   /** Student number in the pair (subgroup), null when the student works individually. */
   pairNumber?: number | null;
   laboratoryScore: number;
-  status: "active" | "blocked" | "out_of_rating" | "disqualified";
+  status: "active" | "blocked" | "out_of_rating" | "disqualified" | "pending_binding_verification";
   createdBy?: string;
   createdAt?: ISODateTime;
   updatedAt?: ISODateTime;

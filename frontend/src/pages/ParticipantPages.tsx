@@ -40,11 +40,20 @@ export const RegisterPage = () => {
   const [password, setPassword] = useState("");
 
   if (currentUser) {
-    return <Navigate to="/participant/profile" replace />;
+    const target = currentUser.role === "admin" ? "/admin/dashboard" : "/participant/profile";
+    return <Navigate to={target} replace />;
   }
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+
+    if (password.length < 8) {
+      push({
+        title: "Пароль должен содержать минимум 8 символов",
+        variant: "error",
+      });
+      return;
+    }
 
     try {
       await (
@@ -56,9 +65,9 @@ export const RegisterPage = () => {
         }) => Promise<void>
       )({
         username: username.trim() || undefined,
-        email,
+        email: email.trim(),
         password,
-        studentCode,
+        studentCode: studentCode.trim(),
       });
       push({
         title: "Регистрация выполнена",
@@ -89,10 +98,11 @@ export const RegisterPage = () => {
               required
             />
             <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            <Input label="Шифр студента" value={studentCode} onChange={(event) => setStudentCode(event.target.value)} required />
+            <Input label="Шифр / токен студента" value={studentCode} onChange={(event) => setStudentCode(event.target.value)} required />
             <Input
               label="Пароль"
               type="password"
+              placeholder="Минимум 8 символов"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
@@ -358,7 +368,11 @@ export const ParticipantCtfPage = () => {
               {task.title}
               {isSolved && <span style={{ color: 'var(--success)' }}>✓</span>}
             </h3>
-            <p className="muted">{task.description}</p>
+            <p className="muted">
+              {task.description && task.description.length > 180
+                ? `${task.description.slice(0, 180).trimEnd()}…`
+                : task.description}
+            </p>
           </div>
           <div className="task-card__footer">
             <span>{task.difficulty}</span>
@@ -586,11 +600,29 @@ export const ParticipantTaskPage = () => {
             </div>
             <div>
               <h2>{task.title}</h2>
-              <p className="muted">{task.description}</p>
+              <p className="muted" style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                {task.description}
+              </p>
             </div>
             <div className="hint-box">
               <strong>Материалы</strong>
-              <span>Архив задания, endpoint, история попыток и подсказки появятся здесь.</span>
+              {task.attachments && task.attachments.length > 0 ? (
+                <ul className="page-list">
+                  {task.attachments.map((att, idx) => (
+                    <li key={idx}>
+                      {/^https?:\/\//i.test(att) || att.startsWith("/") ? (
+                        <a href={att} target="_blank" rel="noopener noreferrer">
+                          {att}
+                        </a>
+                      ) : (
+                        <span>{att}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span>Дополнительные файлы не прикреплены.</span>
+              )}
             </div>
           </div>
         </Card>

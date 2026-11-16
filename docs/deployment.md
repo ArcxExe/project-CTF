@@ -110,6 +110,18 @@ cp backend/build/libs/ctf-platform-backend-0.1.0-SNAPSHOT.jar /tmp/ctf-deploy/ba
 cp frontend/Dockerfile.runtime frontend/nginx.conf /tmp/ctf-deploy/frontend/
 cp -r frontend/dist /tmp/ctf-deploy/frontend/
 
+# Создаем базовый .env, если на сервере его еще нет (содержит обязательный JWT_SECRET)
+cat << 'EOF' > /tmp/ctf-deploy/.env.example
+SPRING_PROFILES_ACTIVE=prod
+DB_NAME=ctf_platform
+DB_USER=ctf_user
+DB_PASSWORD=ctf_password
+JWT_SECRET=Y3RmLWRldi1zZWNyZXQta2V5LWNoYW5nZS1tZS1iZWZvcmUtcHJvZA==
+JWT_ACCESS_TOKEN_TTL=3600000
+BACKEND_PORT=8080
+FRONTEND_PORT=3000
+EOF
+
 # Архивация и отправка по SCP
 tar -czf /tmp/ctf-deploy.tar.gz -C /tmp/ctf-deploy .
 scp /tmp/ctf-deploy.tar.gz root@46.17.46.87:/opt/project-ctf/deploy.tar.gz
@@ -117,7 +129,7 @@ scp /tmp/ctf-deploy.tar.gz root@46.17.46.87:/opt/project-ctf/deploy.tar.gz
 
 ### Шаг 3. Распакуйте и перезапустите контейнеры на сервере
 ```bash
-ssh root@46.17.46.87 "cd /opt/project-ctf && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && docker compose up -d --build"
+ssh root@46.17.46.87 "cd /opt/project-ctf && tar -xzf deploy.tar.gz && rm -f deploy.tar.gz && [ ! -f .env ] && cp .env.example .env; docker compose up -d --build"
 ```
 *(База данных PostgreSQL хранится в Docker-томе `postgres_data`, поэтому при обычном `docker compose up -d --build` все данные сохраняются, а новые миграции Flyway накатываются автоматически).*
 

@@ -21,6 +21,12 @@ import com.arcx.ctfplatform.academic.entity.Student;
 public interface StudentRepository extends JpaRepository<Student, UUID> {
     
     Optional<Student> findByStudentCode(String studentCode);
+
+    @Query("SELECT s FROM Student s WHERE LOWER(s.studentCode) = LOWER(:code)")
+    Optional<Student> findByStudentCodeIgnoreCase(@Param("code") String code);
+
+    @Query("SELECT s FROM Student s WHERE s.tokenInfo IS NOT NULL AND LOWER(s.tokenInfo) = LOWER(:token) AND s.userId IS NULL")
+    List<Student> findUnlinkedByTokenInfoIgnoreCase(@Param("token") String token);
     
     Optional<Student> findByUserId(UUID userId);
 

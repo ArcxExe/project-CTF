@@ -10,8 +10,8 @@ import "./pages.css";
 export const LoginPage = () => {
   const { currentUser, login, isLoading } = useAuthStore();
   const { push } = useToastStore();
-  const [identifier, setIdentifier] = useState("admin@ctf.local");
-  const [password, setPassword] = useState("password");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
 
   if (currentUser) {
     const target = currentUser.role === "admin" ? "/admin/dashboard" : "/participant/profile";

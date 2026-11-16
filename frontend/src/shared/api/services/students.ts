@@ -25,6 +25,7 @@ const statusMap: Record<string, Student["status"]> = {
   BLOCKED: "blocked",
   OUT_OF_RATING: "out_of_rating",
   DISQUALIFIED: "disqualified",
+  PENDING_BINDING_VERIFICATION: "pending_binding_verification",
 };
 
 const backendStatusMap: Record<Student["status"], string> = {
@@ -32,6 +33,7 @@ const backendStatusMap: Record<Student["status"], string> = {
   blocked: "BLOCKED",
   out_of_rating: "OUT_OF_RATING",
   disqualified: "DISQUALIFIED",
+  pending_binding_verification: "PENDING_BINDING_VERIFICATION",
 };
 
 const toStudent = (response: BackendStudentResponse): Student => {

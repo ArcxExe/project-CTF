@@ -56,6 +56,8 @@ export const CompetitionsPage = () => {
   const [allTasks, setAllTasks] = useState<Challenge[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [taskSearch, setTaskSearch] = useState("");
+  const [taskPoolFilter, setTaskPoolFilter] = useState("");
+  const [taskBankFilter, setTaskBankFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -91,6 +93,8 @@ export const CompetitionsPage = () => {
     setEditingId(null);
     setSelectedTaskIds([]);
     setTaskSearch("");
+    setTaskPoolFilter("");
+    setTaskBankFilter("");
     setForm(initialForm);
     setIsModalOpen(true);
   };
@@ -99,6 +103,8 @@ export const CompetitionsPage = () => {
     setEditingId(competition.id);
     setSelectedTaskIds(competition.tasks?.map((t) => t.id) || []);
     setTaskSearch("");
+    setTaskPoolFilter("");
+    setTaskBankFilter("");
     setForm({
       title: competition.title,
       description: competition.description || "",
@@ -287,59 +293,118 @@ export const CompetitionsPage = () => {
           </div>
 
           <label className="ui-field">
-            <span className="ui-field__label">Задания CTF (выберите из пула)</span>
-            <div style={{ margin: "0.25rem 0" }}>
+            <span className="ui-field__label">Задания CTF (выберите из пула — выбрано: {selectedTaskIds.length})</span>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.25rem 0" }}>
               <input
                 type="text"
                 className="ui-input"
-                placeholder="Поиск заданий по названию или категории..."
+                placeholder="Поиск по коду, названию или категории..."
                 value={taskSearch}
                 onChange={(e) => setTaskSearch(e.target.value)}
-                style={{ fontSize: "0.85rem", padding: "0.4rem" }}
+                style={{ fontSize: "0.85rem", padding: "0.4rem", flex: 2, minWidth: "180px" }}
               />
+              <select
+                className="ui-input"
+                value={taskPoolFilter}
+                onChange={(e) => setTaskPoolFilter(e.target.value)}
+                style={{ fontSize: "0.85rem", padding: "0.4rem", width: "auto" }}
+              >
+                <option value="">Все пулы</option>
+                <option value="MAIN">MAIN</option>
+                <option value="RESERVE">RESERVE</option>
+              </select>
+              <select
+                className="ui-input"
+                value={taskBankFilter}
+                onChange={(e) => setTaskBankFilter(e.target.value)}
+                style={{ fontSize: "0.85rem", padding: "0.4rem", width: "auto" }}
+              >
+                <option value="">Все банки</option>
+                {Array.from(
+                  new Set(["GLOBAL", "G1", "G2", "G3", ...allTasks.map((t) => t.bankId || "GLOBAL")]),
+                ).map((bank) => (
+                  <option key={bank} value={bank}>
+                    {bank}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="task-checkbox-list" style={{
-              maxHeight: "180px",
-              overflowY: "auto",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              padding: "0.5rem",
-              marginTop: "0.25rem",
-              background: "var(--card-bg)"
-            }}>
-              {allTasks
-                .filter((task) =>
-                  [task.title, task.category]
-                    .join(" ")
-                    .toLowerCase()
-                    .includes(taskSearch.toLowerCase())
-                )
-                .map((task) => {
-                  const isChecked = selectedTaskIds.includes(task.id);
-                  return (
-                    <label key={task.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setSelectedTaskIds((current) =>
-                            checked
-                              ? [...current, task.id]
-                              : current.filter((id) => id !== task.id)
-                          );
-                        }}
-                      />
-                      <span>
-                        {task.title} <span className="muted" style={{ fontSize: "0.8rem" }}>({task.category || "без категории"} · {task.points} pts)</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              {allTasks.length === 0 && (
-                <span className="muted">Нет доступных заданий в пуле</span>
-              )}
-            </div>
+            {(() => {
+              const matchingTasks = allTasks.filter((task) => {
+                const matchesText = [task.taskCode, task.title, task.category]
+                  .join(" ")
+                  .toLowerCase()
+                  .includes(taskSearch.toLowerCase());
+                const matchesPool = taskPoolFilter
+                  ? (task.pool || "MAIN").toUpperCase() === taskPoolFilter
+                  : true;
+                const matchesBank = taskBankFilter
+                  ? (task.bankId || "GLOBAL").toUpperCase() === taskBankFilter
+                  : true;
+                return matchesText && matchesPool && matchesBank;
+              });
+              const matchingMainIds = matchingTasks
+                .filter((t) => (t.pool || "MAIN").toUpperCase() !== "RESERVE")
+                .map((t) => t.id);
+
+              return (
+                <>
+                  <div style={{ display: "flex", gap: "0.5rem", margin: "0.25rem 0", flexWrap: "wrap" }}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        setSelectedTaskIds((current) => Array.from(new Set([...current, ...matchingMainIds])))
+                      }
+                    >
+                      Выбрать все найденные (MAIN: {matchingMainIds.length})
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => setSelectedTaskIds([])}>
+                      Снять выбор
+                    </Button>
+                  </div>
+                  <div className="task-checkbox-list" style={{
+                    maxHeight: "180px",
+                    overflowY: "auto",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    padding: "0.5rem",
+                    marginTop: "0.25rem",
+                    background: "var(--card-bg)"
+                  }}>
+                    {matchingTasks.map((task) => {
+                      const isChecked = selectedTaskIds.includes(task.id);
+                      return (
+                        <label key={task.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setSelectedTaskIds((current) =>
+                                checked
+                                  ? [...current, task.id]
+                                  : current.filter((id) => id !== task.id)
+                              );
+                            }}
+                          />
+                          <span>
+                            {task.taskCode ? `[${task.taskCode}] ` : ""}
+                            {task.title}{" "}
+                            <span className="muted" style={{ fontSize: "0.8rem" }}>
+                              ({task.category || "без категории"} · {task.points} pts · {task.pool || "MAIN"}/{task.bankId || "GLOBAL"})
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {matchingTasks.length === 0 && (
+                      <span className="muted">Нет доступных заданий по фильтру</span>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </label>
 
           <label className="ui-field" style={{ marginTop: "1rem" }}>

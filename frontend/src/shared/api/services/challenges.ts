@@ -1,4 +1,4 @@
-import { apiRequest } from "@/shared/api/client";
+import { apiRequest, authTokenStorage } from "@/shared/api/client";
 
 /**
  * Frontend CTF Task model (formerly Challenge).
@@ -16,6 +16,10 @@ export interface CtfTask {
   createdAt: string;
   taskType?: "FLAG" | "FILE_UPLOAD" | string;
   attachments?: string[];
+  taskCode?: string;
+  bankId?: string;
+  pool?: string;
+  wave?: number;
 }
 
 export type Challenge = CtfTask;
@@ -34,6 +38,11 @@ export interface ChallengePayload {
   flag?: string;
   taskType?: "FLAG" | "FILE_UPLOAD" | string;
   attachments?: string[];
+  taskCode?: string;
+  bankId?: string;
+  pool?: string;
+  wave?: number;
+  solutionInternal?: string;
 }
 
 /** Matches backend CtfTaskResponse (challenges/dto/CtfTaskResponse.java) */
@@ -49,6 +58,23 @@ export interface BackendChallengeResponse {
   createdAt: string;
   taskType?: "FLAG" | "FILE_UPLOAD" | string;
   attachments?: string[];
+  taskCode?: string | null;
+  bankId?: string | null;
+  pool?: string | null;
+  wave?: number | null;
+}
+
+export interface TaskImportResultDto {
+  dryRun: boolean;
+  createdCount: number;
+  updatedCount: number;
+  mainPoolCount: number;
+  reservePoolCount: number;
+  totalPoints: number;
+  skippedRows: number;
+  linkedToCompetitionCount: number;
+  errors: string[];
+  warnings: string[];
 }
 
 export interface SubmitFlagResponse {
@@ -72,6 +98,10 @@ export const toChallenge = (response: BackendChallengeResponse): Challenge => ({
   createdAt: response.createdAt,
   taskType: response.taskType ?? "FLAG",
   attachments: response.attachments ?? [],
+  taskCode: response.taskCode ?? undefined,
+  bankId: response.bankId ?? "GLOBAL",
+  pool: response.pool ?? "MAIN",
+  wave: response.wave ?? undefined,
 });
 
 const toBackendPayload = (payload: ChallengePayload) => ({
@@ -85,7 +115,34 @@ const toBackendPayload = (payload: ChallengePayload) => ({
   flag: payload.flag,
   taskType: payload.taskType ?? "FLAG",
   attachments: payload.attachments,
+  taskCode: payload.taskCode,
+  bankId: payload.bankId,
+  pool: payload.pool,
+  wave: payload.wave,
+  solutionInternal: payload.solutionInternal,
 });
+
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
+
+async function downloadChallengeFile(url: string, fallbackFilename: string): Promise<void> {
+  const token = authTokenStorage.get();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const response = await fetch(`${API_BASE_URL}${url}`, { headers });
+  if (!response.ok) {
+    throw new Error(`Ошибка выгрузки файла: ${response.statusText}`);
+  }
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = window.URL.createObjectURL(blob);
+  link.download = fallbackFilename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(link.href);
+}
 
 /**
  * Public Challenges API — GET endpoints available to all authenticated users.
@@ -159,8 +216,36 @@ export const adminChallengesApi = {
     return toChallenge(response);
   },
 
-  async getFlag(id: string): Promise<{ flag: string }> {
-    return await apiRequest<{ flag: string }>(`/api/challenges/${id}/flag`);
+  async getFlag(id: string): Promise<{ flag: string; solutionInternal?: string }> {
+    return await apiRequest<{ flag: string; solutionInternal?: string }>(`/api/challenges/${id}/flag`);
+  },
+
+  async importTasks(
+    file: File,
+    options?: { dryRun?: boolean; competitionId?: string },
+  ): Promise<TaskImportResultDto> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const params = new URLSearchParams();
+    if (options?.dryRun) {
+      params.set("dryRun", "true");
+    }
+    if (options?.competitionId) {
+      params.set("competitionId", options.competitionId);
+    }
+    const qs = params.toString();
+    return await apiRequest<TaskImportResultDto>(`/api/challenges/import${qs ? `?${qs}` : ""}`, {
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  async downloadTemplate(): Promise<void> {
+    await downloadChallengeFile("/api/challenges/import-template", "ctf_tasks_template.xlsx");
+  },
+
+  async exportTasks(): Promise<void> {
+    await downloadChallengeFile("/api/challenges/export", "ctf_tasks_bank.xlsx");
   },
 
   async delete(id: string): Promise<void> {

@@ -21,14 +21,23 @@ public record CtfTaskRequest(
         Boolean isFirstBloodOnly,
         Integer maxScore,
         TaskType taskType,
-        List<String> attachments
+        List<String> attachments,
+        @Size(max = 64) String taskCode,
+        @Size(max = 50) String bankId,
+        @Size(max = 30) String pool,
+        Integer wave,
+        String solutionInternal
 ) {
     public CtfTaskRequest(String title, String description, String category, String difficulty, Integer baseScore, String flag) {
-        this(title, description, category, difficulty, baseScore, flag, false, baseScore, TaskType.FLAG, Collections.emptyList());
+        this(title, description, category, difficulty, baseScore, flag, false, baseScore, TaskType.FLAG, Collections.emptyList(), null, null, null, null, null);
     }
 
     public CtfTaskRequest(String title, String description, String category, String difficulty, Integer baseScore, String flag, Boolean isFirstBloodOnly, Integer maxScore) {
-        this(title, description, category, difficulty, baseScore, flag, isFirstBloodOnly, maxScore, TaskType.FLAG, Collections.emptyList());
+        this(title, description, category, difficulty, baseScore, flag, isFirstBloodOnly, maxScore, TaskType.FLAG, Collections.emptyList(), null, null, null, null, null);
+    }
+
+    public CtfTaskRequest(String title, String description, String category, String difficulty, Integer baseScore, String flag, Boolean isFirstBloodOnly, Integer maxScore, TaskType taskType, List<String> attachments) {
+        this(title, description, category, difficulty, baseScore, flag, isFirstBloodOnly, maxScore, taskType, attachments, null, null, null, null, null);
     }
 
     @JsonIgnore

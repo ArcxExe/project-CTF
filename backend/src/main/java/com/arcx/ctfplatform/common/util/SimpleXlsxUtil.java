@@ -6,9 +6,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -40,8 +44,14 @@ public final class SimpleXlsxUtil {
 
     public static final int MAX_ZIP_ENTRIES = 100;
     public static final long MAX_TOTAL_UNCOMPRESSED_BYTES = 10L * 1024L * 1024L; // 10 MB
+    private static final Pattern SHEET_PATH_PATTERN = Pattern.compile("^xl/worksheets/sheet(\\d+)\\.xml$");
 
     public static List<List<String>> readSheet(InputStream xlsxStream) throws IOException {
+        List<List<List<String>>> sheets = readAllSheets(xlsxStream);
+        return sheets.isEmpty() ? List.of() : sheets.get(0);
+    }
+
+    public static List<List<List<String>>> readAllSheets(InputStream xlsxStream) throws IOException {
         Map<String, byte[]> entries = new HashMap<>();
         int entryCount = 0;
         long totalUncompressedBytes = 0;
@@ -71,17 +81,18 @@ public final class SimpleXlsxUtil {
 
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             DocumentBuilder builder = factory.newDocumentBuilder();
 
             List<String> sharedStrings = new ArrayList<>();
-            byte[] sharedStringsBytes = entries.get("xl/sharedStrings.xml");
+            byte[] sharedStringsBytes = findEntryIgnoreCase(entries, "xl/sharedStrings.xml");
             if (sharedStringsBytes != null) {
                 Document ssDoc = builder.parse(new ByteArrayInputStream(sharedStringsBytes));
-                NodeList siNodes = ssDoc.getElementsByTagName("si");
+                NodeList siNodes = getElementsByLocalName(ssDoc, "si");
                 for (int i = 0; i < siNodes.getLength(); i++) {
                     Element si = (Element) siNodes.item(i);
-                    NodeList tNodes = si.getElementsByTagName("t");
+                    NodeList tNodes = getElementsByLocalName(si, "t");
                     StringBuilder sb = new StringBuilder();
                     for (int j = 0; j < tNodes.getLength(); j++) {
                         sb.append(tNodes.item(j).getTextContent());
@@ -90,65 +101,124 @@ public final class SimpleXlsxUtil {
                 }
             }
 
-            byte[] sheetBytes = entries.get("xl/worksheets/sheet1.xml");
-            if (sheetBytes == null) {
-                for (Map.Entry<String, byte[]> e : entries.entrySet()) {
-                    if (e.getKey().startsWith("xl/worksheets/sheet") && e.getKey().endsWith(".xml")) {
-                        sheetBytes = e.getValue();
-                        break;
-                    }
-                }
-            }
-            if (sheetBytes == null) {
+            List<String> sheetKeys = entries.keySet().stream()
+                    .filter(k -> {
+                        String lower = k.toLowerCase(Locale.ROOT);
+                        return lower.startsWith("xl/worksheets/sheet") && lower.endsWith(".xml");
+                    })
+                    .sorted(Comparator.comparingInt(SimpleXlsxUtil::extractSheetNumber).thenComparing(String::compareTo))
+                    .toList();
+
+            if (sheetKeys.isEmpty()) {
                 return List.of();
             }
 
-            Document sheetDoc = builder.parse(new ByteArrayInputStream(sheetBytes));
-            NodeList rowNodes = sheetDoc.getElementsByTagName("row");
-            List<List<String>> rows = new ArrayList<>();
-
-            for (int r = 0; r < rowNodes.getLength(); r++) {
-                Element rowElem = (Element) rowNodes.item(r);
-                NodeList cellNodes = rowElem.getElementsByTagName("c");
-                List<String> rowValues = new ArrayList<>();
-                int nextColIndex = 0;
-
-                for (int c = 0; c < cellNodes.getLength(); c++) {
-                    Element cellElem = (Element) cellNodes.item(c);
-                    String ref = cellElem.getAttribute("r");
-                    int colIndex = parseColumnIndex(ref, nextColIndex);
-                    while (rowValues.size() < colIndex) {
-                        rowValues.add("");
-                    }
-
-                    String type = cellElem.getAttribute("t");
-                    String value = extractCellValue(cellElem, type, sharedStrings);
-                    if (rowValues.size() == colIndex) {
-                        rowValues.add(value);
-                    } else {
-                        rowValues.set(colIndex, value);
-                    }
-                    nextColIndex = colIndex + 1;
-                }
-                rows.add(rowValues);
+            List<List<List<String>>> sheets = new ArrayList<>(sheetKeys.size());
+            for (String key : sheetKeys) {
+                sheets.add(parseWorksheetBytes(builder, entries.get(key), sharedStrings));
             }
-
-            return rows;
+            return sheets;
         } catch (Exception e) {
             throw new IOException("Failed to parse XLSX stream: " + e.getMessage(), e);
         }
     }
 
+    private static byte[] findEntryIgnoreCase(Map<String, byte[]> entries, String targetPath) {
+        byte[] exact = entries.get(targetPath);
+        if (exact != null) {
+            return exact;
+        }
+        for (Map.Entry<String, byte[]> e : entries.entrySet()) {
+            if (targetPath.equalsIgnoreCase(e.getKey())) {
+                return e.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static NodeList getElementsByLocalName(Document doc, String localName) {
+        NodeList nsNodes = doc.getElementsByTagNameNS("*", localName);
+        return nsNodes.getLength() > 0 ? nsNodes : doc.getElementsByTagName(localName);
+    }
+
+    private static NodeList getElementsByLocalName(Element elem, String localName) {
+        NodeList nsNodes = elem.getElementsByTagNameNS("*", localName);
+        return nsNodes.getLength() > 0 ? nsNodes : elem.getElementsByTagName(localName);
+    }
+
+    private static int extractSheetNumber(String path) {
+        Matcher m = SHEET_PATH_PATTERN.matcher(path.toLowerCase(Locale.ROOT));
+        if (m.matches()) {
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    private static List<List<String>> parseWorksheetBytes(
+            DocumentBuilder builder,
+            byte[] sheetBytes,
+            List<String> sharedStrings
+    ) throws Exception {
+        if (sheetBytes == null) {
+            return List.of();
+        }
+        Document sheetDoc = builder.parse(new ByteArrayInputStream(sheetBytes));
+        NodeList rowNodes = getElementsByLocalName(sheetDoc, "row");
+        List<List<String>> rows = new ArrayList<>();
+
+        for (int r = 0; r < rowNodes.getLength(); r++) {
+            Element rowElem = (Element) rowNodes.item(r);
+            NodeList cellNodes = getElementsByLocalName(rowElem, "c");
+            List<String> rowValues = new ArrayList<>();
+            int nextColIndex = 0;
+
+            for (int c = 0; c < cellNodes.getLength(); c++) {
+                Element cellElem = (Element) cellNodes.item(c);
+                String ref = cellElem.getAttribute("r");
+                int colIndex = parseColumnIndex(ref, nextColIndex);
+                while (rowValues.size() < colIndex) {
+                    rowValues.add("");
+                }
+
+                String type = cellElem.getAttribute("t");
+                String value = extractCellValue(cellElem, type, sharedStrings);
+                if (rowValues.size() == colIndex) {
+                    rowValues.add(value);
+                } else {
+                    rowValues.set(colIndex, value);
+                }
+                nextColIndex = colIndex + 1;
+            }
+            if (hasNonBlankCell(rowValues)) {
+                rows.add(rowValues);
+            }
+        }
+
+        return rows;
+    }
+
+    private static boolean hasNonBlankCell(List<String> rowValues) {
+        for (String val : rowValues) {
+            if (val != null && !val.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static String extractCellValue(Element cellElem, String type, List<String> sharedStrings) {
         if ("inlineStr".equals(type)) {
-            NodeList tNodes = cellElem.getElementsByTagName("t");
+            NodeList tNodes = getElementsByLocalName(cellElem, "t");
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < tNodes.getLength(); i++) {
                 sb.append(tNodes.item(i).getTextContent());
             }
             return sb.toString();
         }
-        NodeList vNodes = cellElem.getElementsByTagName("v");
+        NodeList vNodes = getElementsByLocalName(cellElem, "v");
         if (vNodes.getLength() == 0) {
             return "";
         }

@@ -66,12 +66,33 @@ public class CtfTask {
   @Column(columnDefinition = "jsonb")
   private Map<String, Object> attachments = new HashMap<>();
 
+  @Column(name = "task_code", length = 64)
+  private String taskCode;
+
+  @Column(name = "bank_id", length = 50)
+  private String bankId = "GLOBAL";
+
+  @Column(name = "pool", length = 30)
+  private String pool = "MAIN";
+
+  @Column(name = "wave")
+  private Integer wave;
+
+  @Column(name = "solution_internal", columnDefinition = "TEXT")
+  private String solutionInternal;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
   @PrePersist
   protected void onCreate() {
     this.createdAt = Instant.now();
+    if (this.bankId == null || this.bankId.isBlank()) {
+      this.bankId = "GLOBAL";
+    }
+    if (this.pool == null || this.pool.isBlank()) {
+      this.pool = "MAIN";
+    }
   }
 
 }

@@ -23,14 +23,22 @@ public record CtfTaskResponse(
         boolean isFirstBloodOnly,
         Integer maxScore,
         TaskType taskType,
-        List<String> attachments
+        List<String> attachments,
+        String taskCode,
+        String bankId,
+        String pool,
+        Integer wave
 ) {
     public CtfTaskResponse(UUID id, String title, String description, String category, String difficulty, Integer baseScore, Instant createdAt) {
-        this(id, title, description, category, difficulty, baseScore, createdAt, false, baseScore, TaskType.FLAG, Collections.emptyList());
+        this(id, title, description, category, difficulty, baseScore, createdAt, false, baseScore, TaskType.FLAG, Collections.emptyList(), null, "GLOBAL", "MAIN", null);
     }
 
     public CtfTaskResponse(UUID id, String title, String description, String category, String difficulty, Integer baseScore, Instant createdAt, boolean isFirstBloodOnly, Integer maxScore) {
-        this(id, title, description, category, difficulty, baseScore, createdAt, isFirstBloodOnly, maxScore, TaskType.FLAG, Collections.emptyList());
+        this(id, title, description, category, difficulty, baseScore, createdAt, isFirstBloodOnly, maxScore, TaskType.FLAG, Collections.emptyList(), null, "GLOBAL", "MAIN", null);
+    }
+
+    public CtfTaskResponse(UUID id, String title, String description, String category, String difficulty, Integer baseScore, Instant createdAt, boolean isFirstBloodOnly, Integer maxScore, TaskType taskType, List<String> attachments) {
+        this(id, title, description, category, difficulty, baseScore, createdAt, isFirstBloodOnly, maxScore, taskType, attachments, null, "GLOBAL", "MAIN", null);
     }
 
     @Component
@@ -61,7 +69,11 @@ public record CtfTaskResponse(
                     from.isFirstBloodOnly(),
                     from.getMaxScore() != null && from.getMaxScore() > 0 ? from.getMaxScore() : from.getBaseScore(),
                     from.getTaskType() != null ? from.getTaskType() : TaskType.FLAG,
-                    attachmentList
+                    attachmentList,
+                    from.getTaskCode(),
+                    from.getBankId() != null && !from.getBankId().isBlank() ? from.getBankId() : "GLOBAL",
+                    from.getPool() != null && !from.getPool().isBlank() ? from.getPool() : "MAIN",
+                    from.getWave()
             );
         }
     }

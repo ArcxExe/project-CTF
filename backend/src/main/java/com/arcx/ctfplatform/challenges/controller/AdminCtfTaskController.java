@@ -1,10 +1,13 @@
 package com.arcx.ctfplatform.challenges.controller;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -16,10 +19,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.arcx.ctfplatform.challenges.dto.CtfTaskRequest;
 import com.arcx.ctfplatform.challenges.dto.CtfTaskResponse;
+import com.arcx.ctfplatform.challenges.service.CtfTaskImportService;
 import com.arcx.ctfplatform.challenges.service.CtfTaskService;
 import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
@@ -32,6 +38,7 @@ import lombok.RequiredArgsConstructor;
 public class AdminCtfTaskController {
 
     private final CtfTaskService ctfTaskService;
+    private final CtfTaskImportService ctfTaskImportService;
 
     @GetMapping
     public ResponseEntity<List<CtfTaskResponse>> getAllTasks() {
@@ -65,7 +72,39 @@ public class AdminCtfTaskController {
     @GetMapping("/{id}/flag")
     @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
     public ResponseEntity<java.util.Map<String, String>> getTaskFlag(@PathVariable UUID id) {
-        return ResponseEntity.ok(java.util.Map.of("flag", ctfTaskService.getTaskFlag(id)));
+        return ResponseEntity.ok(ctfTaskService.getTaskAdminSecrets(id));
+    }
+
+    @PostMapping("/import")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<CtfTaskImportService.TaskImportResultDto> importTasks(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "dryRun", defaultValue = "false") boolean dryRun,
+            @RequestParam(value = "competitionId", required = false) UUID competitionId
+    ) throws IOException {
+        return ResponseEntity.ok(
+                ctfTaskImportService.importTasks(file.getInputStream(), file.getOriginalFilename(), dryRun, competitionId)
+        );
+    }
+
+    @GetMapping("/import-template")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<byte[]> downloadImportTemplate() {
+        byte[] bytes = ctfTaskImportService.exportTemplateXlsx();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ctf_tasks_template.xlsx\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(bytes);
+    }
+
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR')")
+    public ResponseEntity<byte[]> exportTasks() {
+        byte[] bytes = ctfTaskImportService.exportTasksXlsx();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ctf_tasks_bank.xlsx\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(bytes);
     }
 
     @DeleteMapping("/{id}")

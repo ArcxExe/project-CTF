@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -120,6 +121,15 @@ public class CtfTaskService {
             att.put("files", new ArrayList<>(request.attachments()));
             task.setAttachments(att);
         }
+        String normalizedTaskCode = normalizeOptional(request.taskCode());
+        if (normalizedTaskCode != null && ctfTaskRepository.findByTaskCodeIgnoreCase(normalizedTaskCode).isPresent()) {
+            throw new IllegalArgumentException("Task with this task_id already exists: " + normalizedTaskCode);
+        }
+        task.setTaskCode(normalizedTaskCode);
+        task.setBankId(normalizeBankId(request.bankId()));
+        task.setPool(normalizePool(request.pool()));
+        task.setWave(request.wave());
+        task.setSolutionInternal(normalizeOptional(request.solutionInternal()));
 
         CtfTask savedTask = ctfTaskRepository.save(task);
         return ctfTaskMapper.mapping(savedTask);
@@ -135,6 +145,15 @@ public class CtfTaskService {
                 : (task.getTaskType() != null ? task.getTaskType() : TaskType.FLAG);
         if (effectiveType == TaskType.FLAG && (request.flag() == null || request.flag().isBlank())) {
             throw new IllegalArgumentException("Flag is required for FLAG tasks");
+        }
+
+        String normalizedTaskCode = normalizeOptional(request.taskCode());
+        if (normalizedTaskCode != null) {
+            ctfTaskRepository.findByTaskCodeIgnoreCase(normalizedTaskCode).ifPresent(existing -> {
+                if (!existing.getId().equals(id)) {
+                    throw new IllegalArgumentException("Task with this task_id already exists: " + normalizedTaskCode);
+                }
+            });
         }
 
         task.setTitle(request.title());
@@ -153,6 +172,21 @@ public class CtfTaskService {
             att.put("files", new ArrayList<>(request.attachments()));
             task.setAttachments(att);
         }
+        if (request.taskCode() != null) {
+            task.setTaskCode(normalizedTaskCode);
+        }
+        if (request.bankId() != null) {
+            task.setBankId(normalizeBankId(request.bankId()));
+        }
+        if (request.pool() != null) {
+            task.setPool(normalizePool(request.pool()));
+        }
+        if (request.wave() != null) {
+            task.setWave(request.wave());
+        }
+        if (request.solutionInternal() != null) {
+            task.setSolutionInternal(normalizeOptional(request.solutionInternal()));
+        }
 
         CtfTask updatedTask = ctfTaskRepository.save(task);
         return ctfTaskMapper.mapping(updatedTask);
@@ -163,6 +197,16 @@ public class CtfTaskService {
         CtfTask task = ctfTaskRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found"));
         return task.getFlag();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, String> getTaskAdminSecrets(UUID id) {
+        CtfTask task = ctfTaskRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found"));
+        return Map.of(
+                "flag", task.getFlag() != null ? task.getFlag() : "",
+                "solutionInternal", task.getSolutionInternal() != null ? task.getSolutionInternal() : ""
+        );
     }
 
     @Transactional
@@ -202,7 +246,7 @@ public class CtfTaskService {
                 boolean endsOk = comp.getEndDate() == null || !now.isAfter(comp.getEndDate());
                 if (startsOk && endsOk && comp.getTasks() != null) {
                     comp.getTasks().forEach(t -> {
-                        if (t != null && t.getId() != null) {
+                        if (t != null && t.getId() != null && !"RESERVE".equalsIgnoreCase(t.getPool())) {
                             allowed.add(t.getId());
                         }
                     });
@@ -219,7 +263,7 @@ public class CtfTaskService {
             for (Test test : publishedTests) {
                 if (test.getTasks() != null) {
                     test.getTasks().forEach(t -> {
-                        if (t != null && t.getId() != null) {
+                        if (t != null && t.getId() != null && !"RESERVE".equalsIgnoreCase(t.getPool())) {
                             allowed.add(t.getId());
                         }
                     });
@@ -227,5 +271,26 @@ public class CtfTaskService {
             }
         }
         return allowed;
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeBankId(String value) {
+        String normalized = normalizeOptional(value);
+        return normalized != null ? normalized.toUpperCase(Locale.ROOT) : "GLOBAL";
+    }
+
+    private String normalizePool(String value) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            return "MAIN";
+        }
+        return normalized.toUpperCase(Locale.ROOT);
     }
 }
