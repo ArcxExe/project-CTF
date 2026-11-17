@@ -120,13 +120,36 @@ public class LabScoreService {
     @Transactional(readOnly = true)
     public double getFinalLabScore(UUID studentId) {
         List<StudentLab> labs = studentLabRepository.findAllByStudentId(studentId);
+        Optional<LabScore> labScoreOpt = labScoreRepository.findByStudentId(studentId);
         if (!labs.isEmpty()) {
-            double sum = labs.stream().mapToDouble(StudentLab::getScore).sum();
-            return roundToTwoDecimals(sum);
+            double sum = roundToTwoDecimals(labs.stream().mapToDouble(StudentLab::getScore).sum());
+            if (labScoreOpt.isPresent()) {
+                int summaryScore = labScoreOpt.get().getScore();
+                if (summaryScore != (int) Math.round(sum)) {
+                    return roundToTwoDecimals((double) summaryScore);
+                }
+            }
+            return sum;
         }
-        return labScoreRepository.findByStudentId(studentId)
+        return labScoreOpt
                 .map(s -> roundToTwoDecimals((double) s.getScore()))
                 .orElse(0.0);
+    }
+
+    private boolean areAllEightLabsAccepted(List<StudentLab> labs) {
+        if (labs == null || labs.isEmpty()) {
+            return false;
+        }
+        Set<Integer> acceptedLabNumbers = labs.stream()
+                .filter(StudentLab::isAccepted)
+                .map(StudentLab::getLabNumber)
+                .collect(Collectors.toSet());
+        for (int i = 1; i <= 8; i++) {
+            if (!acceptedLabNumbers.contains(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Transactional(readOnly = true)
@@ -310,7 +333,9 @@ public class LabScoreService {
 
     @Transactional
     public void setScore(UUID studentId, int score, String reason, UUID adminUserId) {
-        setScore(studentId, score, true, reason, adminUserId);
+        List<StudentLab> existingLabs = studentLabRepository.findAllByStudentId(studentId);
+        boolean eligible = areAllEightLabsAccepted(existingLabs);
+        setScore(studentId, score, eligible, reason, adminUserId);
     }
 
     @Transactional
@@ -322,35 +347,6 @@ public class LabScoreService {
 
         Optional<LabScore> existingScoreOpt = labScoreRepository.findByStudentId(studentId);
         int oldScore = existingScoreOpt.map(LabScore::getScore).orElse(0);
-
-        List<StudentLab> existingLabs = studentLabRepository.findAllByStudentId(studentId);
-        if (existingLabs != null && !existingLabs.isEmpty()) {
-            Map<Integer, StudentLab> byNum = existingLabs.stream()
-                    .collect(Collectors.toMap(StudentLab::getLabNumber, l -> l, (a, b) -> b));
-            double ratio = clampedScore / 143.0;
-            double runningSum = 0.0;
-            for (int i = 1; i <= 8; i++) {
-                LabSpec spec = LAB_SPECS.get(i);
-                StudentLab sl = byNum.getOrDefault(i, StudentLab.builder()
-                        .student(student)
-                        .labNumber(i)
-                        .maxRawScore(spec.maxRawScore())
-                        .maxDefenseScore(spec.maxDefenseScore())
-                        .penaltyCoefficient(1.0)
-                        .build());
-                double labScoreVal = (i < 8)
-                        ? roundToTwoDecimals(spec.maxTotal() * ratio)
-                        : roundToTwoDecimals(Math.max(0.0, clampedScore - runningSum));
-                runningSum = roundToTwoDecimals(runningSum + labScoreVal);
-                sl.setMaxRawScore(spec.maxRawScore());
-                sl.setMaxDefenseScore(spec.maxDefenseScore());
-                sl.setRawScore(roundToTwoDecimals(spec.maxRawScore() * ratio));
-                sl.setDefenseScore(roundToTwoDecimals(Math.max(0.0, labScoreVal - sl.getRawScore())));
-                sl.setScore(labScoreVal);
-                sl.setAccepted(isEligible);
-                studentLabRepository.save(sl);
-            }
-        }
 
         LabScore labScore = existingScoreOpt.orElseGet(() -> LabScore.builder().student(student).build());
         labScore.setScore(clampedScore);

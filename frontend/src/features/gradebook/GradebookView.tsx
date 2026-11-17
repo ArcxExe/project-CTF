@@ -498,6 +498,11 @@ export const GradebookView = ({
             />
           </div>
 
+          {searchQuery.trim() && (
+            <Button variant="secondary" onClick={() => setSearchQuery("")}>
+              Сбросить поиск
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => void loadGradebook()}>
             Обновить
           </Button>
@@ -599,7 +604,29 @@ export const GradebookView = ({
                       colSpan={editable ? 24 : 23}
                       style={{ ...cellStyle, padding: "2rem", textAlign: "center" }}
                     >
-                      Нет студентов для отображения. Импортируйте список студентов или выберите другую группу.
+                      {searchQuery.trim() || selectedGroupId || selectedStreamId ? (
+                        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
+                          <span>
+                            {editable
+                              ? "По вашему запросу совпадений не найдено. Измените строку поиска или очистите фильтры."
+                              : "По вашему запросу совпадений не найдено. Измените строку поиска."}
+                          </span>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setSearchQuery("");
+                              setSelectedGroupId("");
+                              setSelectedStreamId("");
+                            }}
+                          >
+                            {editable ? "Очистить поиск и фильтры" : "Очистить поиск"}
+                          </Button>
+                        </div>
+                      ) : editable ? (
+                        "Нет студентов для отображения. Импортируйте список студентов или выберите другую группу."
+                      ) : (
+                        "В ведомости пока нет записей для отображения. Нажмите «Обновить», чтобы перезагрузить данные."
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -643,7 +670,13 @@ export const GradebookView = ({
                           <div>{row.fullName}</div>
                           <div className="muted" style={{ fontSize: "0.74rem" }}>
                             {row.groupName} • Допуск ЛР: {row.acceptedLabsCount}/8{" "}
-                            {row.isEligible ? "✓" : "✗"}
+                            {row.isEligible
+                              ? row.acceptedLabsCount >= 8
+                                ? "✓"
+                                : "✓ (вручную)"
+                              : row.totalLab > 0 && row.acceptedLabsCount === 0
+                              ? "✗ (зачёт не подтверждён)"
+                              : "✗"}
                           </div>
                         </td>
 

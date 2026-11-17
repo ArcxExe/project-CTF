@@ -291,6 +291,7 @@ class CtfTaskImportServiceTest {
         assertThat(result.errors()).anyMatch(e -> e.contains("дубликат task_id"));
         assertThat(result.warnings()).anyMatch(w -> w.contains("не соответствует формату CTF{...}"));
         assertThat(result.warnings()).anyMatch(w -> w.contains("дублирующийся флаг"));
+        assertThat(result.warnings()).noneMatch(w -> w.contains("plain_flag"));
         verify(ctfTaskRepository, never()).saveAll(any());
     }
 

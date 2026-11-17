@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { authTokenStorage } from "@/shared/api/client";
 import { adminChallengesApi } from "@/shared/api/services/challenges";
@@ -31,6 +32,30 @@ import { groupsApi } from "@/shared/api/services/groups";
 import { streamsApi } from "@/shared/api/services/streams";
 import { AcademicResetModal } from "@/features/academic/ui/AcademicResetModal";
 import { GradebookView } from "@/features/gradebook/GradebookView";
+import { gradebookApi, type GradebookRowDto } from "@/shared/api/services/gradebook";
+
+const STUDENT_STATUS_LABELS: Record<string, string> = {
+  active: "Активен",
+  pending_binding_verification: "Ожидает подтверждения",
+  blocked: "Заблокирован",
+  disqualified: "Дисквалифицирован",
+};
+
+const formatStudentStatus = (status?: string) =>
+  (status ? STUDENT_STATUS_LABELS[status.toLowerCase()] : undefined) || status || "—";
+
+const formatLabAdmission = (gbRow?: GradebookRowDto, score?: number) => {
+  if (!gbRow) return "Не подтверждён";
+  if (gbRow.isEligible) {
+    return gbRow.acceptedLabsCount >= 8
+      ? "Допущен (8/8 ЛР)"
+      : `Допущен вручную (${gbRow.acceptedLabsCount}/8 ЛР)`;
+  }
+  if (gbRow.acceptedLabsCount === 0 && (score ?? gbRow.totalLab) > 0) {
+    return "Нет допуска (0/8 — зачёт не подтверждён)";
+  }
+  return `Нет допуска (${gbRow.acceptedLabsCount}/8 ЛР)`;
+};
 
 
 export const testStatusLabels: Record<CtfTest["status"], string> = {
@@ -479,7 +504,9 @@ const AdminTasksManagerPage = () => {
             <code>difficulty</code>, <code>points</code>, <code>first_blood_only</code>, <code>flag</code>,{" "}
             <code>bank_id</code>, <code>pool</code>, <code>wave</code>, <code>artifact_url</code>,{" "}
             <code>solution_internal</code>. Повторный импорт с тем же <code>task_id</code> обновляет задание без дублей.
-            Нижние сводные таблицы плана автоматически игнорируются.
+            Нижние сводные таблицы плана автоматически игнорируются. Рекомендуемый шаблон флага:{" "}
+            <code>CTF{"{...}"}</code> (произвольный формат также допускается, а в диагностике Dry-Run полные значения
+            флагов не раскрываются).
           </p>
 
           <label className="ui-field">
@@ -686,12 +713,18 @@ const AdminTasksManagerPage = () => {
           />
 
           <Input
-            label="Флаг"
+            label="Флаг (рекомендуемый шаблон CTF{...}, произвольный формат также допускается)"
             placeholder={editingTask ? "Введите флаг повторно для сохранения изменений" : "CTF{example}"}
             value={form.flag}
             onChange={(event) => setForm((current) => ({ ...current, flag: event.target.value }))}
             required
           />
+          {form.flag.trim().length > 0 &&
+            (!form.flag.trim().startsWith("CTF{") || !form.flag.trim().endsWith("}")) && (
+              <div style={{ fontSize: "0.84rem", color: "#f59e0b", marginTop: "-8px", marginBottom: "6px" }}>
+                Предупреждение: флаг не соответствует рекомендуемому шаблону CTF{"{...}"}. Задание будет сохранено и примет этот ответ в точном виде (аналогично импорту).
+              </div>
+            )}
           {editingTask && previousFlag && (
             <div className="muted" style={{ fontSize: "0.85em", marginTop: "-8px", marginBottom: "8px" }}>
               Предыдущий ответ: <strong style={{ color: "var(--primary)" }}>{previousFlag}</strong>
@@ -1661,7 +1694,7 @@ const AdminPromoCodesManagerPage = () => {
     <div className="page-stack">
       <PageHeader
         title="Промокоды"
-        subtitle="Промокоды для бонусов, подсказок и специальных условий соревнования."
+        subtitle="Управление промокодами: начисление и списание баллов CTF, удвоение очков (x2) и временные множители."
         actions={<Button onClick={() => setIsModalOpen(true)}>Создать промокод</Button>}
       />
 
@@ -1897,12 +1930,21 @@ export const AdminGroupsPage = () => {
         <form className="admin-form" onSubmit={handleSubmit}>
           <Input label="Название" value={form.name} onChange={(e) => setForm(c => ({...c, name: e.target.value}))} required />
           <label className="ui-field">
-            <span className="ui-field__label">Поток</span>
+            <span className="ui-field__label">Поток (необязательно)</span>
             <select className="ui-input" value={form.streamId} onChange={(e) => setForm(c => ({...c, streamId: e.target.value}))}>
-              <option value="">Не назначен</option>
+              <option value="">Не назначен (без потока)</option>
               {streams.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
+          {streams.length === 0 && (
+            <div className="muted" style={{ fontSize: "0.84rem", marginTop: "-8px" }}>
+              Потоки ещё не созданы — группу можно сохранить без потока или{" "}
+              <Link to="/admin/streams" style={{ color: "var(--primary)", fontWeight: 600 }}>
+                создать поток в разделе «Потоки»
+              </Link>
+              .
+            </div>
+          )}
           <Input
             label="Всего лабораторных работ"
             type="number"
@@ -2400,6 +2442,7 @@ const AdminLabsManagerPage = () => {
   const { push } = useToastStore();
   const [activeTab, setActiveTab] = useState<"gradebook" | "legacy">("gradebook");
   const [scores, setScores] = useState<LabScore[]>([]);
+  const [gradebookRows, setGradebookRows] = useState<GradebookRowDto[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState("");
@@ -2408,6 +2451,7 @@ const AdminLabsManagerPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmPreserveDiff, setConfirmPreserveDiff] = useState(false);
   
   const [form, setForm] = useState({
     studentId: "",
@@ -2417,14 +2461,16 @@ const AdminLabsManagerPage = () => {
 
   const loadData = async () => {
     try {
-      const [scoresData, studentsData, groupsData] = await Promise.all([
+      const [scoresData, studentsData, groupsData, gbData] = await Promise.all([
         labScoresApi.getAllScores().catch(() => [] as LabScore[]),
         studentsApi.getAll().catch(() => [] as Student[]),
         groupsApi.getAll().catch(() => [] as Group[]),
+        gradebookApi.getGradebook().catch(() => [] as GradebookRowDto[]),
       ]);
       setScores(scoresData);
       setStudents(studentsData);
       setGroups(groupsData);
+      setGradebookRows(gbData);
       if (studentsData.length > 0) {
         setForm((current) => ({
           ...current,
@@ -2507,10 +2553,38 @@ const AdminLabsManagerPage = () => {
     return group?.maxLabs ?? 0;
   }, [form.studentId, students, groups]);
 
+  const gradebookByStudentId = useMemo(
+    () => new Map(gradebookRows.map((r) => [r.studentId, r])),
+    [gradebookRows],
+  );
+
+  const selectedGradebook = useMemo(
+    () => (form.studentId ? gradebookByStudentId.get(form.studentId) : undefined),
+    [form.studentId, gradebookByStudentId],
+  );
+
+  const individualLabSum = useMemo(() => {
+    if (!selectedGradebook) return 0;
+    let sum = 0;
+    for (let i = 1; i <= 8; i++) {
+      sum += selectedGradebook.labs?.[i]?.score ?? 0;
+    }
+    return Math.round(sum * 100) / 100;
+  }, [selectedGradebook]);
+
+  const hasExistingIndividualLabs = Boolean(
+    selectedGradebook && (individualLabSum > 0 || selectedGradebook.acceptedLabsCount > 0),
+  );
+
+  const enteredScoreNum = Number(form.score || 0);
+  const requiresDiffConfirmation =
+    hasExistingIndividualLabs && Math.round(individualLabSum) !== Math.round(enteredScoreNum);
+
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setStudentSearch("");
     setIsEditing(false);
+    setConfirmPreserveDiff(false);
   };
 
   const handleAddClick = () => {
@@ -2519,6 +2593,7 @@ const AdminLabsManagerPage = () => {
       score: "0",
       reason: "Оценка за лабораторную работу",
     });
+    setConfirmPreserveDiff(false);
     setIsEditing(false);
     setIsModalOpen(true);
   };
@@ -2529,6 +2604,7 @@ const AdminLabsManagerPage = () => {
       score: row.score.toString(),
       reason: "Редактирование оценки за лабораторную работу",
     });
+    setConfirmPreserveDiff(false);
     setIsEditing(true);
     setIsModalOpen(true);
   };
@@ -2537,6 +2613,13 @@ const AdminLabsManagerPage = () => {
     event.preventDefault();
     if (!form.studentId) {
       push({ title: "Выберите студента", variant: "error" });
+      return;
+    }
+    if (requiresDiffConfirmation && !confirmPreserveDiff) {
+      push({
+        title: "Подтвердите сохранение сводного балла, отличающегося от суммы индивидуальных ЛР",
+        variant: "error",
+      });
       return;
     }
     setIsSaving(true);
@@ -2611,7 +2694,32 @@ const AdminLabsManagerPage = () => {
                 title: "Доля ЛР (L)",
                 render: (row) => `${(row.v1Coefficient * 100).toFixed(2)}%`
               },
-              { key: "status", title: "Статус" },
+              {
+                key: "acceptedLabs",
+                title: "Зачтено ЛР",
+                render: (row) => {
+                  const gbRow = gradebookByStudentId.get(row.studentId);
+                  return `${gbRow?.acceptedLabsCount ?? 0}/8`;
+                },
+              },
+              {
+                key: "eligibility",
+                title: "Допуск ЛР",
+                render: (row) => {
+                  const gbRow = gradebookByStudentId.get(row.studentId);
+                  const eligible = gbRow?.isEligible ?? false;
+                  return (
+                    <span style={{ color: eligible ? "var(--success)" : "var(--danger)", fontWeight: 500 }}>
+                      {formatLabAdmission(gbRow, row.score)}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "status",
+                title: "Статус студента",
+                render: (row) => formatStudentStatus(row.status),
+              },
               {
                 key: "actions",
                 title: "Действия",
@@ -2628,8 +2736,13 @@ const AdminLabsManagerPage = () => {
             rows={filteredScores}
           />
 
-          <Modal open={isModalOpen} title={isEditing ? "Редактировать баллы за лабораторную" : "Задать баллы за лабораторную"} onClose={handleCloseModal}>
+          <Modal open={isModalOpen} title={isEditing ? "Редактировать сводные баллы ЛР" : "Задать сводные баллы ЛР"} onClose={handleCloseModal}>
             <form className="admin-form" onSubmit={handleSubmit}>
+              <div className="muted" style={{ fontSize: "0.85rem", lineHeight: 1.45 }}>
+                Сводный балл задаёт общую сумму баллов ЛР (из 143) для расчёта коэффициента L%. Уже выставленные в
+                ведомости индивидуальные оценки отдельных работ (ЛР 1–8) сохраняются без перезаписи. Допуск к аттестации
+                (8/8 ЛР) определяется по фактически зачтённым работам в ведомости.
+              </div>
               {isEditing ? (
                 <Input
                   label="Студент"
@@ -2649,7 +2762,10 @@ const AdminLabsManagerPage = () => {
                     <select
                       className="ui-input"
                       value={form.studentId}
-                      onChange={(e) => setForm((current) => ({ ...current, studentId: e.target.value }))}
+                      onChange={(e) => {
+                        setConfirmPreserveDiff(false);
+                        setForm((current) => ({ ...current, studentId: e.target.value }));
+                      }}
                       required
                     >
                       <option value="" disabled>-- Выберите студента --</option>
@@ -2667,14 +2783,81 @@ const AdminLabsManagerPage = () => {
                 </>
               )}
 
+              {hasExistingIndividualLabs && selectedGradebook && (
+                <div
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "0.75rem",
+                    background: "var(--bg-muted)",
+                    fontSize: "0.84rem",
+                    display: "grid",
+                    gap: "0.45rem",
+                  }}
+                >
+                  <strong>
+                    Индивидуальные оценки в ведомости (сумма: {individualLabSum.toFixed(2)}, зачтено:{" "}
+                    {selectedGradebook.acceptedLabsCount}/8):
+                  </strong>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 0.75rem" }}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+                      const cell = selectedGradebook.labs?.[n];
+                      return (
+                        <span key={n}>
+                          ЛР {n}: <strong>{(cell?.score ?? 0).toFixed(2)}</strong>{" "}
+                          <span style={{ color: cell?.accepted ? "var(--success)" : "var(--text-secondary)" }}>
+                            {cell?.accepted ? "✓" : "✗"}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <span className="muted">
+                    Эти ячейки ЛР 1–8 останутся без перезаписи при сохранении сводного балла.
+                  </span>
+                </div>
+              )}
+
               <Input
                 label={currentMaxLabs > 0 ? `Баллы (Макс. баллов ЛР: ${currentMaxLabs})` : "Баллы (макс. 143)"}
                 type="number"
                 min={0}
+                max={143}
                 value={form.score}
-                onChange={(e) => setForm((current) => ({ ...current, score: e.target.value }))}
+                onChange={(e) => {
+                  setConfirmPreserveDiff(false);
+                  setForm((current) => ({ ...current, score: e.target.value }));
+                }}
                 required
               />
+
+              {requiresDiffConfirmation && (
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.5rem",
+                    padding: "0.65rem 0.75rem",
+                    border: "1px solid rgba(245, 158, 11, 0.5)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "rgba(245, 158, 11, 0.08)",
+                    fontSize: "0.84rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={confirmPreserveDiff}
+                    onChange={(e) => setConfirmPreserveDiff(e.target.checked)}
+                    style={{ marginTop: "0.2rem" }}
+                  />
+                  <span>
+                    Введённый сводный балл ({enteredScoreNum}) отличается от суммы индивидуальных ЛР (
+                    {individualLabSum.toFixed(2)}). Подтверждаю сохранение сводного балла (ячейки ЛР 1–8 не будут
+                    перезаписаны, допуск определяется по 8/8 зачтённым работам).
+                  </span>
+                </label>
+              )}
 
               <label className="ui-field">
                 <span className="ui-field__label">Причина / Примечание</span>

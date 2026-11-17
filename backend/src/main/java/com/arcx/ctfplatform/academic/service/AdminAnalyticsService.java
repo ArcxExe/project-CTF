@@ -317,14 +317,19 @@ public class AdminAnalyticsService {
             double exactLabScore;
             int acceptedLabsCount = 0;
             if (sLabs != null && !sLabs.isEmpty()) {
-                exactLabScore = roundStatic(Math.min(sLabs.stream().mapToDouble(StudentLab::getScore).sum(), 143.0));
+                double sum = roundStatic(Math.min(sLabs.stream().mapToDouble(StudentLab::getScore).sum(), 143.0));
+                if (labScoreOpt.isPresent() && labScoreOpt.get().getScore() != (int) Math.round(sum)) {
+                    exactLabScore = roundStatic(Math.min(labScoreOpt.get().getScore(), 143.0));
+                } else {
+                    exactLabScore = sum;
+                }
                 acceptedLabsCount = (int) sLabs.stream().filter(StudentLab::isAccepted).count();
             } else if (labScoreOpt.isPresent()) {
                 exactLabScore = labScoreOpt.get().getScore();
-                acceptedLabsCount = labScoreOpt.get().isEligible() ? 8 : 0;
+                acceptedLabsCount = (studentLabRepository == null && labScoreOpt.get().isEligible()) ? 8 : 0;
             } else if (entry != null && entry.lPercent() > 0) {
                 exactLabScore = roundStatic((entry.lPercent() / 100.0) * 143.0);
-                acceptedLabsCount = entry.isEligible() ? 8 : 0;
+                acceptedLabsCount = (studentLabRepository == null && entry.isEligible()) ? 8 : 0;
             } else {
                 exactLabScore = 0.0;
             }
@@ -353,7 +358,7 @@ public class AdminAnalyticsService {
             double sCoeff = entry != null ? entry.sScore() : 0.0;
             double totalPoints = roundStatic(exactLabScore + ktScore);
             boolean isEligible = entry != null && entry.isEligible();
-            if (isEligible && acceptedLabsCount == 0) {
+            if (studentLabRepository == null && isEligible && acceptedLabsCount == 0) {
                 acceptedLabsCount = 8;
             }
             if (isEligible) {

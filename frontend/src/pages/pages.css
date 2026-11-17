@@ -111,8 +111,14 @@
 
 .info-grid {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   gap: 10px 16px;
+  min-width: 0;
+}
+
+.info-grid > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .info-grid span {

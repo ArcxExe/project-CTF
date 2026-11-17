@@ -271,7 +271,8 @@ export const StudentsPage = () => {
         title="Студенты"
         subtitle="Управление студентами, импорт списков и ведомостей (.xlsx / .csv), назначение пар и статусов."
         actions={
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <Badge tone="info">Всего профилей: {students.length}</Badge>
             <Button onClick={() => setIsImportModalOpen(true)} variant="secondary">
               Импорт (.xlsx / .csv)
             </Button>

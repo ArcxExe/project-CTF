@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { attendanceApi } from "@/shared/api/services/attendance";
 import { groupsApi } from "@/shared/api/services/groups";
@@ -11,8 +11,11 @@ import {
   type StudentAttendanceRow,
 } from "@/shared/types/attendance";
 import type { Group, Stream } from "@/shared/types/education";
+import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
+import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
+import { Modal } from "@/shared/ui/Modal/Modal";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import "./pages.css";
 import "./attendance.css";
@@ -69,11 +72,24 @@ export const AdminAttendancePage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [pendingCell, setPendingCell] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [commentModal, setCommentModal] = useState<{
+    row: StudentAttendanceRow;
+    sessionType: SessionType;
+    cycleNumber: number;
+    status: AttendanceStatus;
+    comment: string;
+  } | null>(null);
 
   useEffect(() => {
     const handleGlobalClick = () => setContextMenu(null);
     window.addEventListener("click", handleGlobalClick);
-    return () => window.removeEventListener("click", handleGlobalClick);
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -211,37 +227,68 @@ export const AdminAttendancePage = () => {
     });
   };
 
-  const handleCommentEdit = async (row: StudentAttendanceRow, sessionType: SessionType, cycleNumber: number) => {
+  const handleCellSingleClick = (
+    event: React.MouseEvent,
+    row: StudentAttendanceRow,
+    sessionType: SessionType,
+    cycleNumber: number,
+  ) => {
+    if (event.detail > 1) {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      return;
+    }
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+    }
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null;
+      void handleCellClick(row, sessionType, cycleNumber);
+    }, 220);
+  };
+
+  const handleCommentEdit = (row: StudentAttendanceRow, sessionType: SessionType, cycleNumber: number) => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
     const commentMap = sessionType === "LECTURE" ? row.lectureComments : row.practiceComments;
     const currentComment = commentMap?.[String(cycleNumber)] ?? "";
 
     const statusMap = sessionType === "LECTURE" ? row.lectures : row.practices;
     const currentStatus = statusMap[String(cycleNumber)] ?? null;
 
-    const comment = window.prompt(
-      `${sessionTitle(sessionType)} ${cycleNumber}: комментарий (например, номер справки).\nПустое поле очистит комментарий.`,
-      currentComment,
-    );
-    if (comment === null) {
-      return;
-    }
+    setContextMenu(null);
+    setCommentModal({
+      row,
+      sessionType,
+      cycleNumber,
+      status: currentStatus ?? "EXCUSED",
+      comment: currentComment,
+    });
+  };
 
+  const handleSaveCommentModal = async () => {
+    if (!commentModal) return;
+    const { row, sessionType, cycleNumber, status, comment } = commentModal;
     const cellKey = `${row.studentId}:${sessionType}:${cycleNumber}`;
     setPendingCell(cellKey);
-    setContextMenu(null);
     try {
       const updated = await attendanceApi.updateCell({
         studentId: row.studentId,
         sessionType,
         cycleNumber,
-        status: currentStatus ?? "EXCUSED",
+        status,
         comment,
       });
       applyRowUpdate(updated);
-      push({ title: "Комментарий сохранён", variant: "success" });
+      setCommentModal(null);
+      push({ title: "Примечание сохранено", variant: "success" });
     } catch (error: unknown) {
       push({
-        title: error instanceof Error ? error.message : "Не удалось сохранить комментарий",
+        title: error instanceof Error ? error.message : "Не удалось сохранить примечание",
         variant: "error",
       });
     } finally {
@@ -430,12 +477,22 @@ export const AdminAttendancePage = () => {
               <th className="attendance-summary-col">Лекции (из 8)</th>
               <th className="attendance-summary-col">Практики (из 8)</th>
               <th className="attendance-summary-col">Уваж.</th>
-              <th className="attendance-summary-col">Итого %</th>
+              <th
+                className="attendance-summary-col"
+                title="Доля присутствий (П) от числа проведённых (отмеченных в журнале) занятий"
+              >
+                Итого % (от отм.)
+              </th>
             </tr>
           </thead>
           <tbody>
             {rows.length > 0 ? (
-              rows.map((row) => (
+              rows.map((row) => {
+                const markedLectures = Object.values(row.lectures ?? {}).filter(Boolean).length;
+                const markedPractices = Object.values(row.practices ?? {}).filter(Boolean).length;
+                const conductedCount = markedLectures + markedPractices;
+                const attendedCount = row.lecturesPresentCount + row.practicesPresentCount;
+                return (
                 <tr key={row.studentId}>
                   <td>{row.rowNumber}</td>
                   <td>{row.pairNumber ?? "—"}</td>
@@ -460,14 +517,14 @@ export const AdminAttendancePage = () => {
                             hasComment && "attendance-cell--has-comment",
                           )}
                           disabled={pendingCell === cellKey}
-                          onClick={() => void handleCellClick(row, column.sessionType, column.cycle)}
+                          onClick={(event) => handleCellSingleClick(event, row, column.sessionType, column.cycle)}
                           onContextMenu={(event) =>
                             handleCellContextMenu(event, row, column.sessionType, column.cycle)
                           }
-                          onDoubleClick={() => void handleCommentEdit(row, column.sessionType, column.cycle)}
+                          onDoubleClick={() => handleCommentEdit(row, column.sessionType, column.cycle)}
                           title={`${sessionTitle(column.sessionType)} ${column.cycle}: ${
                             meta ? meta.label : "не отмечено"
-                          }${comment ? ` [Примечание: ${comment}]` : ""}. Клик — сменить статус, ПКМ — быстрое меню, двойной клик — комментарий.`}
+                          }${comment ? ` [Примечание: ${comment}]` : ""}. Клик — сменить статус, ПКМ — быстрое меню, двойной клик — примечание.`}
                         >
                           {meta ? meta.short : "—"}
                         </button>
@@ -477,11 +534,18 @@ export const AdminAttendancePage = () => {
                   <td className="attendance-summary">{row.lecturesPresentCount} / 8</td>
                   <td className="attendance-summary">{row.practicesPresentCount} / 8</td>
                   <td className="attendance-summary">{row.excusedCount}</td>
-                  <td className="attendance-summary attendance-summary--percent">
-                    {(row.attendancePercent ?? 0).toFixed(1)}%
+                  <td
+                    className="attendance-summary attendance-summary--percent"
+                    title={`Присутствовал на ${attendedCount} из ${conductedCount} отмеченных занятий (всего по плану курса: 16)`}
+                  >
+                    <div>{(row.attendancePercent ?? 0).toFixed(1)}%</div>
+                    <div className="muted" style={{ fontSize: "0.72rem", fontWeight: 400 }}>
+                      {attendedCount}/{conductedCount} отм.
+                    </div>
                   </td>
                 </tr>
-              ))
+                );
+              })
             ) : (
               <tr>
                 <td className="attendance-empty" colSpan={columns.length + 7}>
@@ -566,7 +630,7 @@ export const AdminAttendancePage = () => {
             type="button"
             className="attendance-mini-menu__item"
             onClick={() =>
-              void handleCommentEdit(
+              handleCommentEdit(
                 contextMenu.row,
                 contextMenu.sessionType,
                 contextMenu.cycleNumber,
@@ -579,13 +643,68 @@ export const AdminAttendancePage = () => {
         </div>
       )}
 
+      <Modal
+        open={Boolean(commentModal)}
+        title={
+          commentModal
+            ? `Примечание: ${sessionTitle(commentModal.sessionType)} ${commentModal.cycleNumber} — ${commentModal.row.fullName}`
+            : "Примечание к посещению"
+        }
+        onClose={() => setCommentModal(null)}
+      >
+        {commentModal && (
+          <form
+            className="admin-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveCommentModal();
+            }}
+          >
+            <label className="ui-field">
+              <span className="ui-field__label">Статус отметки</span>
+              <select
+                className="ui-input"
+                value={commentModal.status}
+                onChange={(e) =>
+                  setCommentModal((curr) =>
+                    curr ? { ...curr, status: e.target.value as AttendanceStatus } : null,
+                  )
+                }
+              >
+                <option value="PRESENT">П — Присутствовал</option>
+                <option value="ABSENT">Н — Пропуск</option>
+                <option value="EXCUSED">У — Уважительная причина</option>
+              </select>
+            </label>
+
+            <Input
+              label="Примечание / номер справки (пустое поле очистит комментарий)"
+              placeholder="Например: Справка №124 от 15.11.2026"
+              value={commentModal.comment}
+              onChange={(e) =>
+                setCommentModal((curr) => (curr ? { ...curr, comment: e.target.value } : null))
+              }
+            />
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+              <Button type="button" variant="secondary" onClick={() => setCommentModal(null)}>
+                Отмена
+              </Button>
+              <Button type="submit">
+                Сохранить примечание
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       <Card>
         <div className="attendance-hint">
-          Клик по ячейке циклически меняет статус: пусто → <strong>П</strong> (присутствовал) →{" "}
+          Одиночный клик по ячейке циклически меняет статус: пусто → <strong>П</strong> (присутствовал) →{" "}
           <strong>Н</strong> (пропуск) → <strong>У</strong> (уважительная причина) → пусто. Правый клик (ПКМ)
-          открывает быстрое меню выбора статуса. Двойной клик по ячейке добавляет или изменяет комментарий
-          (например, номер справки). Кнопка <strong>+</strong> в шапке колонки отмечает всю группу
-          присутствующими на этом занятии — останется кликнуть только по отсутствующим.
+          открывает быстрое меню выбора статуса и вызова редактора примечания. Двойной клик открывает окно
+          редактирования примечания (например, номера справки) без сброса статуса. Процент посещаемости
+          рассчитывается как доля присутствий от числа проведённых (отмеченных) занятий.
         </div>
       </Card>
     </div>

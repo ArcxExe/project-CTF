@@ -5,12 +5,14 @@ import com.arcx.ctfplatform.common.time.TimeProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -30,9 +32,9 @@ public class GlobalExceptionHandler {
     ) {
         Map<String, String> errors = new LinkedHashMap<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
-            errors.put(fieldError.getField(), fieldError.getDefaultMessage());
+            errors.put(fieldError.getField(), localizeMessage(fieldError.getDefaultMessage()));
         }
-        return build(HttpStatus.BAD_REQUEST, "Validation failed", request, errors);
+        return build(HttpStatus.BAD_REQUEST, "Ошибка проверки полей формы", request, errors);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -40,7 +42,23 @@ public class GlobalExceptionHandler {
             ConstraintViolationException ex,
             HttpServletRequest request
     ) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, null);
+        return build(HttpStatus.BAD_REQUEST, localizeMessage(ex.getMessage()), request, null);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableMessage(
+            HttpMessageNotReadableException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.BAD_REQUEST, "Некорректный формат данных запроса", request, null);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.BAD_REQUEST, "Некорректное значение параметра запроса", request, null);
     }
 
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
@@ -48,7 +66,7 @@ public class GlobalExceptionHandler {
             RuntimeException ex,
             HttpServletRequest request
     ) {
-        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, null);
+        return build(HttpStatus.BAD_REQUEST, localizeMessage(ex.getMessage()), request, null);
     }
 
     @ExceptionHandler(AuthenticationException.class)
@@ -56,7 +74,7 @@ public class GlobalExceptionHandler {
             AuthenticationException ex,
             HttpServletRequest request
     ) {
-        return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
+        return build(HttpStatus.UNAUTHORIZED, localizeMessage(ex.getMessage()), request, null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -64,7 +82,7 @@ public class GlobalExceptionHandler {
             AccessDeniedException ex,
             HttpServletRequest request
     ) {
-        return build(HttpStatus.FORBIDDEN, ex.getMessage(), request, null);
+        return build(HttpStatus.FORBIDDEN, localizeMessage(ex.getMessage()), request, null);
     }
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -75,7 +93,107 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         log.error("Unhandled exception on path: {}", request.getRequestURI(), ex);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error", request, null);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Внутренняя ошибка сервера", request, null);
+    }
+
+    private String localizeMessage(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "Некорректный запрос";
+        }
+        return switch (raw) {
+            case "Invalid credentials", "Bad credentials" -> "Неверный логин (email) или пароль";
+            case "User is blocked", "Student account is blocked", "User account is blocked" ->
+                    "Учётная запись заблокирована. Обратитесь к преподавателю или администратору";
+            case "Email already registered", "User with this email already exists" ->
+                    "Этот email уже зарегистрирован";
+            case "Username already taken", "User with this username already exists" ->
+                    "Это имя пользователя уже занято";
+            case "Email is invalid" -> "Некорректный формат email";
+            case "Student code not registered", "Invalid student code" ->
+                    "Шифр / токен студента не найден в списке курса";
+            case "This student code is already linked", "Student code already claimed" ->
+                    "Этот шифр студента уже привязан к другой учётной записи";
+            case "Student code already exists" -> "Студент с таким шифром уже существует";
+            case "Student is not pending binding verification" ->
+                    "Учётная запись студента не ожидает подтверждения привязки";
+            case "Student not found" -> "Профиль студента не найден";
+            case "studentId is required" -> "Не выбран студент";
+            case "Student ID cannot be null" -> "Не выбран студент";
+            case "Score must be non-negative" -> "Баллы не могут быть отрицательными";
+            case "Reason cannot be blank" -> "Необходимо указать причину";
+            case "Competition not found" -> "Соревнование не найдено";
+            case "Competition is not available" -> "Соревнование недоступно";
+            case "Competition is not active" -> "Соревнование сейчас не активно";
+            case "startDate cannot be after endDate" ->
+                    "Дата начала соревнования не может быть позже даты окончания";
+            case "Quiz not found", "Test not found" -> "Тест не найден";
+            case "Question not found" -> "Вопрос не найден";
+            case "Option not found" -> "Вариант ответа не найден";
+            case "Challenge not found in this test" -> "Задание не найдено в этом тесте";
+            case "Quiz is not published", "Test is not published" -> "Тест ещё не опубликован";
+            case "Active quiz attempt is required to view questions" ->
+                    "Для просмотра вопросов необходимо начать попытку прохождения теста";
+            case "No active attempt found for this quiz" -> "Активная попытка прохождения теста не найдена";
+            case "Quiz time limit exceeded" -> "Время на прохождение теста истекло";
+            case "Invalid promo code" -> "Промокод не найден или введён неверно";
+            case "Promo code already used by this student" -> "Вы уже использовали этот промокод ранее";
+            case "Promo code usage limit reached" -> "Лимит использований этого промокода исчерпан";
+            case "Group not found" -> "Группа не найдена";
+            case "Group exists with this name", "Group with this name already exists" ->
+                    "Группа с таким названием уже существует";
+            case "Academic flow not found" -> "Учебный поток не найден";
+            case "Flow with this name already exists" -> "Поток с таким названием уже существует";
+            case "Scale not found" -> "Шкала оценивания не найдена";
+            case "Task not found" -> "Задание не найдено";
+            case "Task is not available" -> "Задание недоступно";
+            case "Flag is required for FLAG tasks" -> "Для задания с флагом необходимо указать флаг";
+            case "Task is not associated with any competition" -> "Задание не привязано к соревнованию";
+            case "Invalid task type for this endpoint" -> "Для этого задания отправка флага недоступна";
+            case "Invalid task type for file upload" -> "Для этого задания загрузка файла недоступна";
+            case "First Blood Only challenge has already been solved" ->
+                    "Задание «Первая кровь» уже решено другим участником";
+            case "Challenge already solved" -> "Это задание уже решено вами";
+            case "Too many wrong attempts. Please wait before trying again." ->
+                    "Слишком много неверных попыток. Подождите немного перед следующей отправкой";
+            case "Attempt not found" -> "Попытка не найдена";
+            case "No file associated with this attempt" -> "К этой попытке не прикреплён файл";
+            case "Uploaded file cannot be empty" -> "Загружаемый файл не может быть пустым";
+            case "Invalid file name" -> "Некорректное имя файла";
+            case "Unsupported file extension. Allowed extensions: .pdf, .zip, .txt" ->
+                    "Недопустимое расширение файла. Разрешены: .pdf, .zip, .txt";
+            case "Invalid file path" -> "Некорректный путь к файлу";
+            case "Session type is required" -> "Необходимо указать тип занятия";
+            case "Invalid CSV row: expected studentCode and score" ->
+                    "Некорректная строка CSV: ожидаются шифр студента и баллы";
+            case "Access Denied", "Access is denied" -> "Недостаточно прав для выполнения операции";
+            default -> {
+                if (raw.startsWith("Student not found:")) {
+                    yield "Профиль студента не найден";
+                }
+                if (raw.startsWith("Student is not allowed to start quiz in status:")) {
+                    yield "Прохождение теста недоступно для текущего статуса учётной записи";
+                }
+                if (raw.startsWith("Student status does not allow submissions:")) {
+                    yield "Отправка решений недоступна для текущего статуса учётной записи";
+                }
+                if (raw.startsWith("Task with this task_id already exists:")) {
+                    yield "Задание с таким идентификатором (task_id) уже существует";
+                }
+                if (raw.startsWith("Invalid lab number:")) {
+                    yield "Некорректный номер лабораторной работы (допустимы 1–8)";
+                }
+                if (raw.startsWith("Invalid score in CSV")) {
+                    yield "Некорректное значение баллов в CSV-файле";
+                }
+                if (raw.startsWith("Failed to import CSV:") || raw.startsWith("Failed to parse and import students spreadsheet:")) {
+                    yield "Не удалось загрузить файл: проверьте формат таблицы и данные";
+                }
+                if (raw.startsWith("Cycle number must be between")) {
+                    yield "Номер занятия вне допустимого диапазона";
+                }
+                yield raw;
+            }
+        };
     }
 
     private ResponseEntity<ApiErrorResponse> build(

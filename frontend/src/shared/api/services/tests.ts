@@ -181,7 +181,7 @@ export const adminTestsApi = {
     const all = await this.getAll();
     const found = all.find((t) => t.id === testId);
     if (!found) {
-      throw new Error(`Test with id ${testId} not found`);
+      throw new Error(`Тест с идентификатором ${testId} не найден`);
     }
     return found;
   },

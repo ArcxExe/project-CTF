@@ -76,18 +76,19 @@ public class QuizService {
     @Transactional
     public QuizAttempt startQuiz(UUID quizId, UUID userId) {
         Student student = studentRepository.findByUserId(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
-        if (student.getStatus() == StudentStatus.PENDING_BINDING_VERIFICATION
-                || student.getStatus() == StudentStatus.BLOCKED
-                || student.getStatus() == StudentStatus.DISQUALIFIED) {
-            throw new IllegalStateException("Student is not allowed to start quiz in status: " + student.getStatus());
+                .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
+        if (student.getStatus() == StudentStatus.PENDING_BINDING_VERIFICATION) {
+            throw new IllegalStateException("Прохождение теста недоступно: ваша учётная запись ожидает подтверждения преподавателем");
+        }
+        if (student.getStatus() == StudentStatus.BLOCKED || student.getStatus() == StudentStatus.DISQUALIFIED) {
+            throw new IllegalStateException("Прохождение теста недоступно: учётная запись заблокирована или дисквалифицирована");
         }
         
         Test test = testRepository.findById(quizId)
-                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Тест не найден"));
 
         if (test.getStatus() != TestStatus.PUBLISHED) {
-            throw new IllegalStateException("Quiz is not published");
+            throw new IllegalStateException("Тест ещё не опубликован");
         }
 
         List<QuizAttempt> attempts = attemptRepository.findAllByQuizIdAndStudentId(quizId, student.getId());
@@ -96,7 +97,12 @@ public class QuizService {
                 .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
                 .findFirst();
         if (activeAttempt.isPresent()) {
-            return activeAttempt.get();
+            QuizAttempt existing = activeAttempt.get();
+            Instant now = Instant.now();
+            if (isAttemptExpired(test, existing, now, false)) {
+                return completeExpiredAttempt(existing, now, userId);
+            }
+            return existing;
         }
 
         boolean hasCompleted = attempts.stream()
@@ -119,29 +125,24 @@ public class QuizService {
     @Transactional(readOnly = true)
     public List<QuizAttempt> getStudentAttempts(UUID userId) {
         Student student = studentRepository.findByUserId(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
         return attemptRepository.findAllByStudentId(student.getId());
     }
 
     @Transactional
     public QuizAttempt submitAnswers(UUID quizId, UUID userId, List<QuestionAnswerDTO> answers) {
         Student student = studentRepository.findByUserId(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
 
         QuizAttempt attempt = attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, student.getId(), QuizAttemptStatus.IN_PROGRESS)
-                .orElseThrow(() -> new IllegalStateException("No active attempt found for this quiz"));
+                .orElseThrow(() -> new IllegalStateException("Активная попытка прохождения теста не найдена"));
 
         Test test = testRepository.findById(attempt.getQuizId())
-                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Тест не найден"));
 
         Instant now = Instant.now();
-        if (test.getTimeLimitMinutes() != null && test.getTimeLimitMinutes() > 0 && attempt.getStartedAt() != null) {
-            Instant deadline = attempt.getStartedAt()
-                    .plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES)
-                    .plusSeconds(30);
-            if (now.isAfter(deadline)) {
-                throw new IllegalStateException("Quiz time limit exceeded");
-            }
+        if (isAttemptExpired(test, attempt, now, false)) {
+            throw new IllegalStateException("Время на прохождение теста истекло");
         }
         
         List<QuizQuestion> questions = questionRepository.findAllByTestIdOrderByOrderingAsc(test.getId());
@@ -256,24 +257,24 @@ public class QuizService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getQuestionsForCaller(UUID testId, User user) {
         Test test = testRepository.findById(testId)
-                .orElseThrow(() -> new IllegalArgumentException("Quiz not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Тест не найден"));
 
         if (!isAdminOrInstructor(user)) {
             if (test.getStatus() != TestStatus.PUBLISHED) {
-                throw new IllegalStateException("Test is not published");
+                throw new IllegalStateException("Тест ещё не опубликован");
             }
             UUID resolvedUserId = resolveUserId(user);
             if (resolvedUserId == null) {
-                throw new IllegalStateException("Active quiz attempt is required to view questions");
+                throw new IllegalStateException("Для просмотра вопросов необходимо начать попытку прохождения теста");
             }
             Student student = studentRepository.findByUserId(resolvedUserId)
-                    .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+                    .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
             boolean hasInProgress = attemptRepository.findByQuizIdAndStudentIdAndStatus(
                     testId, student.getId(), QuizAttemptStatus.IN_PROGRESS).isPresent()
                     || attemptRepository.findAllByQuizIdAndStudentId(testId, student.getId()).stream()
                             .anyMatch(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS);
             if (!hasInProgress) {
-                throw new IllegalStateException("Active quiz attempt is required to view questions");
+                throw new IllegalStateException("Для просмотра вопросов необходимо начать попытку прохождения теста");
             }
         }
         return getQuestionsWithOptions(testId);
@@ -302,34 +303,50 @@ public class QuizService {
 
         for (QuizAttempt attempt : activeAttempts) {
             testRepository.findById(attempt.getQuizId()).ifPresent(test -> {
-                int timeLimit = test.getTimeLimitMinutes() != null ? test.getTimeLimitMinutes() : 60;
-                Instant deadline = attempt.getStartedAt().plus(timeLimit, ChronoUnit.MINUTES).plusSeconds(30);
-                if (now.isAfter(deadline)) {
-                    attempt.setScore(attempt.getScore() != null ? attempt.getScore() : 0);
-                    attempt.setCompletedAt(now);
-                    attempt.setStatus(QuizAttemptStatus.COMPLETED);
-                    attemptRepository.save(attempt);
-                    if (leaderboardService != null) {
-                        leaderboardService.broadcastUpdate();
-                    }
-                    if (auditService != null) {
-                        UUID userId = studentRepository.findById(attempt.getStudentId())
-                                .map(Student::getUserId)
-                                .orElse(null);
-                        auditService.logEvent(
-                                userId,
-                                "SYSTEM",
-                                "SYSTEM",
-                                "QUIZ_AUTO_SUBMIT",
-                                attempt.getQuizId().toString(),
-                                "IN_PROGRESS",
-                                "COMPLETED (score=" + attempt.getScore() + ")",
-                                null
-                        );
-                    }
+                if (isAttemptExpired(test, attempt, now, true)) {
+                    UUID userId = studentRepository.findById(attempt.getStudentId())
+                            .map(Student::getUserId)
+                            .orElse(null);
+                    completeExpiredAttempt(attempt, now, userId);
                 }
             });
         }
+    }
+
+    private boolean isAttemptExpired(Test test, QuizAttempt attempt, Instant now, boolean defaultLimitWhenNull) {
+        if (attempt.getStartedAt() == null) {
+            return false;
+        }
+        Integer configuredLimit = test.getTimeLimitMinutes();
+        int timeLimit = configuredLimit != null ? configuredLimit : (defaultLimitWhenNull ? 60 : 0);
+        if (timeLimit <= 0) {
+            return false;
+        }
+        Instant deadline = attempt.getStartedAt().plus(timeLimit, ChronoUnit.MINUTES).plusSeconds(30);
+        return now.isAfter(deadline);
+    }
+
+    private QuizAttempt completeExpiredAttempt(QuizAttempt attempt, Instant now, UUID userId) {
+        attempt.setScore(attempt.getScore() != null ? attempt.getScore() : 0);
+        attempt.setCompletedAt(now);
+        attempt.setStatus(QuizAttemptStatus.COMPLETED);
+        QuizAttempt saved = attemptRepository.save(attempt);
+        if (leaderboardService != null) {
+            leaderboardService.broadcastUpdate();
+        }
+        if (auditService != null) {
+            auditService.logEvent(
+                    userId,
+                    "SYSTEM",
+                    "SYSTEM",
+                    "QUIZ_AUTO_SUBMIT",
+                    saved.getQuizId().toString(),
+                    "IN_PROGRESS",
+                    "COMPLETED (score=" + saved.getScore() + ")",
+                    null
+            );
+        }
+        return saved;
     }
 
     private boolean isAdminOrInstructor(User user) {

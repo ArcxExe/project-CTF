@@ -29,7 +29,18 @@ import { Input } from "@/shared/ui/Input/Input";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import { GradebookView } from "@/features/gradebook/GradebookView";
+import { gradebookApi, type GradebookRowDto } from "@/shared/api/services/gradebook";
 import "./pages.css";
+
+const PARTICIPANT_STUDENT_STATUS_LABELS: Record<string, string> = {
+  active: "Активен",
+  pending_binding_verification: "Ожидает подтверждения",
+  blocked: "Заблокирован",
+  disqualified: "Дисквалифицирован",
+};
+
+const formatParticipantStatus = (status?: string) =>
+  (status ? PARTICIPANT_STUDENT_STATUS_LABELS[status.toLowerCase()] : undefined) || status || "—";
 
 export const RegisterPage = () => {
   const { push } = useToastStore();
@@ -167,6 +178,25 @@ export const ParticipantCompetitionPage = () => {
             const linkedTest = tests.find(t => t.competitionId === competition.id);
             const testUrl = linkedTest ? `/participant/test/${linkedTest.id}` : "/participant/test";
             const isActive = competition.status === "active" || competition.status === "published";
+            const now = new Date();
+            const startDate = new Date(competition.startsAt);
+            const endDate = new Date(competition.endsAt);
+            const isNotStarted = !isNaN(startDate.getTime()) && startDate > now;
+            const isEnded = !isNaN(endDate.getTime()) && endDate < now;
+            const isWindowOpen = isActive && !isNotStarted && !isEnded;
+
+            let windowStateLabel = "Открыто (приём решений идёт)";
+            let windowStateColor = "var(--success)";
+            if (!isActive) {
+              windowStateLabel = "Закрыто организаторами";
+              windowStateColor = "var(--text-secondary)";
+            } else if (isEnded) {
+              windowStateLabel = "Завершено (срок сдачи истёк)";
+              windowStateColor = "var(--danger)";
+            } else if (isNotStarted) {
+              windowStateLabel = "Ожидает начала";
+              windowStateColor = "#eab308";
+            }
 
             return (
               <div key={competition.id} className="grid grid-2">
@@ -178,51 +208,66 @@ export const ParticipantCompetitionPage = () => {
                     </div>
                     <div className="info-grid">
                       <span>Старт</span>
-                      <strong>{new Date(competition.startsAt).toLocaleString("ru-RU")}</strong>
+                      <strong>{startDate.toLocaleString("ru-RU")}</strong>
                       <span>Финиш</span>
-                      <strong>{new Date(competition.endsAt).toLocaleString("ru-RU")}</strong>
-                      <span>Статус</span>
-                      <strong>{isActive ? "Активно" : competition.status}</strong>
+                      <strong>{endDate.toLocaleString("ru-RU")}</strong>
+                      <span>Адм. статус</span>
+                      <strong>{isActive ? "Активно (опубликовано)" : "Завершено"}</strong>
+                      <span>Окно сдачи</span>
+                      <strong style={{ color: windowStateColor }}>{windowStateLabel}</strong>
+                      <span>Связанный тест</span>
+                      <strong>
+                        {linkedTest
+                          ? linkedTest.title
+                          : "Не привязан (доступен общий список тестов)"}
+                      </strong>
                     </div>
                   </div>
                 </Card>
 
                 <Card>
-                  <div className="action-grid">
-                    {isActive ? (
-                      <Link className="page-link-button" to={testUrl}>
-                        Перейти к тесту
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        className="page-link-button"
-                        disabled
-                        style={{ opacity: 0.5, cursor: "not-allowed" }}
-                      >
-                        Перейти к тесту
-                      </button>
+                  <div className="page-stack">
+                    {isActive && isEnded && (
+                      <div className="muted" style={{ fontSize: "0.85rem", color: "#eab308" }}>
+                        Календарное окно сдачи этого соревнования завершилось ({endDate.toLocaleDateString("ru-RU")}). Задачи закрыты для отправки на странице CTF.
+                      </div>
                     )}
-                    {isActive ? (
-                      <Link className="page-link-button" to="/participant/ctf">
-                        Открыть CTF
+                    <div className="action-grid">
+                      {isActive ? (
+                        <Link className="page-link-button" to={testUrl}>
+                          {linkedTest ? "Перейти к тесту" : "Перейти к списку тестов"}
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          className="page-link-button"
+                          disabled
+                          style={{ opacity: 0.5, cursor: "not-allowed" }}
+                        >
+                          Перейти к тесту
+                        </button>
+                      )}
+                      {isActive ? (
+                        <Link className="page-link-button" to="/participant/ctf">
+                          {isWindowOpen ? "Открыть CTF" : "Открыть CTF (окно закрыто)"}
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          className="page-link-button"
+                          disabled
+                          style={{ opacity: 0.5, cursor: "not-allowed" }}
+                        >
+                          Открыть CTF
+                        </button>
+                      )}
+                      <Link className="page-link-button" to="/participant/rating">
+                        Смотреть рейтинг
                       </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        className="page-link-button"
-                        disabled
-                        style={{ opacity: 0.5, cursor: "not-allowed" }}
-                      >
-                        Открыть CTF
-                      </button>
-                    )}
-                    <Link className="page-link-button" to="/participant/rating">
-                      Смотреть рейтинг
-                    </Link>
-                    <Link className="page-link-button" to="/participant/promo-code">
-                      Ввести промокод
-                    </Link>
+                      <Link className="page-link-button" to="/participant/promo-code">
+                        Ввести промокод
+                      </Link>
+                    </div>
                   </div>
                 </Card>
               </div>
@@ -271,7 +316,7 @@ export const ParticipantTestPage = () => {
     <div className="page-stack">
       <PageHeader
         title="Тесты"
-        subtitle="Список доступных тестов для прохождения."
+        subtitle="Список доступных тестов и контрольных точек (КТ) для прохождения."
         actions={<Badge tone="info">{tests.length} тестов</Badge>}
       />
 
@@ -293,6 +338,16 @@ export const ParticipantTestPage = () => {
                     <div>
                       <h3>{test.title}</h3>
                       <p className="muted">{test.description || "Описание теста не указано."}</p>
+                      {isCompleted && attempt && (
+                        <p style={{ marginTop: "0.4rem", color: "var(--success)", fontWeight: 600 }}>
+                          Статус: завершён · Ваш результат: {attempt.score} баллов
+                        </p>
+                      )}
+                      {isInProgress && (
+                        <p style={{ marginTop: "0.4rem", color: "var(--primary)", fontWeight: 600 }}>
+                          Статус: попытка активна — нажмите «Продолжить тест» для возврата к вопросам
+                        </p>
+                      )}
                     </div>
                     <div className="entity-summary">
                       <span>{test.questionsCount} заданий</span>
@@ -301,7 +356,15 @@ export const ParticipantTestPage = () => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+                    {isCompleted && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => navigate(`/participant/test/${test.id}`)}
+                      >
+                        Смотреть результат
+                      </Button>
+                    )}
                     <Button 
                       onClick={() => navigate(`/participant/test/${test.id}`)}
                       disabled={isCompleted}
@@ -797,7 +860,7 @@ export const ParticipantRatingPage = () => {
           variant={activeTab === "ctf" ? "primary" : "secondary"}
           onClick={() => setActiveTab("ctf")}
         >
-          Табло CTF и корректировки
+          Табло CTF и история корректировок
         </Button>
       </div>
 
@@ -807,7 +870,10 @@ export const ParticipantRatingPage = () => {
         <Loader label="Загружаем рейтинг..." />
       ) : (
         <>
-          <PageHeader title="Рейтинг CTF" subtitle="Таблица результатов участников текущего соревнования." />
+          <PageHeader
+            title="Табло CTF и история корректировок"
+            subtitle="Таблица результатов участников текущего соревнования и журнал начислений/списаний баллов."
+          />
           {leaderboardHidden ? (
             <Card>
               <div style={{
@@ -959,23 +1025,28 @@ export const PromoCodePage = () => {
     <div className="page-stack">
       <PageHeader
         title="Ввод промокода"
-        subtitle="Активация бонусных попыток, подсказок или дополнительных баллов."
+        subtitle="Активация промокодов для начисления бонусных баллов CTF, удвоения очков (x2) или применения временного множителя."
       />
 
       <Card>
-        <form className="promo-form" onSubmit={handleSubmit}>
-          <Input
-            label="Промокод"
-            placeholder="SPRING-CTF-2026"
-            value={code}
-            onChange={(event) => setCode(event.target.value.toUpperCase())}
-            style={{ borderColor: validationColor, borderWidth: validationColor ? '2px' : '1px' }}
-            error={hasInput && !isValidFormat ? "Минимум 1 символов" : undefined}
-          />
-          <Button type="submit" disabled={isSubmitting || (hasInput && !isValidFormat)}>
-            {isSubmitting ? "Активируем..." : "Активировать"}
-          </Button>
-        </form>
+        <div className="page-stack">
+          <p className="muted" style={{ margin: 0, fontSize: "0.88rem" }}>
+            Доступные виды бонусов по промокоду: добавление или корректировка баллов CTF, удвоение набранных очков (x2) и временный множитель баллов.
+          </p>
+          <form className="promo-form" onSubmit={handleSubmit}>
+            <Input
+              label="Промокод"
+              placeholder="SPRING-CTF-2026"
+              value={code}
+              onChange={(event) => setCode(event.target.value.toUpperCase())}
+              style={{ borderColor: validationColor, borderWidth: validationColor ? '2px' : '1px' }}
+              error={hasInput && !isValidFormat ? "Минимум 1 символ" : undefined}
+            />
+            <Button type="submit" disabled={isSubmitting || (hasInput && !isValidFormat)}>
+              {isSubmitting ? "Активируем..." : "Активировать"}
+            </Button>
+          </form>
+        </div>
       </Card>
     </div>
   );
@@ -985,6 +1056,7 @@ export const ParticipantLabsPage = () => {
   const { push } = useToastStore();
   const [activeTab, setActiveTab] = useState<"gradebook" | "summary">("gradebook");
   const [scores, setScores] = useState<LabScore[]>([]);
+  const [gradebookRows, setGradebookRows] = useState<GradebookRowDto[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [search, setSearch] = useState("");
@@ -994,10 +1066,12 @@ export const ParticipantLabsPage = () => {
     void Promise.all([
       labScoresApi.getParticipantScores().catch(() => [] as LabScore[]),
       groupsApi.getAll().catch(() => [] as Group[]),
+      gradebookApi.getGradebook().catch(() => [] as GradebookRowDto[]),
     ])
-      .then(([scoresData, groupsData]) => {
+      .then(([scoresData, groupsData, gbData]) => {
         setScores(scoresData);
         setGroups(groupsData);
+        setGradebookRows(gbData);
       })
       .catch((error: unknown) => {
         push({
@@ -1007,6 +1081,11 @@ export const ParticipantLabsPage = () => {
       })
       .finally(() => setIsLoading(false));
   }, [push]);
+
+  const gradebookByStudentId = useMemo(
+    () => new Map(gradebookRows.map((r) => [r.studentId, r])),
+    [gradebookRows],
+  );
 
   const selectedGroupName = useMemo(() => {
     return groups.find((g) => g.id === selectedGroupId)?.name || "";
@@ -1090,7 +1169,43 @@ export const ParticipantLabsPage = () => {
                 title: "Доля ЛР (L)",
                 render: (row) => `${(row.v1Coefficient * 100).toFixed(2)}%`
               },
-              { key: "status", title: "Статус" },
+              {
+                key: "acceptedLabs",
+                title: "Зачтено ЛР",
+                render: (row) => {
+                  const gbRow = gradebookByStudentId.get(row.studentId);
+                  return `${gbRow?.acceptedLabsCount ?? 0}/8`;
+                },
+              },
+              {
+                key: "eligibility",
+                title: "Допуск ЛР",
+                render: (row) => {
+                  const gbRow = gradebookByStudentId.get(row.studentId);
+                  if (!gbRow) return "Не подтверждён";
+                  if (gbRow.isEligible) {
+                    return (
+                      <span style={{ color: "var(--success)", fontWeight: 500 }}>
+                        {gbRow.acceptedLabsCount >= 8
+                          ? "Допущен (8/8)"
+                          : `Допущен вручную (${gbRow.acceptedLabsCount}/8)`}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span style={{ color: "var(--danger)", fontWeight: 500 }}>
+                      {gbRow.acceptedLabsCount === 0 && row.score > 0
+                        ? "Нет допуска (0/8 — зачёт не подтверждён)"
+                        : `Нет допуска (${gbRow.acceptedLabsCount}/8)`}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "status",
+                title: "Статус",
+                render: (row) => formatParticipantStatus(row.status),
+              },
             ]}
             rows={filteredScores}
           />

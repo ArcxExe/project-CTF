@@ -98,6 +98,10 @@ public class AdminPromoCodeController {
 
     @PostMapping
     public ResponseEntity<PromoCodeResponse> createPromoCode(@jakarta.validation.Valid @RequestBody PromoCodeCreateRequest request) {
+        String normalizedCode = request.code().trim().toUpperCase();
+        if (promoCodeRepository.findByCode(normalizedCode).isPresent()) {
+            throw new IllegalArgumentException("Промокод с таким кодом уже существует");
+        }
         int effectiveValue = request.value() != null ? request.value() : 0;
         if ((request.modifierType() == com.arcx.ctfplatform.modifiers.entity.PromoModifierType.DOUBLE_COEFF
                 || request.modifierType() == com.arcx.ctfplatform.modifiers.entity.PromoModifierType.TEMP_MULTIPLIER)
@@ -105,7 +109,7 @@ public class AdminPromoCodeController {
             effectiveValue = 2;
         }
         PromoCode promo = PromoCode.builder()
-                .code(request.code().trim().toUpperCase())
+                .code(normalizedCode)
                 .modifierType(request.modifierType())
                 .value(effectiveValue)
                 .maxUses(request.maxUses() != null && request.maxUses() > 0 ? request.maxUses() : 1)

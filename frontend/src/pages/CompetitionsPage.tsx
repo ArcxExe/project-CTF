@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { adminCompetitionsApi } from "@/shared/api/services/competitions";
 import type { CompetitionPayload } from "@/shared/api/services/competitions";
@@ -37,7 +37,28 @@ const formatToLocalTime = (isoString?: string) => {
   return `${year}-${month}-${date}T${hours}:${minutes}`;
 };
 
-const toIsoDateTime = (value: string) => (value ? new Date(value).toISOString() : undefined);
+const normalizeDateTimeValue = (raw?: string): string => {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  const ruMatch = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})[,\sT]+(\d{2}):(\d{2})/);
+  if (ruMatch) {
+    const [, dd, mm, yyyy, hh, min] = ruMatch;
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  }
+  const isoSpaceMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/);
+  if (isoSpaceMatch) {
+    return `${isoSpaceMatch[1]}T${isoSpaceMatch[2]}`;
+  }
+  return trimmed;
+};
+
+const toIsoDateTime = (value: string) => {
+  const normalized = normalizeDateTimeValue(value);
+  if (!normalized) return undefined;
+  const parsed = new Date(normalized);
+  if (isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+};
 
 const initialForm = {
   title: "",
@@ -63,6 +84,9 @@ export const CompetitionsPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(initialForm);
+  const [formError, setFormError] = useState<string | null>(null);
+  const startsAtInputRef = useRef<HTMLInputElement | null>(null);
+  const endsAtInputRef = useRef<HTMLInputElement | null>(null);
   const { push } = useToastStore();
 
   const loadData = async () => {
@@ -96,6 +120,7 @@ export const CompetitionsPage = () => {
     setTaskPoolFilter("");
     setTaskBankFilter("");
     setForm(initialForm);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -115,6 +140,7 @@ export const CompetitionsPage = () => {
       leaderboardHidden: competition.leaderboardHidden || false,
       hiddenStudentIds: competition.hiddenStudentIds || [],
     });
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -137,13 +163,55 @@ export const CompetitionsPage = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    setFormError(null);
+
+    if (startsAtInputRef.current?.validity?.badInput || endsAtInputRef.current?.validity?.badInput) {
+      const msg = "Некорректно заполнены поля даты/времени. Проверьте все сегменты даты и времени.";
+      setFormError(msg);
+      push({ title: msg, variant: "error" });
+      return;
+    }
+
+    const domStart = startsAtInputRef.current ? startsAtInputRef.current.value : form.startsAt;
+    const domEnd = endsAtInputRef.current ? endsAtInputRef.current.value : form.endsAt;
+    const rawStart = normalizeDateTimeValue(domStart);
+    const rawEnd = normalizeDateTimeValue(domEnd);
+
+    if (rawStart && !toIsoDateTime(rawStart)) {
+      const msg = "Некорректная дата начала соревнования";
+      setFormError(msg);
+      push({ title: msg, variant: "error" });
+      return;
+    }
+    if (rawEnd && !toIsoDateTime(rawEnd)) {
+      const msg = "Некорректная дата окончания соревнования";
+      setFormError(msg);
+      push({ title: msg, variant: "error" });
+      return;
+    }
+
+    const startIso = toIsoDateTime(rawStart);
+    const endIso = toIsoDateTime(rawEnd);
+
+    if (startIso && endIso && new Date(startIso).getTime() > new Date(endIso).getTime()) {
+      const msg = "Дата начала соревнования не может быть позже даты окончания";
+      setFormError(msg);
+      push({ title: msg, variant: "error" });
+      return;
+    }
+
+    // Sync any direct DOM value into state so displayed values stay consistent if save fails
+    if (rawStart !== form.startsAt || rawEnd !== form.endsAt) {
+      setForm((current) => ({ ...current, startsAt: rawStart, endsAt: rawEnd }));
+    }
+
     setIsSaving(true);
 
     const payload: CompetitionPayload = {
       title: form.title,
       description: form.description || undefined,
-      startsAt: toIsoDateTime(form.startsAt),
-      endsAt: toIsoDateTime(form.endsAt),
+      startsAt: startIso,
+      endsAt: endIso,
       status: form.status,
       sumTestPoints: form.sumTestPoints,
       leaderboardHidden: form.leaderboardHidden,
@@ -162,12 +230,15 @@ export const CompetitionsPage = () => {
       }
       await loadData();
       setForm(initialForm);
+      setFormError(null);
       setIsModalOpen(false);
       setEditingId(null);
       setSelectedTaskIds([]);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "Не удалось сохранить соревнование";
+      setFormError(msg);
       push({
-        title: error instanceof Error ? error.message : "Не удалось сохранить соревнование",
+        title: msg,
         variant: "error",
       });
     } finally {
@@ -189,22 +260,45 @@ export const CompetitionsPage = () => {
 
       {items.length > 0 ? (
         <div className="grid">
-          {items.map((competition) => (
+          {items.map((competition) => {
+            const now = new Date();
+            const startD = new Date(competition.startsAt);
+            const endD = new Date(competition.endsAt);
+            const isEnded = !isNaN(endD.getTime()) && endD < now;
+            const isNotStarted = !isNaN(startD.getTime()) && startD > now;
+            const isActiveStatus = competition.status === "published" || competition.status === "active";
+
+            let windowBadgeText = "Окно сдачи: открыто";
+            if (!isActiveStatus) {
+              windowBadgeText = "Окно сдачи: закрыто";
+            } else if (isEnded) {
+              windowBadgeText = "Окно сдачи: срок истёк";
+            } else if (isNotStarted) {
+              windowBadgeText = "Окно сдачи: ожидает старта";
+            }
+
+            return (
             <Card key={competition.id}>
               <div className="competition-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%" }}>
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
                     <h3>{competition.title}</h3>
-                    <Badge tone={competition.status === "published" || competition.status === "active" ? "success" : "info"}>
-                      {statusLabels[competition.status] || competition.status}
-                    </Badge>
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      <Badge tone={isActiveStatus ? "success" : "info"}>
+                        Статус: {statusLabels[competition.status] || competition.status}
+                      </Badge>
+                      <Badge tone={isActiveStatus && !isEnded && !isNotStarted ? "success" : isEnded ? "danger" : "neutral"}>
+                        {windowBadgeText}
+                      </Badge>
+                    </div>
                   </div>
                   <p className="muted" style={{ margin: "0.5rem 0" }}>{competition.description || "Описание не указано"}</p>
                 </div>
 
                 <div className="competition-card__meta" style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.85rem", marginTop: "1rem" }}>
-                  <span>📅 Старт: {new Date(competition.startsAt).toLocaleString("ru-RU")}</span>
-                  <span>📅 Финиш: {new Date(competition.endsAt).toLocaleString("ru-RU")}</span>
+                  <span>📅 Старт: {startD.toLocaleString("ru-RU")}</span>
+                  <span>📅 Финиш: {endD.toLocaleString("ru-RU")}</span>
+                  <span>🕒 Календарное состояние: {windowBadgeText}</span>
                   <span>📝 Тесты: {competition.sumTestPoints ? "Суммировать баллы" : "Не суммировать"}</span>
                   <span>📊 Лидерборд: {competition.leaderboardHidden ? "Скрыт" : "Показан"}</span>
                   <span>👥 Скрытых студентов: {competition.hiddenStudentIds?.length || 0}</span>
@@ -217,7 +311,8 @@ export const CompetitionsPage = () => {
                 </div>
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <Card>
@@ -244,18 +339,60 @@ export const CompetitionsPage = () => {
           </label>
 
           <div className="admin-form-grid">
-            <Input
-              label="Старт"
-              type="datetime-local"
-              value={form.startsAt}
-              onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))}
-            />
-            <Input
-              label="Финиш"
-              type="datetime-local"
-              value={form.endsAt}
-              onChange={(event) => setForm((current) => ({ ...current, endsAt: event.target.value }))}
-            />
+            <label className="ui-field">
+              <span className="ui-field__label">Старт</span>
+              <input
+                ref={startsAtInputRef}
+                className="ui-input"
+                type="datetime-local"
+                value={form.startsAt}
+                onChange={(event) => {
+                  setFormError(null);
+                  if (event.target.validity?.badInput) return;
+                  setForm((current) => ({ ...current, startsAt: normalizeDateTimeValue(event.target.value) }));
+                }}
+                onInput={(event) => {
+                  const target = event.target as HTMLInputElement;
+                  setFormError(null);
+                  if (target.validity?.badInput) return;
+                  setForm((current) => ({
+                    ...current,
+                    startsAt: normalizeDateTimeValue(target.value),
+                  }));
+                }}
+                onBlur={(event) => {
+                  if (event.target.validity?.badInput) return;
+                  setForm((current) => ({ ...current, startsAt: normalizeDateTimeValue(event.target.value) }));
+                }}
+              />
+            </label>
+            <label className="ui-field">
+              <span className="ui-field__label">Финиш</span>
+              <input
+                ref={endsAtInputRef}
+                className="ui-input"
+                type="datetime-local"
+                value={form.endsAt}
+                onChange={(event) => {
+                  setFormError(null);
+                  if (event.target.validity?.badInput) return;
+                  setForm((current) => ({ ...current, endsAt: normalizeDateTimeValue(event.target.value) }));
+                }}
+                onInput={(event) => {
+                  const target = event.target as HTMLInputElement;
+                  setFormError(null);
+                  if (target.validity?.badInput) return;
+                  setForm((current) => ({
+                    ...current,
+                    endsAt: normalizeDateTimeValue(target.value),
+                  }));
+                }}
+                onBlur={(event) => {
+                  if (event.target.validity?.badInput) return;
+                  setForm((current) => ({ ...current, endsAt: normalizeDateTimeValue(event.target.value) }));
+                }}
+              />
+            </label>
             <label className="ui-field">
               <span className="ui-field__label">Статус</span>
               <select
@@ -444,6 +581,23 @@ export const CompetitionsPage = () => {
               )}
             </div>
           </label>
+
+          {formError && (
+            <div
+              role="alert"
+              style={{
+                color: "var(--danger)",
+                background: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.35)",
+                borderRadius: "var(--radius-sm)",
+                padding: "0.65rem 0.85rem",
+                fontSize: "0.88rem",
+                marginTop: "0.75rem",
+              }}
+            >
+              {formError}
+            </div>
+          )}
 
           <Button type="submit" disabled={isSaving} style={{ marginTop: "1rem" }}>
             {isSaving ? "Сохраняем..." : (editingId ? "Сохранить" : "Создать")}

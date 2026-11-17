@@ -31,7 +31,7 @@ public class AcademicGroupService {
     @Transactional(readOnly = true)
     public AcademicGroupResponseDTO getGroupById(UUID id) {
         AcademicGroup group = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Group not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Группа не найдена"));
 
         return acMappingDTO.mapping(group);
 
@@ -40,7 +40,7 @@ public class AcademicGroupService {
     @Transactional
     public AcademicGroupResponseDTO createGroup(AcademicGroupRequestDTO request) {
         if (repository.existsByName(request.name())) {
-            throw new IllegalArgumentException("Group exists with this name");
+            throw new IllegalArgumentException("Группа с таким названием уже существует");
         }
 
         AcademicGroup entity = new AcademicGroup();
@@ -58,11 +58,11 @@ public class AcademicGroupService {
     public AcademicGroupResponseDTO updateGroup(UUID id, AcademicGroupRequestDTO request) {
 
         AcademicGroup academicGroup = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Group not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Группа не найдена"));
 
         if (!academicGroup.getName().equals(request.name())) {
             if (repository.existsByName(request.name())) {
-                throw new IllegalArgumentException("Group with this name already exists");
+                throw new IllegalArgumentException("Группа с таким названием уже существует");
             }
             academicGroup.setName(request.name());
         }

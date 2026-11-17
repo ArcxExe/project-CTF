@@ -194,13 +194,6 @@ public class GradebookService {
                 }
                 LabScoreService.LabSpec spec = LabScoreService.getLabSpec(labNum);
                 double clampedScore = roundToTwoDecimals(Math.max(0.0, Math.min(entry.getValue(), spec.maxTotal())));
-                boolean accepted;
-                if (req.labAccepted() != null && req.labAccepted().containsKey(labNum)) {
-                    accepted = Boolean.TRUE.equals(req.labAccepted().get(labNum));
-                } else {
-                    accepted = clampedScore >= 0.40 * spec.maxTotal();
-                }
-
                 Optional<StudentLab> existingLabOpt = studentLabRepository.findByStudentIdAndLabNumber(studentId, labNum);
                 StudentLab lab = existingLabOpt
                         .orElseGet(() -> StudentLab.builder().student(student).labNumber(labNum).build());
@@ -214,6 +207,17 @@ public class GradebookService {
                     lab.setRawScore(roundToTwoDecimals(spec.maxRawScore() * ratio));
                     lab.setDefenseScore(roundToTwoDecimals(clampedScore - lab.getRawScore()));
                     lab.setPenaltyCoefficient(1.0);
+                }
+                boolean accepted;
+                if (req.labAccepted() != null && req.labAccepted().containsKey(labNum)) {
+                    accepted = Boolean.TRUE.equals(req.labAccepted().get(labNum));
+                } else if (hasDetailedBreakdown) {
+                    accepted = lab.getRawScore() >= 0.40 * spec.maxRawScore()
+                            && lab.getDefenseScore() >= 0.50 * spec.maxDefenseScore()
+                            && clampedScore >= 0.40 * spec.maxTotal();
+                } else {
+                    accepted = lab.getRawScore() >= 0.40 * spec.maxRawScore()
+                            && lab.getDefenseScore() >= 0.50 * spec.maxDefenseScore();
                 }
                 lab.setScore(clampedScore);
                 lab.setAccepted(accepted);
@@ -442,9 +446,6 @@ public class GradebookService {
 
         double totalLab = roundToTwoDecimals(Math.min(labScoreService.getFinalLabScore(student.getId()), 143.0));
         boolean isEligible = labScoreService.isEligible(student.getId());
-        if (studentLabs.isEmpty() && isEligible) {
-            acceptedCount = 8;
-        }
         double lPercent = roundToTwoDecimals(Math.max(0.0, Math.min((totalLab / 143.0) * 100.0, 100.0)));
 
         // KT 1..4

@@ -303,11 +303,11 @@ public class CtfTaskImportService {
             } else {
                 String refLabel = taskCode != null ? taskCode : title;
                 if (!flag.startsWith("CTF{") || !flag.endsWith("}")) {
-                    warnings.add("Строка " + excelRowNum + " (" + refLabel + "): флаг '" + flag + "' не соответствует формату CTF{...}.");
+                    warnings.add("Строка " + excelRowNum + " (" + refLabel + "): флаг не соответствует формату CTF{...} (рекомендуется шаблон CTF{...}, произвольный формат также допускается).");
                 }
                 String prevRef = seenFlags.putIfAbsent(flag, "строка " + excelRowNum + " (" + refLabel + ")");
                 if (prevRef != null) {
-                    warnings.add("Строка " + excelRowNum + " (" + refLabel + "): дублирующийся флаг '" + flag + "' (уже в " + prevRef + ").");
+                    warnings.add("Строка " + excelRowNum + " (" + refLabel + "): дублирующийся флаг (совпадает с заданием в " + prevRef + ").");
                 }
             }
 

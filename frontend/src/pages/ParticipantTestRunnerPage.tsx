@@ -24,24 +24,47 @@ export const ParticipantTestRunnerPage = () => {
   const [sequenceInputs, setSequenceInputs] = useState<Record<string, string>>({});
   
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
     if (!testId) return;
+    let cancelled = false;
 
     const loadData = async () => {
+      setIsLoading(true);
+      setLoadError(null);
       try {
-        const publishedTests = await testsApi.getPublished();
+        const [publishedTests, existingAttempts] = await Promise.all([
+          testsApi.getPublished(),
+          testsApi.getAttempts().catch(() => [] as QuizAttempt[]),
+        ]);
+        if (cancelled) return;
+
         const currentTest = publishedTests.find(t => t.id === testId);
-        if (!currentTest) throw new Error("Тест не найден");
+        if (!currentTest) throw new Error("Тест не найден или ещё не опубликован");
         setTest(currentTest);
 
-        const loadedQuestions = await testsApi.getQuestions(testId);
-        setQuestions(loadedQuestions);
+        const completedAttempt = existingAttempts.find(
+          a => a.quizId === testId && a.status === "COMPLETED",
+        );
+        if (completedAttempt) {
+          setAttempt(completedAttempt);
+          return;
+        }
 
         const newAttempt = await testsApi.startQuiz(testId);
+        if (cancelled) return;
         setAttempt(newAttempt);
+
+        if (newAttempt.status === "COMPLETED") {
+          return;
+        }
+
+        const loadedQuestions = await testsApi.getQuestions(testId);
+        if (cancelled) return;
+        setQuestions(loadedQuestions);
 
         // Load saved answers from local storage if available
         if (newAttempt && newAttempt.status === "IN_PROGRESS") {
@@ -71,18 +94,25 @@ export const ParticipantTestRunnerPage = () => {
         }
 
       } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Ошибка загрузки теста";
+        setLoadError(message);
         push({
-          title: error instanceof Error ? error.message : "Ошибка загрузки теста",
+          title: message,
           variant: "error",
         });
-        navigate("/participant/test");
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     void loadData();
-  }, [testId, navigate, push]);
+    return () => {
+      cancelled = true;
+    };
+  }, [testId, push]);
 
   const handleSubmit = useCallback(async (isAuto = false, overrideAnswers?: Record<string, string[]>) => {
     if (!attempt || attempt.status === "COMPLETED" || isSubmitting || !testId) return;
@@ -115,7 +145,9 @@ export const ParticipantTestRunnerPage = () => {
 
   // Timer effect
   useEffect(() => {
-    if (!attempt || !test || attempt.status === "COMPLETED") return;
+    if (!attempt || !test || attempt.status === "COMPLETED" || !test.timeLimitMinutes || test.timeLimitMinutes <= 0) {
+      return;
+    }
 
     autoSubmittedRef.current = false;
     const endTime = new Date(attempt.startedAt).getTime() + test.timeLimitMinutes * 60000;
@@ -195,6 +227,30 @@ export const ParticipantTestRunnerPage = () => {
   };
 
   if (isLoading) return <Loader label="Подготовка теста..." />;
+  if (loadError) {
+    return (
+      <div className="page-stack">
+        <PageHeader title={test?.title ?? "Не удалось открыть тест"} />
+        <Card>
+          <div className="page-stack">
+            <p style={{ color: "var(--danger)", fontWeight: 600, margin: 0 }}>{loadError}</p>
+            <p className="muted" style={{ margin: 0 }}>
+              Проверьте статус вашей учётной записи в профиле или выберите другой доступный тест.
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <Button onClick={() => navigate("/participant/test")}>К списку тестов</Button>
+              <Button variant="secondary" onClick={() => navigate("/participant/competition")}>
+                К соревнованию
+              </Button>
+              <Button variant="ghost" onClick={() => navigate("/participant/profile")}>
+                Открыть профиль
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
   if (!test) return null;
 
   const isTimerDanger = timeLeft !== null && timeLeft <= 60000; // < 1 min
@@ -284,11 +340,26 @@ export const ParticipantTestRunnerPage = () => {
             </Card>
           ))}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-            <Button onClick={() => void handleSubmit(false)} disabled={isSubmitting}>
-              {isSubmitting ? "Отправка..." : "Завершить тест"}
-            </Button>
-          </div>
+          {questions.length === 0 ? (
+            <Card>
+              <div className="page-stack">
+                <p className="muted" style={{ margin: 0 }}>
+                  В этом тесте пока нет вопросов. Обратитесь к преподавателю или вернитесь к списку тестов.
+                </p>
+                <div>
+                  <Button variant="secondary" onClick={() => navigate("/participant/test")}>
+                    Вернуться к списку тестов
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <Button onClick={() => void handleSubmit(false)} disabled={isSubmitting}>
+                {isSubmitting ? "Отправка..." : "Завершить тест"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

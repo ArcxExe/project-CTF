@@ -37,8 +37,13 @@ public class PromoCodeController {
         String msg = "Промокод успешно активирован!";
         if (promo.getModifierType() == PromoModifierType.FIXED_ADD) {
             msg = "Промокод активирован: +" + promo.getValue() + " баллов!";
+        } else if (promo.getModifierType() == PromoModifierType.FIXED_SUB) {
+            msg = "Промокод активирован: -" + promo.getValue() + " баллов.";
         } else if (promo.getModifierType() == PromoModifierType.DOUBLE_COEFF) {
             msg = "Промокод активирован: ваши баллы удвоены!";
+        } else if (promo.getModifierType() == PromoModifierType.TEMP_MULTIPLIER) {
+            int mult = promo.getValue() != null && promo.getValue() > 0 ? promo.getValue() : 2;
+            msg = "Промокод активирован: применён множитель x" + mult + "!";
         }
         
         return ResponseEntity.ok(new RedeemPromoCodeResponse(true, msg, bonusPoints, 0));

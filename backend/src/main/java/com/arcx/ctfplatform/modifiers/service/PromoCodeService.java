@@ -26,23 +26,23 @@ public class PromoCodeService {
     @Transactional
     public PromoCode claimCode(UUID userId, String code) {
         if (code == null || code.isBlank()) {
-            throw new IllegalArgumentException("Invalid promo code");
+            throw new IllegalArgumentException("Промокод не найден или введён неверно");
         }
         String normalizedCode = code.trim().toUpperCase();
 
         Student student = studentRepository.findByUserIdWithLock(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
 
         PromoCode promo = promoCodeRepository.findByCodeForUpdate(normalizedCode)
                 .or(() -> promoCodeRepository.findByCode(normalizedCode))
-                .orElseThrow(() -> new IllegalArgumentException("Invalid promo code"));
+                .orElseThrow(() -> new IllegalArgumentException("Промокод не найден или введён неверно"));
 
         if (promoCodeClaimRepository.existsByPromoCodeIdAndStudentId(promo.getId(), student.getId())) {
-            throw new IllegalStateException("Promo code already used by this student");
+            throw new IllegalStateException("Вы уже использовали этот промокод ранее");
         }
 
         if (promo.getUsedCount() >= promo.getMaxUses()) {
-            throw new IllegalStateException("Promo code usage limit reached");
+            throw new IllegalStateException("Лимит использований этого промокода исчерпан");
         }
 
         promo.setUsedCount(promo.getUsedCount() + 1);

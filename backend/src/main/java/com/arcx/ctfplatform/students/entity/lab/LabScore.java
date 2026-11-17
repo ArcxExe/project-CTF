@@ -45,7 +45,7 @@ public class LabScore {
 
     @Column(name = "is_eligible", nullable = false)
     @Builder.Default
-    private boolean isEligible = true;
+    private boolean isEligible = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

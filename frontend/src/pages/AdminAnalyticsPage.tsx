@@ -288,7 +288,7 @@ export const AdminAnalyticsPage = () => {
                 <span className="muted">Ср. Успеваемость (S%)</span>
                 <strong>{(analytics.metrics.avgSScore ?? 0).toFixed(2)}%</strong>
                 <Badge tone="success">
-                  Посещаемость: {(analytics.metrics.avgAttendancePercent ?? 0).toFixed(1)}%
+                  Посещаемость (от отм.): {(analytics.metrics.avgAttendancePercent ?? 0).toFixed(1)}%
                 </Badge>
               </div>
             </Card>
@@ -405,8 +405,12 @@ export const AdminAnalyticsPage = () => {
                 },
                 {
                   key: "attendancePercent",
-                  title: "Посещ.",
-                  render: (r: any) => `${(r.attendancePercent ?? 0).toFixed(1)}%`,
+                  title: "Посещ. (от отм.)",
+                  render: (r: any) => (
+                    <span title="Доля присутствий от числа проведённых (отмеченных в журнале) занятий">
+                      {`${(r.attendancePercent ?? 0).toFixed(1)}%`}
+                    </span>
+                  ),
                 },
                 {
                   key: "sScore",
@@ -507,7 +511,14 @@ export const AdminAnalyticsPage = () => {
                           {selectedStudent.numericGrade ?? 2}
                         </Badge>{" "}
                         • Допуск ЛР: {selectedStudent.acceptedLabsCount ?? 0}/8{" "}
-                        {selectedStudent.isEligible ? "(допущен)" : "(не допущен)"}
+                        {selectedStudent.isEligible
+                          ? (selectedStudent.acceptedLabsCount ?? 0) < 8
+                            ? "(допущен вручную)"
+                            : "(допущен)"
+                          : (selectedStudent.acceptedLabsCount ?? 0) === 0 &&
+                            (selectedStudent.exactLabScore ?? selectedStudent.labScore) > 0
+                          ? "(не допущен — зачёт не подтверждён)"
+                          : "(не допущен)"}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>

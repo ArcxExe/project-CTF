@@ -4,4 +4,6 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   padding: 20px;
+  min-width: 0;
+  max-width: 100%;
 }

@@ -227,4 +227,35 @@ class LabScoreServiceTest {
 
         assertThat(overriddenFalse.isAccepted()).isFalse();
     }
+
+    @Test
+    @DisplayName("BUG-003 & BUG-005: Summary setScore does not grant 8/8 eligibility or overwrite individual StudentLab grades")
+    void testSummarySetScoreDoesNotGrantEligibilityOrOverwriteIndividualLabs() {
+        StudentLab lab1 = StudentLab.builder()
+                .student(student)
+                .labNumber(1)
+                .rawScore(8.0)
+                .maxRawScore(8.0)
+                .defenseScore(2.0)
+                .maxDefenseScore(2.0)
+                .score(10.0)
+                .isAccepted(true)
+                .build();
+
+        when(studentRepository.findById(studentId)).thenReturn(Optional.of(student));
+        when(studentLabRepository.findAllByStudentId(studentId)).thenReturn(List.of(lab1));
+        when(labScoreRepository.findByStudentId(studentId)).thenReturn(Optional.empty());
+
+        labScoreService.setScore(studentId, 20, "Summary entry", UUID.randomUUID());
+
+        // Individual lab 1 must NOT be overwritten
+        verify(studentLabRepository, never()).save(any());
+        assertThat(lab1.getScore()).isEqualTo(10.0);
+        assertThat(lab1.getRawScore()).isEqualTo(8.0);
+        assertThat(lab1.getDefenseScore()).isEqualTo(2.0);
+        assertThat(lab1.isAccepted()).isTrue();
+
+        // LabScore must be saved with score=20 and isEligible=false (since only 1/8 labs accepted)
+        verify(labScoreRepository).save(argThat(ls -> ls.getScore() == 20 && !ls.isEligible()));
+    }
 }

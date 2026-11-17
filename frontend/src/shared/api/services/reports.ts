@@ -16,7 +16,7 @@ const directDownload = async (url: string, filename: string) => {
 
   const response = await fetch(buildUrl(url), { headers });
   if (!response.ok) {
-    throw new Error(`Failed to download report: ${response.statusText}`);
+    throw new Error(`Не удалось скачать отчёт (${response.status})`);
   }
 
   const blob = await response.blob();

@@ -274,4 +274,47 @@ class GradebookServiceTest {
         assertThat(updated.examScore()).isEqualTo(5);
         verify(studentLabRepository).save(any(StudentLab.class));
     }
+
+    @Test
+    @DisplayName("BUG-003 & BUG-005: Summary LabScore with 1 accepted StudentLab keeps acceptedLabsCount=1 and Lab 1=10.0")
+    void testSummaryLabScoreWithOneAcceptedLabPreservesLabAndEligibility() {
+        StudentLab lab1 = StudentLab.builder()
+                .student(student)
+                .labNumber(1)
+                .rawScore(8.0)
+                .maxRawScore(8.0)
+                .defenseScore(2.0)
+                .maxDefenseScore(2.0)
+                .score(10.0)
+                .isAccepted(true)
+                .build();
+        com.arcx.ctfplatform.students.entity.lab.LabScore summaryScore =
+                com.arcx.ctfplatform.students.entity.lab.LabScore.builder()
+                        .student(student)
+                        .score(20)
+                        .isEligible(false)
+                        .build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(student));
+        when(academicGroupRepository.findAll()).thenReturn(List.of(group));
+        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of(lab1));
+        when(labScoreRepository.findByStudentId(student.getId())).thenReturn(Optional.of(summaryScore));
+        when(attemptRepository.findAll()).thenReturn(List.of());
+        when(quizAttemptRepository.findAll()).thenReturn(List.of());
+        when(testRepository.findAll()).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAll()).thenReturn(List.of());
+
+        List<GradebookRowDto> rows = gradebookService.getGradebook(groupId, null);
+        assertThat(rows).hasSize(1);
+        GradebookRowDto row = rows.get(0);
+        assertThat(row.labs().get(1).score()).isEqualTo(10.0);
+        assertThat(row.labs().get(1).rawScore()).isEqualTo(8.0);
+        assertThat(row.labs().get(1).defenseScore()).isEqualTo(2.0);
+        assertThat(row.labs().get(1).accepted()).isTrue();
+        assertThat(row.totalLab()).isEqualTo(20.0);
+        assertThat(row.acceptedLabsCount()).isEqualTo(1);
+        assertThat(row.isEligible()).isFalse();
+        assertThat(row.grade()).isEqualTo(2);
+    }
 }

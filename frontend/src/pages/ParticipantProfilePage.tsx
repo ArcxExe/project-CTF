@@ -72,10 +72,16 @@ export const ParticipantProfilePage = () => {
   const totalPoints = myGradebook?.totalPoints ?? totalLab + totalKt;
   const sScore = myGradebook?.sScore ?? myLbEntry?.sScore ?? 0;
   const isEligible = myGradebook?.isEligible ?? myLbEntry?.isEligible ?? false;
-  const acceptedLabs = myGradebook?.acceptedLabsCount ?? (isEligible ? 8 : 0);
+  const acceptedLabs = myGradebook?.acceptedLabsCount ?? 0;
   const grade =
     myGradebook?.grade ??
     (isEligible && myLbEntry?.recommendedGrade ? myLbEntry.recommendedGrade : 2);
+
+  const markedLecturesCount = Object.values(myAttendance?.lectures ?? {}).filter(Boolean).length;
+  const markedPracticesCount = Object.values(myAttendance?.practices ?? {}).filter(Boolean).length;
+  const markedTotalCount = markedLecturesCount + markedPracticesCount;
+  const attendedTotalCount =
+    (myAttendance?.lecturesPresentCount ?? 0) + (myAttendance?.practicesPresentCount ?? 0);
 
   return (
     <div className="page-stack">
@@ -115,7 +121,13 @@ export const ParticipantProfilePage = () => {
               <strong>{sScore.toFixed(2)}%</strong>
               <span>Допуск к аттестации (8/8 ЛР):</span>
               <strong style={{ color: isEligible ? "#4ade80" : "#f87171" }}>
-                {isEligible ? "Допущен (8/8 ЛР зачтены)" : `Нет допуска (${acceptedLabs}/8 ЛР)`}
+                {isEligible
+                  ? acceptedLabs >= 8
+                    ? "Допущен (8/8 ЛР зачтены)"
+                    : `Допущен вручную (зачтено ${acceptedLabs}/8 ЛР)`
+                  : acceptedLabs === 0 && totalLab > 0
+                  ? "Нет допуска (0/8 ЛР — зачёт по работам не подтверждён)"
+                  : `Нет допуска (${acceptedLabs}/8 ЛР)`}
               </strong>
               <span>Оценка по курсу:</span>
               <strong style={{ fontSize: "1.2rem" }}>
@@ -173,7 +185,7 @@ export const ParticipantProfilePage = () => {
           <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>
             Детализация по ведомости (ЛР 1–8 и КТ 1–4)
           </h3>
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", maxWidth: "100%" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
@@ -227,10 +239,13 @@ export const ParticipantProfilePage = () => {
 
       {myAttendance && (
         <Card>
-          <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>
-            {`Моя посещаемость лекций и практик — ${myAttendance.attendancePercent.toFixed(1)}% (лекций: ${myAttendance.lecturesPresentCount}/8, практик: ${myAttendance.practicesPresentCount}/8)`}
+          <h3 style={{ marginTop: 0, marginBottom: "0.35rem" }}>
+            {`Моя посещаемость лекций и практик — ${myAttendance.attendancePercent.toFixed(1)}% от отмеченных (${attendedTotalCount}/${markedTotalCount} отм., всего по курсу: ${attendedTotalCount}/16 — лекций: ${myAttendance.lecturesPresentCount}/8, практик: ${myAttendance.practicesPresentCount}/8)`}
           </h3>
-          <div style={{ overflowX: "auto" }}>
+          <p className="muted" style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+            Знаменатель процента — число проведённых (отмеченных в журнале) занятий ({markedTotalCount} из 16 по плану курса; присутствий: {attendedTotalCount}, уважительных пропусков: {myAttendance.excusedCount}).
+          </p>
+          <div style={{ overflowX: "auto", maxWidth: "100%" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
