@@ -198,4 +198,84 @@ class StudentImportServiceTest {
         assertThat(captor.getValue().getFullName()).isEqualTo("Иванов Иван Иванович");
         verify(labScoreService, never()).recordLab(any(), anyInt(), anyDouble(), anyBoolean());
     }
+
+    @Test
+    @DisplayName("Issue #29: Importing into an empty group never falls back to findAll() or steals homonym from another group")
+    void testImportIntoEmptyGroupDoesNotStealStudentFromOtherGroup() {
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(targetGroup));
+        when(studentRepository.findByAcademicGroupId(groupId)).thenReturn(List.of());
+        when(studentRepository.save(any(Student.class))).thenAnswer(inv -> {
+            Student s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            return s;
+        });
+
+        String csv = "ФИО студента;ЛР 1\nИванов Иван Иванович;5\n";
+        StudentImportService.ImportResultDto result = importService.parseAndImportStudents(
+                new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)),
+                "group.csv",
+                groupId,
+                adminUser
+        );
+
+        assertThat(result.importedCount()).isEqualTo(1);
+        assertThat(result.updatedCount()).isEqualTo(0);
+        verify(studentRepository, never()).findAll();
+    }
+
+    @Test
+    @DisplayName("Issue #29: Non-existent targetGroupId throws IllegalArgumentException instead of creating fallback group")
+    void testNonExistentTargetGroupIdThrows() {
+        UUID missingGroupId = UUID.randomUUID();
+        when(groupRepository.findById(missingGroupId)).thenReturn(Optional.empty());
+
+        String csv = "ФИО студента\nИванов Иван Иванович\n";
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> importService.parseAndImportStudents(
+                        new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)),
+                        "group.csv",
+                        missingGroupId,
+                        adminUser
+                ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Group not found");
+        verify(groupRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Issue #29: Generated studentCode fits VARCHAR(50), lab acceptance matches GradebookService (4.0/10 rejected, 5.0/10 accepted), and Windows-1251 + multiline CSV works")
+    void testStudentCodeLengthLabAcceptanceAndWin1251MultilineCsv() {
+        String longGroupName = "ГРУППА_ОЧЕНЬ_ДЛИННОЕ_НАЗВАНИЕ_ПЯТЬДЕСЯТ_СИМВОЛОВ_1";
+        AcademicGroup longGroup = AcademicGroup.builder().id(groupId).name(longGroupName).build();
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(longGroup));
+        when(studentRepository.findByAcademicGroupId(groupId)).thenReturn(List.of());
+        when(studentRepository.save(any(Student.class))).thenAnswer(inv -> {
+            Student s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            return s;
+        });
+
+        String csv = "ФИО студента;ЛР 1;Токен\n"
+                + "\"Петров Пётр\nПетрович\";4.0;\"TOK-1\"\n"
+                + "Сидоров Сидор Сидорович;5.0;TOK-2\n";
+        byte[] cp1251Bytes = csv.getBytes(java.nio.charset.Charset.forName("windows-1251"));
+
+        StudentImportService.ImportResultDto result = importService.parseAndImportStudents(
+                new ByteArrayInputStream(cp1251Bytes),
+                "win1251.csv",
+                groupId,
+                adminUser
+        );
+
+        assertThat(result.importedCount()).isEqualTo(2);
+        ArgumentCaptor<Student> studentCaptor = ArgumentCaptor.forClass(Student.class);
+        verify(studentRepository, times(2)).save(studentCaptor.capture());
+        List<Student> saved = studentCaptor.getAllValues();
+
+        assertThat(saved.get(0).getStudentCode().length()).isLessThanOrEqualTo(50);
+        assertThat(saved.get(0).getFullName()).isEqualTo("Петров Пётр Петрович");
+        assertThat(saved.get(1).getStudentCode().length()).isLessThanOrEqualTo(50);
+
+        verify(labScoreService).recordLab(saved.get(0).getId(), 1, 4.0, false);
+        verify(labScoreService).recordLab(saved.get(1).getId(), 1, 5.0, true);
+    }
 }

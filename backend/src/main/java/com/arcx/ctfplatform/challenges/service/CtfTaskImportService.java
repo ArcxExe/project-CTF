@@ -234,8 +234,8 @@ public class CtfTaskImportService {
         int totalPoints = 0;
         int skippedRows = 0;
 
-        List<CtfTask> tasksToSave = new ArrayList<>();
-        List<CtfTask> mainPoolTasks = new ArrayList<>();
+        List<PendingTaskChange> pendingChanges = new ArrayList<>();
+        List<PendingTaskChange> mainPoolChanges = new ArrayList<>();
 
         for (int r = headerRowIdx + 1; r < rows.size(); r++) {
             List<String> row = rows.get(r);
@@ -332,61 +332,65 @@ public class CtfTaskImportService {
                 continue;
             }
 
-            CtfTask target = null;
+            CtfTask existingTarget = null;
             if (taskCode != null) {
-                target = existingByCode.get(taskCode.toLowerCase(Locale.ROOT));
+                existingTarget = existingByCode.get(taskCode.toLowerCase(Locale.ROOT));
             } else if (!title.isEmpty()) {
-                target = existingByTitle.get(title.toLowerCase(Locale.ROOT));
+                existingTarget = existingByTitle.get(title.toLowerCase(Locale.ROOT));
             }
 
-            boolean isNew = (target == null);
-            if (isNew) {
-                target = new CtfTask();
+            if (existingTarget == null) {
                 createdCount++;
             } else {
                 updatedCount++;
             }
 
-            target.setTaskCode(taskCode);
-            target.setTitle(title);
-            target.setDescription(description);
-            target.setCategory(category.isEmpty() ? null : category);
-            target.setDifficulty(normalizeDifficulty(rawDifficulty));
-            target.setBaseScore(points);
-            target.setMaxScore(points);
-            target.setFirstBloodOnly(parseBoolean(rawFirstBlood, false));
-            target.setTaskType(TaskType.FLAG);
-            target.setFlag(flag);
-            target.setBankId(bankId);
-            target.setPool(pool);
-            target.setWave(wave);
-            target.setSolutionInternal(solutionInternal.isEmpty() ? null : solutionInternal);
-
+            List<String> attachmentUrls = null;
             if (!artifactUrl.isEmpty()) {
-                List<String> urls = new ArrayList<>();
+                attachmentUrls = new ArrayList<>();
                 for (String part : artifactUrl.split("[;\\n]+")) {
                     String trimmed = part.trim();
                     if (!trimmed.isEmpty()) {
-                        urls.add(trimmed);
+                        attachmentUrls.add(trimmed);
                     }
                 }
-                Map<String, Object> att = new HashMap<>();
-                att.put("files", urls);
-                target.setAttachments(att);
             }
 
-            tasksToSave.add(target);
+            PendingTaskChange change = new PendingTaskChange(
+                    existingTarget,
+                    taskCode,
+                    title,
+                    description,
+                    category.isEmpty() ? null : category,
+                    normalizeDifficulty(rawDifficulty),
+                    points,
+                    parseBoolean(rawFirstBlood, false),
+                    flag,
+                    bankId,
+                    pool,
+                    wave,
+                    solutionInternal.isEmpty() ? null : solutionInternal,
+                    attachmentUrls
+            );
+
+            pendingChanges.add(change);
             if ("RESERVE".equalsIgnoreCase(pool)) {
                 reservePoolCount++;
             } else {
                 mainPoolCount++;
-                mainPoolTasks.add(target);
+                mainPoolChanges.add(change);
             }
             totalPoints += points;
         }
 
         int linkedCount = 0;
-        if (!dryRun && errors.isEmpty() && !tasksToSave.isEmpty()) {
+        if (!dryRun && errors.isEmpty() && !pendingChanges.isEmpty()) {
+            List<CtfTask> tasksToSave = new ArrayList<>(pendingChanges.size());
+            for (PendingTaskChange change : pendingChanges) {
+                CtfTask target = change.existingTarget() != null ? change.existingTarget() : new CtfTask();
+                applyChangeToTask(target, change);
+                tasksToSave.add(target);
+            }
             List<CtfTask> saved = ctfTaskRepository.saveAll(tasksToSave);
             if (competition != null) {
                 Set<CtfTask> compTasks = competition.getTasks() != null
@@ -411,8 +415,9 @@ public class CtfTaskImportService {
                     }
                 });
             }
-            for (CtfTask t : mainPoolTasks) {
-                if (t.getId() == null || !existingLinkedIds.contains(t.getId())) {
+            for (PendingTaskChange change : mainPoolChanges) {
+                UUID existingId = change.existingTarget() != null ? change.existingTarget().getId() : null;
+                if (existingId == null || !existingLinkedIds.contains(existingId)) {
                     linkedCount++;
                 }
             }
@@ -431,6 +436,45 @@ public class CtfTaskImportService {
                 warnings
         );
     }
+
+    private void applyChangeToTask(CtfTask target, PendingTaskChange change) {
+        target.setTaskCode(change.taskCode());
+        target.setTitle(change.title());
+        target.setDescription(change.description());
+        target.setCategory(change.category());
+        target.setDifficulty(change.difficulty());
+        target.setBaseScore(change.points());
+        target.setMaxScore(change.points());
+        target.setFirstBloodOnly(change.firstBloodOnly());
+        target.setTaskType(TaskType.FLAG);
+        target.setFlag(change.flag());
+        target.setBankId(change.bankId());
+        target.setPool(change.pool());
+        target.setWave(change.wave());
+        target.setSolutionInternal(change.solutionInternal());
+        if (change.attachmentUrls() != null) {
+            Map<String, Object> att = new HashMap<>();
+            att.put("files", change.attachmentUrls());
+            target.setAttachments(att);
+        }
+    }
+
+    private record PendingTaskChange(
+            CtfTask existingTarget,
+            String taskCode,
+            String title,
+            String description,
+            String category,
+            String difficulty,
+            int points,
+            boolean firstBloodOnly,
+            String flag,
+            String bankId,
+            String pool,
+            Integer wave,
+            String solutionInternal,
+            List<String> attachmentUrls
+    ) {}
 
     private List<List<String>> parseCsvRows(String rawContent) {
         String content = rawContent;
