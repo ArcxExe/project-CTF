@@ -187,7 +187,8 @@ public class CompetitionService {
         if (resp == null) {
             return null;
         }
-        List<com.arcx.ctfplatform.challenges.dto.CtfTaskResponse> visibleTasks = resp.tasks() != null
+        boolean notStartedYet = resp.startDate() != null && java.time.Instant.now().isBefore(resp.startDate());
+        List<com.arcx.ctfplatform.challenges.dto.CtfTaskResponse> visibleTasks = (!notStartedYet && resp.tasks() != null)
                 ? resp.tasks().stream()
                     .filter(t -> t != null && !"RESERVE".equalsIgnoreCase(t.pool()))
                     .toList()

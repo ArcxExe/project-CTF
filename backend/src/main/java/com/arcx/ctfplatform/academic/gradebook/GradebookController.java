@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,34 +26,45 @@ public class GradebookController {
     private final GradebookService gradebookService;
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'INSTRUCTOR', 'STUDENT')")
     public ResponseEntity<List<GradebookRowDto>> getGradebook(
             @RequestParam(required = false) UUID groupId,
             @RequestParam(required = false) UUID flowId
     ) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && isStudentOnly(auth)) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new AccessDeniedException("Access Denied");
+        }
+        if (isAdminOrInstructor(auth)) {
+            return ResponseEntity.ok(gradebookService.getGradebook(groupId, flowId));
+        }
+        if (hasRole(auth, "STUDENT")) {
             return ResponseEntity.ok(
                     gradebookService.getMyGradebookRow(auth.getName())
                             .map(List::of)
                             .orElseGet(List::of)
             );
         }
-        return ResponseEntity.ok(gradebookService.getGradebook(groupId, flowId));
+        throw new AccessDeniedException("Access Denied");
     }
 
-    private boolean isStudentOnly(Authentication auth) {
-        if (auth.getAuthorities() == null || auth.getAuthorities().isEmpty()) {
+    private boolean isAdminOrInstructor(Authentication auth) {
+        return hasRole(auth, "ADMIN") || hasRole(auth, "INSTRUCTOR");
+    }
+
+    private boolean hasRole(Authentication auth, String roleName) {
+        if (auth == null || auth.getAuthorities() == null) {
             return false;
         }
-        boolean isAdminOrInstructor = auth.getAuthorities().stream()
-                .anyMatch(a -> {
-                    String role = a.getAuthority().toUpperCase();
-                    return role.contains("ADMIN") || role.contains("INSTRUCTOR");
-                });
-        return !isAdminOrInstructor;
+        String prefixed = "ROLE_" + roleName;
+        return auth.getAuthorities().stream()
+                .filter(a -> a != null && a.getAuthority() != null)
+                .anyMatch(a -> prefixed.equalsIgnoreCase(a.getAuthority())
+                        || roleName.equalsIgnoreCase(a.getAuthority()));
     }
 
     @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<GradebookRowDto> getMyGradebookRow(Authentication auth) {
         String username = auth != null ? auth.getName() : null;
         return gradebookService.getMyGradebookRow(username)

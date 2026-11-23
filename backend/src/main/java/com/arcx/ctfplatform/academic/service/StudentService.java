@@ -24,6 +24,7 @@ import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
 
 import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
+import com.arcx.ctfplatform.users.entity.UserStatus;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 
 @Service
@@ -109,15 +110,38 @@ public class StudentService {
 
     @Transactional
     public StudentResponse updateStatus(UUID id, StudentStatus status, User currentUser) {
+        if (status == null) {
+            throw new IllegalArgumentException("Student status is required");
+        }
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
         student.setStatus(status);
         Student saved = studentRepository.save(student);
+        syncLinkedUserStatus(saved, status);
         if (auditService != null && currentUser != null) {
             auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_STATUS_UPDATED", saved.getId().toString(),
                     "Status updated to " + status, null);
         }
         return studentMapper.mapping(saved);
+    }
+
+    private void syncLinkedUserStatus(Student student, StudentStatus status) {
+        UUID userId = student.getUserId();
+        if (userId == null) {
+            return;
+        }
+        userRepository.findById(userId).ifPresent(linkedUser -> {
+            if (linkedUser.getRole() != Role.STUDENT) {
+                return;
+            }
+            if (status == StudentStatus.BLOCKED && linkedUser.getStatus() != UserStatus.BLOCKED) {
+                linkedUser.setStatus(UserStatus.BLOCKED);
+                userRepository.save(linkedUser);
+            } else if (status != StudentStatus.BLOCKED && linkedUser.getStatus() == UserStatus.BLOCKED) {
+                linkedUser.setStatus(UserStatus.ACTIVE);
+                userRepository.save(linkedUser);
+            }
+        });
     }
 
     @Transactional(readOnly = true)
@@ -154,8 +178,10 @@ public class StudentService {
         student.setStatus(StudentStatus.ACTIVE);
         studentRepository.save(student);
         
-        if (userId != null) {
-            userRepository.deleteById(userId);
+        if (userId != null && !DEMO_STUDENT_USER_ID.equals(userId)) {
+            userRepository.findById(userId)
+                    .filter(u -> !isProtectedUser(u))
+                    .ifPresent(u -> userRepository.deleteById(userId));
         }
         if (auditService != null && currentUser != null) {
             auditService.logEvent(currentUser.getId(), currentUser.getUsername(), "STUDENT_BINDING_REJECTED", student.getId().toString(),
@@ -231,10 +257,13 @@ public class StudentService {
             return true;
         }
         return userRepository.findById(userId)
-                .map(u -> u.getRole() == Role.ADMIN
-                        || u.getRole() == Role.INSTRUCTOR
-                        || "student@ctf.local".equalsIgnoreCase(u.getEmail())
-                        || "student".equalsIgnoreCase(u.getUsername()))
+                .map(this::isProtectedUser)
                 .orElse(false);
+    }
+
+    private boolean isProtectedUser(User user) {
+        return user.getRole() != Role.STUDENT
+                || "student@ctf.local".equalsIgnoreCase(user.getEmail())
+                || "student".equalsIgnoreCase(user.getUsername());
     }
 }
