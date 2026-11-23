@@ -507,15 +507,17 @@ public class GradebookService {
 
         double sScore = roundToTwoDecimals(0.50 * lPercent + 0.25 * kPercent + 0.25 * cPercent);
 
+        AcademicGroup group = student.getGroupId() != null ? groupMap.get(student.getGroupId()) : null;
+        UUID studentFlowId = group != null ? group.getStreamId() : null;
+
         Integer recommendedGrade = null;
         if (isEligible) {
             recommendedGrade = gradingService.calculateFinalGradeWithExam(
-                    sScore, lPercent, kPercent, true, student.getExamScore()
+                    sScore, lPercent, kPercent, true, student.getExamScore(), studentFlowId
             );
         }
         int numericGrade = (recommendedGrade != null) ? recommendedGrade : 2;
 
-        AcademicGroup group = student.getGroupId() != null ? groupMap.get(student.getGroupId()) : null;
         String groupName = group != null ? group.getName() : "Без группы";
         String statusStr = student.getStatus() != null ? student.getStatus().name().toLowerCase(Locale.ROOT) : "active";
 

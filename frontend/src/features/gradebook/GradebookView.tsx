@@ -862,7 +862,7 @@ export const GradebookView = ({
                               style={{ ...compactInputStyle, width: 52 }}
                               value={draft.examScore}
                               placeholder="—"
-                              title="Оценка за экзамен (2–5 или 0–100)"
+                              title="Баллы за экзамен (0–100)"
                               onChange={(e) =>
                                 updateDraftField(row.studentId, (prev) => ({
                                   ...prev,
