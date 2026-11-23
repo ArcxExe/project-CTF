@@ -39,14 +39,14 @@ export const LoginPage = () => {
           <div>
             <h1>Вход в платформу</h1>
             <p className="muted">
-              Тестовые учётные записи: admin / password или student@ctf.local / password
+              Введите email или имя пользователя и пароль для входа в систему.
             </p>
           </div>
 
           <form className="page-stack" onSubmit={handleSubmit}>
             <Input
               label="Email или имя пользователя"
-              placeholder="admin@ctf.local или admin"
+              placeholder="name@example.com или username"
               type="text"
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}

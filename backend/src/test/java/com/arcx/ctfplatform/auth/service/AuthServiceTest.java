@@ -88,7 +88,50 @@ class AuthServiceTest {
     }
 
     @Test
-    void loginShouldRestoreDemoStudentUserAndProfileWhenMissing() {
+    void loginShouldRejectDeletedDemoStudentByDefault() {
+        LoginRequest request = new LoginRequest("student@ctf.local", "password");
+
+        when(userRepository.findByEmail("student@ctf.local")).thenReturn(Optional.empty());
+        when(userRepository.findByUsername("student@ctf.local")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class)
+                .hasMessage("Invalid credentials");
+
+        verify(userRepository, never()).save(any(User.class));
+        verify(studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
+    void loginShouldNotAutoCreateDemoStudentProfileByDefault() {
+        UUID demoUserId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        User demoUser = User.builder()
+                .id(demoUserId)
+                .email("student@ctf.local")
+                .username("student")
+                .passwordHash("encoded-password")
+                .role(Role.STUDENT)
+                .status(UserStatus.ACTIVE)
+                .build();
+        LoginRequest request = new LoginRequest("student@ctf.local", "password");
+
+        when(userRepository.findByEmail("student@ctf.local")).thenReturn(Optional.of(demoUser));
+        when(passwordEncoder.matches("password", "encoded-password")).thenReturn(true);
+        when(studentRepository.findByUserId(demoUserId)).thenReturn(Optional.empty());
+        when(jwtService.generateAccessToken(demoUser)).thenReturn("token-without-autoprofile");
+        when(jwtService.getAccessTokenTtl()).thenReturn(3_600_000L);
+
+        AuthResponse response = authService.login(request);
+
+        assertThat(response.accessToken()).isEqualTo("token-without-autoprofile");
+        verify(studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
+    void loginShouldRestoreDemoStudentUserAndProfileOnlyWhenExplicitlyEnabled() {
+        AuthService devAuthService = new AuthService(
+                userRepository, studentRepository, passwordEncoder, jwtService, null, true
+        );
         UUID restoredUserId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         LoginRequest request = new LoginRequest("student@ctf.local", "password");
 
@@ -108,7 +151,7 @@ class AuthServiceTest {
         when(jwtService.generateAccessToken(any(User.class))).thenReturn("demo-token");
         when(jwtService.getAccessTokenTtl()).thenReturn(3_600_000L);
 
-        AuthResponse response = authService.login(request);
+        AuthResponse response = devAuthService.login(request);
 
         assertThat(response.accessToken()).isEqualTo("demo-token");
         assertThat(response.email()).isEqualTo("student@ctf.local");
@@ -122,7 +165,10 @@ class AuthServiceTest {
     }
 
     @Test
-    void loginShouldRestoreDemoStudentProfileWhenUserExistsWithoutStudentRecord() {
+    void loginShouldRestoreDemoStudentProfileWhenUserExistsWithoutStudentRecordAndDemoEnabled() {
+        AuthService devAuthService = new AuthService(
+                userRepository, studentRepository, passwordEncoder, jwtService, null, true
+        );
         UUID demoUserId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         User demoUser = User.builder()
                 .id(demoUserId)
@@ -142,7 +188,7 @@ class AuthServiceTest {
         when(jwtService.generateAccessToken(demoUser)).thenReturn("demo-token");
         when(jwtService.getAccessTokenTtl()).thenReturn(3_600_000L);
 
-        AuthResponse response = authService.login(request);
+        AuthResponse response = devAuthService.login(request);
 
         assertThat(response.accessToken()).isEqualTo("demo-token");
         ArgumentCaptor<Student> studentCaptor = ArgumentCaptor.forClass(Student.class);
