@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -55,6 +56,12 @@ public class QuizAttempt {
     @Column(name = "status", nullable = false)
     @Builder.Default
     private QuizAttemptStatus status = QuizAttemptStatus.IN_PROGRESS;
+
+    @Transient
+    private Instant serverNow;
+
+    @Transient
+    private Long remainingSeconds;
 
     public static class QuizAttemptBuilder {
         public QuizAttemptBuilder score(Number score) {

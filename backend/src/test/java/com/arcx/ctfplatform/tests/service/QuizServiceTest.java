@@ -201,4 +201,146 @@ class QuizServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Для просмотра вопросов необходимо начать попытку прохождения теста");
     }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #20: startQuiz populates serverNow and remainingSeconds for timed and untimed tests")
+    void startQuizPopulatesServerTimingMetadata() {
+        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of());
+        when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> {
+            QuizAttempt a = inv.getArgument(0);
+            a.setId(UUID.randomUUID());
+            return a;
+        });
+
+        QuizAttempt started = quizService.startQuiz(quizId, userId);
+        assertThat(started.getServerNow()).isNotNull();
+        assertThat(started.getRemainingSeconds()).isBetween(1790L, 1800L);
+
+        UUID untimedQuizId = UUID.randomUUID();
+        Test untimedTest = Test.builder()
+                .id(untimedQuizId)
+                .title("Бессрочный тест")
+                .status(TestStatus.PUBLISHED)
+                .timeLimitMinutes(null)
+                .build();
+        when(testRepository.findById(untimedQuizId)).thenReturn(Optional.of(untimedTest));
+        when(attemptRepository.findAllByQuizIdAndStudentId(untimedQuizId, studentId)).thenReturn(List.of());
+
+        QuizAttempt untimedStarted = quizService.startQuiz(untimedQuizId, userId);
+        assertThat(untimedStarted.getServerNow()).isNotNull();
+        assertThat(untimedStarted.getRemainingSeconds()).isNull();
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #20: autoSubmitExpired never closes untimed tests (timeLimitMinutes null or <= 0)")
+    void autoSubmitExpiredDoesNotCloseUntimedTests() {
+        UUID untimedNullId = UUID.randomUUID();
+        UUID untimedZeroId = UUID.randomUUID();
+        Test untimedNull = Test.builder()
+                .id(untimedNullId)
+                .title("Untimed null")
+                .status(TestStatus.PUBLISHED)
+                .timeLimitMinutes(null)
+                .build();
+        Test untimedZero = Test.builder()
+                .id(untimedZeroId)
+                .title("Untimed zero")
+                .status(TestStatus.PUBLISHED)
+                .timeLimitMinutes(0)
+                .build();
+
+        QuizAttempt attempt1 = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(untimedNullId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(3, ChronoUnit.HOURS))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .build();
+        QuizAttempt attempt2 = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(untimedZeroId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(3, ChronoUnit.HOURS))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .build();
+
+        when(attemptRepository.findAllByStatus(QuizAttemptStatus.IN_PROGRESS)).thenReturn(List.of(attempt1, attempt2));
+        when(testRepository.findById(untimedNullId)).thenReturn(Optional.of(untimedNull));
+        when(testRepository.findById(untimedZeroId)).thenReturn(Optional.of(untimedZero));
+
+        quizService.autoSubmitExpired();
+
+        assertThat(attempt1.getStatus()).isEqualTo(QuizAttemptStatus.IN_PROGRESS);
+        assertThat(attempt2.getStatus()).isEqualTo(QuizAttemptStatus.IN_PROGRESS);
+        verify(attemptRepository, never()).save(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #20: submitAnswers accepts answers within final grace window and cleanly closes heavily expired attempts")
+    void submitAnswersGraceWindowAndLateClose() {
+        UUID qId = UUID.randomUUID();
+        UUID optId = UUID.randomUUID();
+        QuizQuestion question = QuizQuestion.builder()
+                .id(qId)
+                .testId(quizId)
+                .type("RADIO")
+                .text("Q1")
+                .points(10)
+                .ordering(1)
+                .build();
+        QuizOption correctOpt = QuizOption.builder()
+                .id(optId)
+                .questionId(qId)
+                .optionText("Yes")
+                .isCorrect(true)
+                .build();
+
+        // 30m limit + 60s late -> still inside 90s submit grace window -> answers graded!
+        QuizAttempt slightlyLateAttempt = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(31, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .build();
+
+        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, studentId, QuizAttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(slightlyLateAttempt));
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(questionRepository.findAllByTestIdOrderByOrderingAsc(quizId)).thenReturn(List.of(question));
+        when(optionRepository.findAllByQuestionIdIn(List.of(qId))).thenReturn(List.of(correctOpt));
+        when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        QuizAttempt graded = quizService.submitAnswers(
+                quizId,
+                userId,
+                List.of(new com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO(qId, List.of(optId.toString())))
+        );
+        assertThat(graded.getStatus()).isEqualTo(QuizAttemptStatus.COMPLETED);
+        assertThat(graded.getScore()).isEqualTo(10.0);
+        assertThat(graded.getRemainingSeconds()).isEqualTo(0L);
+
+        // 45m elapsed on 30m test -> beyond grace window -> cleanly closed as COMPLETED with score 0
+        QuizAttempt veryLateAttempt = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(45, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .build();
+        when(attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, studentId, QuizAttemptStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(veryLateAttempt));
+
+        QuizAttempt closedExpired = quizService.submitAnswers(
+                quizId,
+                userId,
+                List.of(new com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO(qId, List.of(optId.toString())))
+        );
+        assertThat(closedExpired.getStatus()).isEqualTo(QuizAttemptStatus.COMPLETED);
+        assertThat(closedExpired.getScore()).isEqualTo(0.0);
+        assertThat(closedExpired.getCompletedAt()).isNotNull();
+    }
 }

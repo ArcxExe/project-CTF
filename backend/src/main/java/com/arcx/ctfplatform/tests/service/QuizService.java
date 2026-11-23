@@ -73,6 +73,10 @@ public class QuizService {
         this.userRepository = userRepository;
     }
 
+    static final long RESUME_EXPIRY_GRACE_SECONDS = 30L;
+    static final long SUBMIT_GRACE_SECONDS = 90L;
+    static final long SCHEDULER_EXPIRY_GRACE_SECONDS = 120L;
+
     @Transactional
     public QuizAttempt startQuiz(UUID quizId, UUID userId) {
         Student student = studentRepository.findByUserId(userId)
@@ -92,17 +96,17 @@ public class QuizService {
         }
 
         List<QuizAttempt> attempts = attemptRepository.findAllByQuizIdAndStudentId(quizId, student.getId());
+        Instant now = Instant.now();
         
         Optional<QuizAttempt> activeAttempt = attempts.stream()
                 .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
                 .findFirst();
         if (activeAttempt.isPresent()) {
             QuizAttempt existing = activeAttempt.get();
-            Instant now = Instant.now();
-            if (isAttemptExpired(test, existing, now, false)) {
-                return completeExpiredAttempt(existing, now, userId);
+            if (isAttemptExpired(test, existing, now, RESUME_EXPIRY_GRACE_SECONDS)) {
+                return enrichTimingMetadata(completeExpiredAttempt(existing, now, userId), test, now);
             }
-            return existing;
+            return enrichTimingMetadata(existing, test, now);
         }
 
         boolean hasCompleted = attempts.stream()
@@ -114,19 +118,31 @@ public class QuizService {
         QuizAttempt attempt = QuizAttempt.builder()
                 .quizId(quizId)
                 .studentId(student.getId())
-                .startedAt(Instant.now())
+                .startedAt(now)
                 .status(QuizAttemptStatus.IN_PROGRESS)
                 .score(0)
                 .build();
 
-        return attemptRepository.save(attempt);
+        return enrichTimingMetadata(attemptRepository.save(attempt), test, now);
     }
 
     @Transactional(readOnly = true)
     public List<QuizAttempt> getStudentAttempts(UUID userId) {
         Student student = studentRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
-        return attemptRepository.findAllByStudentId(student.getId());
+        List<QuizAttempt> attempts = attemptRepository.findAllByStudentId(student.getId());
+        if (attempts.isEmpty()) {
+            return attempts;
+        }
+        Instant now = Instant.now();
+        Set<UUID> quizIds = attempts.stream()
+                .map(QuizAttempt::getQuizId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, Test> testsById = testRepository.findAllById(quizIds).stream()
+                .collect(Collectors.toMap(Test::getId, t -> t, (a, b) -> a));
+        attempts.forEach(attempt -> enrichTimingMetadata(attempt, testsById.get(attempt.getQuizId()), now));
+        return attempts;
     }
 
     @Transactional
@@ -141,8 +157,8 @@ public class QuizService {
                 .orElseThrow(() -> new IllegalArgumentException("Тест не найден"));
 
         Instant now = Instant.now();
-        if (isAttemptExpired(test, attempt, now, false)) {
-            throw new IllegalStateException("Время на прохождение теста истекло");
+        if (isAttemptExpired(test, attempt, now, SUBMIT_GRACE_SECONDS)) {
+            return enrichTimingMetadata(completeExpiredAttempt(attempt, now, userId), test, now);
         }
         
         List<QuizQuestion> questions = questionRepository.findAllByTestIdOrderByOrderingAsc(test.getId());
@@ -214,7 +230,7 @@ public class QuizService {
                     null
             );
         }
-        return saved;
+        return enrichTimingMetadata(saved, test, now);
     }
 
     @Transactional
@@ -303,7 +319,7 @@ public class QuizService {
 
         for (QuizAttempt attempt : activeAttempts) {
             testRepository.findById(attempt.getQuizId()).ifPresent(test -> {
-                if (isAttemptExpired(test, attempt, now, true)) {
+                if (isAttemptExpired(test, attempt, now, SCHEDULER_EXPIRY_GRACE_SECONDS)) {
                     UUID userId = studentRepository.findById(attempt.getStudentId())
                             .map(Student::getUserId)
                             .orElse(null);
@@ -313,17 +329,40 @@ public class QuizService {
         }
     }
 
-    private boolean isAttemptExpired(Test test, QuizAttempt attempt, Instant now, boolean defaultLimitWhenNull) {
+    private boolean isAttemptExpired(Test test, QuizAttempt attempt, Instant now, long graceSeconds) {
         if (attempt.getStartedAt() == null) {
             return false;
         }
         Integer configuredLimit = test.getTimeLimitMinutes();
-        int timeLimit = configuredLimit != null ? configuredLimit : (defaultLimitWhenNull ? 60 : 0);
-        if (timeLimit <= 0) {
+        if (configuredLimit == null || configuredLimit <= 0) {
             return false;
         }
-        Instant deadline = attempt.getStartedAt().plus(timeLimit, ChronoUnit.MINUTES).plusSeconds(30);
+        Instant deadline = attempt.getStartedAt()
+                .plus(configuredLimit, ChronoUnit.MINUTES)
+                .plusSeconds(Math.max(0L, graceSeconds));
         return now.isAfter(deadline);
+    }
+
+    private QuizAttempt enrichTimingMetadata(QuizAttempt attempt, Test test, Instant now) {
+        if (attempt == null) {
+            return null;
+        }
+        attempt.setServerNow(now);
+        if (attempt.getStatus() == QuizAttemptStatus.COMPLETED) {
+            attempt.setRemainingSeconds(0L);
+            return attempt;
+        }
+        if (test != null
+                && test.getTimeLimitMinutes() != null
+                && test.getTimeLimitMinutes() > 0
+                && attempt.getStartedAt() != null) {
+            Instant deadline = attempt.getStartedAt().plus(test.getTimeLimitMinutes(), ChronoUnit.MINUTES);
+            long remaining = Math.max(0L, ChronoUnit.SECONDS.between(now, deadline));
+            attempt.setRemainingSeconds(remaining);
+        } else {
+            attempt.setRemainingSeconds(null);
+        }
+        return attempt;
     }
 
     private QuizAttempt completeExpiredAttempt(QuizAttempt attempt, Instant now, UUID userId) {
