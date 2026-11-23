@@ -27,13 +27,32 @@ interface BackendCompetitionResponse {
 export interface CompetitionPayload {
   title: string;
   description?: string;
-  startsAt?: string;
-  endsAt?: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
   status: Competition["status"];
   sumTestPoints: boolean;
   leaderboardHidden: boolean;
   hiddenStudentIds: string[];
 }
+
+export const parseCompetitionDate = (value: string | null | undefined): Date | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+export const getCompetitionWindowState = (
+  competition: Pick<Competition, "status" | "startsAt" | "endsAt">,
+  now: Date = new Date(),
+) => {
+  const isActiveStatus = competition.status === "active" || competition.status === "published";
+  const startDate = parseCompetitionDate(competition.startsAt);
+  const endDate = parseCompetitionDate(competition.endsAt);
+  const isNotStarted = startDate !== null && startDate.getTime() > now.getTime();
+  const isEnded = endDate !== null && endDate.getTime() < now.getTime();
+  const isWindowOpen = isActiveStatus && !isNotStarted && !isEnded;
+  return { isActiveStatus, startDate, endDate, isNotStarted, isEnded, isWindowOpen };
+};
 
 const statusMap: Record<BackendCompetitionResponse["status"], Competition["status"]> = {
   DRAFT: "draft",
@@ -49,13 +68,13 @@ const backendStatusMap: Record<Competition["status"], BackendCompetitionResponse
   completed: "COMPLETED",
 };
 
-const toCompetition = (response: BackendCompetitionResponse): Competition => ({
+export const toCompetition = (response: BackendCompetitionResponse): Competition => ({
   id: response.id,
   title: response.title,
   description: response.description ?? "",
   status: statusMap[response.status],
-  startsAt: response.startDate ?? response.createdAt ?? new Date().toISOString(),
-  endsAt: response.endDate ?? response.createdAt ?? new Date().toISOString(),
+  startsAt: response.startDate ?? null,
+  endsAt: response.endDate ?? null,
   ratingVisible: true,
   promoCodesEnabled: false,
   createdAt: response.createdAt ?? undefined,
@@ -65,11 +84,11 @@ const toCompetition = (response: BackendCompetitionResponse): Competition => ({
   tasks: response.tasks ? response.tasks.map(toChallenge) : [],
 });
 
-const toBackendPayload = (payload: CompetitionPayload) => ({
+export const toBackendPayload = (payload: CompetitionPayload) => ({
   title: payload.title,
   description: payload.description,
-  startDate: payload.startsAt,
-  endDate: payload.endsAt,
+  startDate: payload.startsAt ?? null,
+  endDate: payload.endsAt ?? null,
   status: backendStatusMap[payload.status],
   sumTestPoints: payload.sumTestPoints,
   leaderboardHidden: payload.leaderboardHidden,

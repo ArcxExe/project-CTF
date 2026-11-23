@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { adminCompetitionsApi } from "@/shared/api/services/competitions";
+import { adminCompetitionsApi, getCompetitionWindowState } from "@/shared/api/services/competitions";
 import type { CompetitionPayload } from "@/shared/api/services/competitions";
 import { studentsApi } from "@/shared/api/services/students";
 import { challengesApi } from "@/shared/api/services/challenges";
@@ -25,7 +25,7 @@ const statusLabels: Record<Competition["status"], string> = {
   completed: "Завершено",
 };
 
-const formatToLocalTime = (isoString?: string) => {
+const formatToLocalTime = (isoString?: string | null) => {
   if (!isoString) return "";
   const d = new Date(isoString);
   if (isNaN(d.getTime())) return "";
@@ -52,11 +52,11 @@ const normalizeDateTimeValue = (raw?: string): string => {
   return trimmed;
 };
 
-const toIsoDateTime = (value: string) => {
+const toIsoDateTime = (value: string): string | null => {
   const normalized = normalizeDateTimeValue(value);
-  if (!normalized) return undefined;
+  if (!normalized) return null;
   const parsed = new Date(normalized);
-  if (isNaN(parsed.getTime())) return undefined;
+  if (isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
 };
 
@@ -261,12 +261,14 @@ export const CompetitionsPage = () => {
       {items.length > 0 ? (
         <div className="grid">
           {items.map((competition) => {
-            const now = new Date();
-            const startD = new Date(competition.startsAt);
-            const endD = new Date(competition.endsAt);
-            const isEnded = !isNaN(endD.getTime()) && endD < now;
-            const isNotStarted = !isNaN(startD.getTime()) && startD > now;
-            const isActiveStatus = competition.status === "published" || competition.status === "active";
+            const {
+              isActiveStatus,
+              startDate: startD,
+              endDate: endD,
+              isEnded,
+              isNotStarted,
+              isWindowOpen,
+            } = getCompetitionWindowState(competition);
 
             let windowBadgeText = "Окно сдачи: открыто";
             if (!isActiveStatus) {
@@ -287,7 +289,7 @@ export const CompetitionsPage = () => {
                       <Badge tone={isActiveStatus ? "success" : "info"}>
                         Статус: {statusLabels[competition.status] || competition.status}
                       </Badge>
-                      <Badge tone={isActiveStatus && !isEnded && !isNotStarted ? "success" : isEnded ? "danger" : "neutral"}>
+                      <Badge tone={isWindowOpen ? "success" : isEnded ? "danger" : "neutral"}>
                         {windowBadgeText}
                       </Badge>
                     </div>
@@ -296,8 +298,8 @@ export const CompetitionsPage = () => {
                 </div>
 
                 <div className="competition-card__meta" style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.85rem", marginTop: "1rem" }}>
-                  <span>📅 Старт: {startD.toLocaleString("ru-RU")}</span>
-                  <span>📅 Финиш: {endD.toLocaleString("ru-RU")}</span>
+                  <span>📅 Старт: {startD ? startD.toLocaleString("ru-RU") : "Не указан (открыто сразу)"}</span>
+                  <span>📅 Финиш: {endD ? endD.toLocaleString("ru-RU") : "Без ограничения по времени"}</span>
                   <span>🕒 Календарное состояние: {windowBadgeText}</span>
                   <span>📝 Тесты: {competition.sumTestPoints ? "Суммировать баллы" : "Не суммировать"}</span>
                   <span>📊 Лидерборд: {competition.leaderboardHidden ? "Скрыт" : "Показан"}</span>
