@@ -1,15 +1,18 @@
 package com.arcx.ctfplatform.tests.controller;
 
+import com.arcx.ctfplatform.tests.dto.QuizOptionRequest;
+import com.arcx.ctfplatform.tests.dto.QuizOptionUpdateRequest;
+import com.arcx.ctfplatform.tests.dto.QuizQuestionRequest;
+import com.arcx.ctfplatform.tests.dto.QuizQuestionUpdateRequest;
 import com.arcx.ctfplatform.tests.entity.QuizOption;
 import com.arcx.ctfplatform.tests.entity.QuizQuestion;
-import com.arcx.ctfplatform.tests.repository.QuizOptionRepository;
-import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
+import com.arcx.ctfplatform.tests.service.QuizService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import com.arcx.ctfplatform.tests.service.QuizService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,85 +23,45 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminQuizController {
 
-    private final QuizQuestionRepository questionRepository;
-    private final QuizOptionRepository optionRepository;
     private final QuizService quizService;
 
     @PostMapping("/tests/{testId}/questions")
-    public ResponseEntity<QuizQuestion> addQuestion(@PathVariable UUID testId, @RequestBody QuizQuestion question) {
-        question.setTestId(testId);
-        return ResponseEntity.ok(questionRepository.save(question));
+    public ResponseEntity<QuizQuestion> addQuestion(
+            @PathVariable UUID testId,
+            @Valid @RequestBody QuizQuestionRequest request) {
+        return ResponseEntity.ok(quizService.addQuestion(testId, request));
     }
 
     @PostMapping("/questions/{questionId}/options")
-    public ResponseEntity<QuizOption> addOption(@PathVariable UUID questionId, @RequestBody QuizOption option) {
-        option.setQuestionId(questionId);
-        return ResponseEntity.ok(optionRepository.save(option));
+    public ResponseEntity<QuizOption> addOption(
+            @PathVariable UUID questionId,
+            @Valid @RequestBody QuizOptionRequest request) {
+        return ResponseEntity.ok(quizService.addOption(questionId, request));
     }
 
     @PutMapping("/questions/{questionId}")
-    public ResponseEntity<QuizQuestion> updateQuestion(@PathVariable UUID questionId, @RequestBody QuizQuestion questionDetails) {
-        QuizQuestion question = questionRepository.findById(questionId)
-                .orElseThrow(() -> new IllegalArgumentException("Question not found"));
-        question.setType(questionDetails.getType());
-        question.setText(questionDetails.getText());
-        question.setPoints(questionDetails.getPoints());
-        question.setOrdering(questionDetails.getOrdering());
-        if (questionDetails.getTestId() != null) {
-            question.setTestId(questionDetails.getTestId());
-        }
-        return ResponseEntity.ok(questionRepository.save(question));
+    public ResponseEntity<QuizQuestion> updateQuestion(
+            @PathVariable UUID questionId,
+            @Valid @RequestBody QuizQuestionUpdateRequest request) {
+        return ResponseEntity.ok(quizService.updateQuestion(questionId, request));
     }
 
     @DeleteMapping("/questions/{questionId}")
     public ResponseEntity<Void> deleteQuestion(@PathVariable UUID questionId) {
-        questionRepository.deleteById(questionId);
+        quizService.deleteQuestion(questionId);
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/options/{optionId}")
-    public ResponseEntity<QuizOption> updateOption(@PathVariable UUID optionId, @RequestBody Map<String, Object> payload) {
-        QuizOption option = optionRepository.findById(optionId)
-                .orElseThrow(() -> new IllegalArgumentException("Option not found"));
-        
-        if (payload.containsKey("optionText")) {
-            option.setOptionText((String) payload.get("optionText"));
-        }
-        if (payload.containsKey("correct") || payload.containsKey("isCorrect")) {
-            Object rawVal = payload.containsKey("isCorrect") ? payload.get("isCorrect") : payload.get("correct");
-            boolean newCorrect = Boolean.TRUE.equals(rawVal);
-            option.setCorrect(newCorrect);
-            
-            if (newCorrect) {
-                // If this is a RADIO question, set all other options of this question to correct = false
-                QuizQuestion question = questionRepository.findById(option.getQuestionId())
-                        .orElseThrow(() -> new IllegalArgumentException("Question not found"));
-                if ("RADIO".equalsIgnoreCase(question.getType())) {
-                    List<QuizOption> otherOptions = optionRepository.findAllByQuestionIdOrderBySequenceOrderAsc(option.getQuestionId());
-                    for (QuizOption other : otherOptions) {
-                        if (!other.getId().equals(option.getId()) && other.isCorrect()) {
-                            other.setCorrect(false);
-                            optionRepository.save(other);
-                        }
-                    }
-                }
-            }
-        }
-        if (payload.containsKey("sequenceOrder")) {
-            Object seq = payload.get("sequenceOrder");
-            option.setSequenceOrder(seq != null ? ((Number) seq).intValue() : null);
-        }
-        if (payload.containsKey("questionId")) {
-            Object qId = payload.get("questionId");
-            option.setQuestionId(qId != null ? UUID.fromString(qId.toString()) : null);
-        }
-        
-        return ResponseEntity.ok(optionRepository.save(option));
+    public ResponseEntity<QuizOption> updateOption(
+            @PathVariable UUID optionId,
+            @Valid @RequestBody QuizOptionUpdateRequest request) {
+        return ResponseEntity.ok(quizService.updateOption(optionId, request));
     }
 
     @DeleteMapping("/options/{optionId}")
     public ResponseEntity<Void> deleteOption(@PathVariable UUID optionId) {
-        optionRepository.deleteById(optionId);
+        quizService.deleteOption(optionId);
         return ResponseEntity.ok().build();
     }
 

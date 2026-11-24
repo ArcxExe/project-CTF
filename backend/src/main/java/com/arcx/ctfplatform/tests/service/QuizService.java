@@ -6,6 +6,10 @@ import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.audit.service.AuditService;
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
 import com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO;
+import com.arcx.ctfplatform.tests.dto.QuizOptionRequest;
+import com.arcx.ctfplatform.tests.dto.QuizOptionUpdateRequest;
+import com.arcx.ctfplatform.tests.dto.QuizQuestionRequest;
+import com.arcx.ctfplatform.tests.dto.QuizQuestionUpdateRequest;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
 import com.arcx.ctfplatform.tests.entity.QuizOption;
@@ -32,6 +36,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class QuizService {
+
+    private static final Set<String> ALLOWED_QUESTION_TYPES = Set.of("RADIO", "CHECKBOX", "SEQUENCE");
 
     private final QuizAttemptRepository attemptRepository;
     private final QuizQuestionRepository questionRepository;
@@ -250,32 +256,182 @@ public class QuizService {
     }
 
     @Transactional
-    public QuizQuestion updateQuestion(UUID questionId, QuizQuestion questionUpdates) {
+    public QuizQuestion addQuestion(UUID testId, QuizQuestionRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Question payload is required");
+        }
+        testRepository.findById(testId)
+                .orElseThrow(() -> new IllegalArgumentException("Тест не найден"));
+
+        String normalizedType = validateAndNormalizeQuestionType(request.type());
+        if (request.text() == null || request.text().isBlank()) {
+            throw new IllegalArgumentException("Question text is required");
+        }
+        if (request.points() == null || request.points() < 0) {
+            throw new IllegalArgumentException("Points must be non-negative");
+        }
+        if (request.ordering() == null || request.ordering() < 0) {
+            throw new IllegalArgumentException("Ordering must be non-negative");
+        }
+
+        QuizQuestion question = QuizQuestion.builder()
+                .testId(testId)
+                .type(normalizedType)
+                .text(request.text())
+                .points(request.points())
+                .ordering(request.ordering())
+                .build();
+
+        QuizQuestion saved = questionRepository.save(question);
+        syncTestQuestionsCount(testId);
+        return saved;
+    }
+
+    @Transactional
+    public QuizQuestion updateQuestion(UUID questionId, QuizQuestionUpdateRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Question payload is required");
+        }
         QuizQuestion question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new IllegalArgumentException("Question not found"));
-        if (questionUpdates.getText() != null) question.setText(questionUpdates.getText());
-        if (questionUpdates.getType() != null) question.setType(questionUpdates.getType());
-        if (questionUpdates.getPoints() != null) question.setPoints(questionUpdates.getPoints());
-        if (questionUpdates.getOrdering() != null) question.setOrdering(questionUpdates.getOrdering());
+
+        if (request.type() != null) {
+            String normalizedType = validateAndNormalizeQuestionType(request.type());
+            question.setType(normalizedType);
+        }
+        if (request.text() != null) {
+            if (request.text().isBlank()) {
+                throw new IllegalArgumentException("Question text is required");
+            }
+            question.setText(request.text());
+        }
+        if (request.points() != null) {
+            if (request.points() < 0) {
+                throw new IllegalArgumentException("Points must be non-negative");
+            }
+            question.setPoints(request.points());
+        }
+        if (request.ordering() != null) {
+            if (request.ordering() < 0) {
+                throw new IllegalArgumentException("Ordering must be non-negative");
+            }
+            question.setOrdering(request.ordering());
+        }
+        if (request.testId() != null) {
+            question.setTestId(request.testId());
+        }
+
+        if ("RADIO".equalsIgnoreCase(question.getType())) {
+            List<QuizOption> options = optionRepository.findAllByQuestionIdOrderBySequenceOrderAsc(question.getId());
+            boolean foundFirstCorrect = false;
+            for (QuizOption opt : options) {
+                if (opt.isCorrect()) {
+                    if (!foundFirstCorrect) {
+                        foundFirstCorrect = true;
+                    } else {
+                        opt.setCorrect(false);
+                        optionRepository.save(opt);
+                    }
+                }
+            }
+        }
+
         return questionRepository.save(question);
     }
 
     @Transactional
+    public QuizQuestion updateQuestion(UUID questionId, QuizQuestion questionUpdates) {
+        return updateQuestion(
+                questionId,
+                new QuizQuestionUpdateRequest(
+                        questionUpdates.getType(),
+                        questionUpdates.getText(),
+                        questionUpdates.getPoints(),
+                        questionUpdates.getOrdering(),
+                        questionUpdates.getTestId()
+                )
+        );
+    }
+
+    @Transactional
     public void deleteQuestion(UUID questionId) {
-        if (!questionRepository.existsById(questionId)) {
-            throw new IllegalArgumentException("Question not found");
-        }
+        QuizQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new IllegalArgumentException("Question not found"));
+        UUID testId = question.getTestId();
         questionRepository.deleteById(questionId);
+        if (testId != null) {
+            syncTestQuestionsCount(testId);
+        }
+    }
+
+    @Transactional
+    public QuizOption addOption(UUID questionId, QuizOptionRequest request) {
+        if (request == null || request.optionText() == null || request.optionText().isBlank()) {
+            throw new IllegalArgumentException("Option text is required");
+        }
+        QuizQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new IllegalArgumentException("Question not found"));
+
+        boolean isCorrect = request.resolvedCorrect();
+        if (isCorrect) {
+            clearOtherCorrectOptionsIfRadio(question, null);
+        }
+
+        QuizOption option = QuizOption.builder()
+                .questionId(questionId)
+                .optionText(request.optionText())
+                .isCorrect(isCorrect)
+                .sequenceOrder(request.sequenceOrder())
+                .build();
+
+        return optionRepository.save(option);
+    }
+
+    @Transactional
+    public QuizOption updateOption(UUID optionId, QuizOptionUpdateRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Option payload is required");
+        }
+        QuizOption option = optionRepository.findById(optionId)
+                .orElseThrow(() -> new IllegalArgumentException("Option not found"));
+
+        if (request.optionText() != null) {
+            if (request.optionText().isBlank()) {
+                throw new IllegalArgumentException("Option text is required");
+            }
+            option.setOptionText(request.optionText());
+        }
+        if (request.questionId() != null) {
+            option.setQuestionId(request.questionId());
+        }
+        if (request.sequenceOrder() != null) {
+            option.setSequenceOrder(request.sequenceOrder());
+        }
+        if (request.hasCorrectFlag()) {
+            boolean newCorrect = request.resolvedCorrect();
+            option.setCorrect(newCorrect);
+            if (newCorrect) {
+                QuizQuestion question = questionRepository.findById(option.getQuestionId())
+                        .orElseThrow(() -> new IllegalArgumentException("Question not found"));
+                clearOtherCorrectOptionsIfRadio(question, option.getId());
+            }
+        }
+
+        return optionRepository.save(option);
     }
 
     @Transactional
     public QuizOption updateOption(UUID optionId, QuizOption optionUpdates) {
-        QuizOption option = optionRepository.findById(optionId)
-                .orElseThrow(() -> new IllegalArgumentException("Option not found"));
-        if (optionUpdates.getOptionText() != null) option.setOptionText(optionUpdates.getOptionText());
-        option.setCorrect(optionUpdates.isCorrect());
-        if (optionUpdates.getSequenceOrder() != null) option.setSequenceOrder(optionUpdates.getSequenceOrder());
-        return optionRepository.save(option);
+        return updateOption(
+                optionId,
+                new QuizOptionUpdateRequest(
+                        optionUpdates.getOptionText(),
+                        optionUpdates.isCorrect(),
+                        null,
+                        optionUpdates.getSequenceOrder(),
+                        optionUpdates.getQuestionId()
+                )
+        );
     }
 
     @Transactional
@@ -301,29 +457,85 @@ public class QuizService {
             }
             Student student = studentRepository.findByUserId(resolvedUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
-            boolean hasInProgress = attemptRepository.findAllByQuizIdAndStudentId(testId, student.getId()).stream()
-                    .anyMatch(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS);
-            if (!hasInProgress) {
-                throw new IllegalStateException("Для просмотра вопросов необходимо начать попытку прохождения теста");
-            }
+            QuizAttempt activeAttempt = attemptRepository.findAllByQuizIdAndStudentId(testId, student.getId()).stream()
+                    .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
+                    .min(Comparator.comparing(QuizAttempt::getStartedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                    .orElseThrow(() -> new IllegalStateException("Для просмотра вопросов необходимо начать попытку прохождения теста"));
+            UUID shuffleSeedId = activeAttempt.getId() != null ? activeAttempt.getId() : student.getId();
+            return getQuestionsWithOptions(testId, shuffleSeedId);
         }
         return getQuestionsWithOptions(testId);
     }
 
     public List<Map<String, Object>> getQuestionsWithOptions(UUID testId) {
+        return getQuestionsWithOptions(testId, null);
+    }
+
+    private List<Map<String, Object>> getQuestionsWithOptions(UUID testId, UUID shuffleSeedId) {
         List<QuizQuestion> questions = questionRepository.findAllByTestIdOrderByOrderingAsc(testId);
         List<UUID> qIds = questions.stream().map(QuizQuestion::getId).collect(Collectors.toList());
         List<QuizOption> allOptions = qIds.isEmpty() ? Collections.emptyList() : optionRepository.findAllByQuestionIdIn(qIds);
-        
+
         return questions.stream().map(q -> {
             List<QuizOption> options = allOptions.stream()
-                .filter(o -> o.getQuestionId().equals(q.getId()))
-                .collect(Collectors.toList());
+                    .filter(o -> o.getQuestionId().equals(q.getId()))
+                    .collect(Collectors.toCollection(ArrayList::new));
+
+            if ("SEQUENCE".equalsIgnoreCase(q.getType())) {
+                options.sort(Comparator
+                        .comparing(QuizOption::getSequenceOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(QuizOption::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+
+                if (shuffleSeedId != null && options.size() > 1) {
+                    List<QuizOption> canonicalOrder = List.copyOf(options);
+                    long seed = shuffleSeedId.getMostSignificantBits()
+                            ^ Long.rotateLeft(shuffleSeedId.getLeastSignificantBits(), 13)
+                            ^ Long.rotateLeft(q.getId().getMostSignificantBits(), 29)
+                            ^ Long.rotateLeft(q.getId().getLeastSignificantBits(), 47);
+                    Collections.shuffle(options, new Random(seed));
+                    if (options.equals(canonicalOrder)) {
+                        Collections.rotate(options, 1);
+                    }
+                }
+            }
+
             Map<String, Object> map = new HashMap<>();
             map.put("question", q);
             map.put("options", options);
             return map;
         }).collect(Collectors.toList());
+    }
+
+    private String validateAndNormalizeQuestionType(String type) {
+        if (type == null || type.isBlank()) {
+            throw new IllegalArgumentException("Question type is required");
+        }
+        String normalized = type.trim().toUpperCase(Locale.ROOT);
+        if (!ALLOWED_QUESTION_TYPES.contains(normalized)) {
+            throw new IllegalArgumentException("Unsupported question type: " + type);
+        }
+        return normalized;
+    }
+
+    private void clearOtherCorrectOptionsIfRadio(QuizQuestion question, UUID keepOptionId) {
+        if (!"RADIO".equalsIgnoreCase(question.getType())) {
+            return;
+        }
+        List<QuizOption> existingOptions = optionRepository.findAllByQuestionIdOrderBySequenceOrderAsc(question.getId());
+        for (QuizOption other : existingOptions) {
+            if ((keepOptionId == null || !other.getId().equals(keepOptionId)) && other.isCorrect()) {
+                other.setCorrect(false);
+                optionRepository.save(other);
+            }
+        }
+    }
+
+    private void syncTestQuestionsCount(UUID testId) {
+        testRepository.findById(testId).ifPresent(test -> {
+            int count = questionRepository.findAllByTestIdOrderByOrderingAsc(testId).size();
+            test.setQuestionsCount(count);
+            testRepository.save(test);
+        });
     }
 
     @Transactional
