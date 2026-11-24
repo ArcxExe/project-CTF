@@ -1,6 +1,7 @@
 package com.arcx.ctfplatform.attempts.service;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,8 +19,11 @@ import com.arcx.ctfplatform.competitions.entity.Competition;
 import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
+import com.arcx.ctfplatform.tests.entity.QuizAttempt;
+import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.entity.TestStatus;
+import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
@@ -41,6 +45,7 @@ public class AttemptService {
     private final UserRepository userRepository;
     private final LeaderboardService leaderboardService;
     private final TestRepository testRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
 
     public AttemptService(
             StudentRepository studentRepository,
@@ -52,7 +57,21 @@ public class AttemptService {
             LeaderboardService leaderboardService
     ) {
         this(studentRepository, ctfTaskRepository, attemptRepository, competitionRepository,
-                fileStorageService, userRepository, leaderboardService, null);
+                fileStorageService, userRepository, leaderboardService, null, null);
+    }
+
+    public AttemptService(
+            StudentRepository studentRepository,
+            CtfTaskRepository ctfTaskRepository,
+            AttemptRepository attemptRepository,
+            CompetitionRepository competitionRepository,
+            FileStorageService fileStorageService,
+            UserRepository userRepository,
+            LeaderboardService leaderboardService,
+            TestRepository testRepository
+    ) {
+        this(studentRepository, ctfTaskRepository, attemptRepository, competitionRepository,
+                fileStorageService, userRepository, leaderboardService, testRepository, null);
     }
 
     @Autowired
@@ -64,7 +83,8 @@ public class AttemptService {
             FileStorageService fileStorageService,
             UserRepository userRepository,
             LeaderboardService leaderboardService,
-            @Autowired(required = false) TestRepository testRepository
+            @Autowired(required = false) TestRepository testRepository,
+            @Autowired(required = false) QuizAttemptRepository quizAttemptRepository
     ) {
         this.studentRepository = studentRepository;
         this.ctfTaskRepository = ctfTaskRepository;
@@ -74,6 +94,7 @@ public class AttemptService {
         this.userRepository = userRepository;
         this.leaderboardService = leaderboardService;
         this.testRepository = testRepository;
+        this.quizAttemptRepository = quizAttemptRepository;
     }
 
     @Transactional
@@ -82,12 +103,13 @@ public class AttemptService {
         validateStudentCanSubmit(student);
 
         CtfTask task = getTaskOrThrow(taskId);
+        validateTaskAccessibleForSubmission(task);
 
         if (task.getTaskType() != TaskType.FLAG) {
             throw new IllegalArgumentException("Invalid task type for this endpoint");
         }
 
-        checkCompetitionStatusForTask(task);
+        checkCompetitionStatusForTask(task, student.getId());
         checkIfAlreadySolved(taskId, student.getId());
 
         long solves = attemptRepository.countByTaskIdAndIsCorrect(task.getId(), true);
@@ -139,12 +161,13 @@ public class AttemptService {
         validateStudentCanSubmit(student);
 
         CtfTask task = getTaskOrThrow(taskId);
+        validateTaskAccessibleForSubmission(task);
 
         if (task.getTaskType() != TaskType.FILE_UPLOAD) {
             throw new IllegalArgumentException("Invalid task type for file upload");
         }
 
-        checkCompetitionStatusForTask(task);
+        checkCompetitionStatusForTask(task, student.getId());
         checkIfAlreadySolved(taskId, student.getId());
 
         if (task.isFirstBloodOnly() && (attemptRepository.existsByTaskIdAndIsCorrectTrue(task.getId())
@@ -225,6 +248,12 @@ public class AttemptService {
         }
     }
 
+    private void validateTaskAccessibleForSubmission(CtfTask task) {
+        if ("RESERVE".equalsIgnoreCase(task.getPool())) {
+            throw new IllegalArgumentException("Task is not available");
+        }
+    }
+
     private boolean shouldSuppressFirstBloodBroadcast(CtfTask task, UUID studentId) {
         List<Competition> allComps = competitionRepository.findAll();
         List<Competition> relevant = allComps.stream()
@@ -248,7 +277,7 @@ public class AttemptService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found"));
     }
 
-    private void checkCompetitionStatusForTask(CtfTask task) {
+    private void checkCompetitionStatusForTask(CtfTask task, UUID studentId) {
         List<Competition> competitions = competitionRepository.findAll().stream()
                 .filter(c -> c.getTasks() != null && c.getTasks().contains(task))
                 .toList();
@@ -266,18 +295,60 @@ public class AttemptService {
             }
         }
 
+        List<Test> matchingPublishedTests = List.of();
+        boolean hasExpiredQuizAttempt = false;
         if (!hasActive && testRepository != null) {
             List<Test> publishedTests = testRepository.findAllByStatus(TestStatus.PUBLISHED);
-            hasActive = publishedTests.stream()
-                    .anyMatch(t -> t.getTasks() != null && t.getTasks().contains(task));
+            matchingPublishedTests = publishedTests.stream()
+                    .filter(t -> t.getTasks() != null && t.getTasks().contains(task))
+                    .toList();
+            if (!matchingPublishedTests.isEmpty() && quizAttemptRepository != null) {
+                for (Test test : matchingPublishedTests) {
+                    List<QuizAttempt> attempts = quizAttemptRepository.findAllByQuizIdAndStudentId(test.getId(), studentId);
+                    if (attempts == null) {
+                        continue;
+                    }
+                    for (QuizAttempt attempt : attempts) {
+                        if (attempt != null && attempt.getStatus() == QuizAttemptStatus.IN_PROGRESS) {
+                            if (isQuizAttemptExpired(test, attempt, now)) {
+                                hasExpiredQuizAttempt = true;
+                            } else {
+                                hasActive = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasActive) {
+                        break;
+                    }
+                }
+            }
         }
 
         if (!hasActive) {
+            if (!matchingPublishedTests.isEmpty()) {
+                if (hasExpiredQuizAttempt) {
+                    throw new IllegalStateException("Quiz time limit exceeded");
+                }
+                throw new IllegalStateException("No active attempt found for this quiz");
+            }
             if (competitions.isEmpty()) {
                 throw new IllegalArgumentException("Task is not associated with any competition");
             }
             throw new IllegalArgumentException("Competition is not active");
         }
+    }
+
+    private boolean isQuizAttemptExpired(Test test, QuizAttempt attempt, Instant now) {
+        if (attempt.getStartedAt() == null) {
+            return false;
+        }
+        Integer timeLimit = test.getTimeLimitMinutes();
+        if (timeLimit == null || timeLimit <= 0) {
+            return false;
+        }
+        Instant deadline = attempt.getStartedAt().plus(timeLimit, ChronoUnit.MINUTES).plusSeconds(30);
+        return now.isAfter(deadline);
     }
 
     private void checkIfAlreadySolved(UUID taskId, UUID studentId) {

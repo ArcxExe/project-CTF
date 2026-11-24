@@ -48,20 +48,30 @@ public class TestService {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && !isAdminOrInstructor(null) && test.getStatus() != TestStatus.PUBLISHED) {
+        boolean studentRequest = auth != null && !isAdminOrInstructor(null);
+        if (studentRequest && test.getStatus() != TestStatus.PUBLISHED) {
             throw new AccessDeniedException("Test is not published");
         }
-        return ctfTaskMapper.mappingList(test.getTasks());
+        List<CtfTask> tasks = test.getTasks() != null ? test.getTasks() : List.of();
+        if (studentRequest) {
+            tasks = filterVisibleTasksForStudent(tasks);
+        }
+        return ctfTaskMapper.mappingList(tasks);
     }
 
     @Transactional(readOnly = true)
     public List<CtfTaskResponse> getChallengesForTestForCaller(UUID testId, User user) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new IllegalArgumentException("Test not found"));
-        if (!isAdminOrInstructor(user) && test.getStatus() != TestStatus.PUBLISHED) {
+        boolean staff = isAdminOrInstructor(user);
+        if (!staff && test.getStatus() != TestStatus.PUBLISHED) {
             throw new AccessDeniedException("Test is not published");
         }
-        return ctfTaskMapper.mappingList(test.getTasks());
+        List<CtfTask> tasks = test.getTasks() != null ? test.getTasks() : List.of();
+        if (!staff) {
+            tasks = filterVisibleTasksForStudent(tasks);
+        }
+        return ctfTaskMapper.mappingList(tasks);
     }
 
     @Transactional
@@ -73,9 +83,12 @@ public class TestService {
             throw new IllegalStateException("Test is not published");
         }
 
-        boolean hasChallenge = test.getTasks().stream().anyMatch(c -> c.getId().equals(challengeId));
-        if (!hasChallenge) {
-            throw new IllegalArgumentException("Challenge not found in this test");
+        CtfTask task = test.getTasks().stream()
+                .filter(c -> c != null && challengeId.equals(c.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Challenge not found in this test"));
+        if ("RESERVE".equalsIgnoreCase(task.getPool())) {
+            throw new IllegalArgumentException("Task is not available");
         }
 
         ChallengeSubmitResponse response = attemptService.submitFlag(user.getId(), challengeId, flag);
@@ -83,6 +96,12 @@ public class TestService {
             leaderboardService.broadcastUpdate();
         }
         return response;
+    }
+
+    private List<CtfTask> filterVisibleTasksForStudent(List<CtfTask> tasks) {
+        return tasks.stream()
+                .filter(t -> t != null && !"RESERVE".equalsIgnoreCase(t.getPool()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
