@@ -121,9 +121,18 @@ class GradingServiceTest {
         // Exam not taken (null): returns course grade
         assertThat(gradingService.calculateFinalGradeWithExam(75.0, 70.0, 70.0, true, null)).isEqualTo(4);
 
-        // Direct 2..5 exam grade works identically to 0..100 scale
-        assertThat(gradingService.calculateFinalGradeWithExam(65.0, 60.0, 60.0, true, 5)).isEqualTo(5);
-        assertThat(gradingService.calculateFinalGradeWithExam(75.0, 70.0, 70.0, true, 3)).isEqualTo(4);
+        // Failing exam scores (0..49, including 2..5) map strictly on 0..100 scale -> grade 2
+        assertThat(gradingService.mapExamScoreToGrade(5)).isEqualTo(2);
+        assertThat(gradingService.mapExamScoreToGrade(4)).isEqualTo(2);
+        assertThat(gradingService.mapExamScoreToGrade(3)).isEqualTo(2);
+        assertThat(gradingService.mapExamScoreToGrade(49)).isEqualTo(2);
+        assertThat(gradingService.mapExamScoreToGrade(50)).isEqualTo(3);
+        assertThat(gradingService.mapExamScoreToGrade(70)).isEqualTo(4);
+        assertThat(gradingService.mapExamScoreToGrade(85)).isEqualTo(5);
+
+        // 5/100 on exam must NOT inflate course grade 3 to 5
+        assertThat(gradingService.calculateFinalGradeWithExam(65.0, 60.0, 60.0, true, 5)).isEqualTo(3);
+        assertThat(gradingService.calculateFinalGradeWithExam(75.0, 70.0, 70.0, true, 4)).isEqualTo(4);
     }
 
     @Test
@@ -154,5 +163,86 @@ class GradingServiceTest {
         assertThat(gradingService.calculateGrade(92.0, 80.0, 80.0)).isEqualTo(5);
         // 92.0 with L < 60 -> lowered to 4
         assertThat(gradingService.calculateGrade(92.0, 55.0, 80.0)).isEqualTo(4);
+        // Below lowest custom rule (55.0) -> grade 2
+        assertThat(gradingService.calculateGrade(52.0, 80.0, 80.0)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Fractional scales [0.00..1.00] grade S < 1% as 2 and bridge boundary gaps (49..50, 69..70, 84..85)")
+    void testFractionalScalesNoSmallPercentInflationAndNoGaps() {
+        com.arcx.ctfplatform.academic.entity.GradingScale r2 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(new java.math.BigDecimal("0.00"))
+                .maxCoefficient(new java.math.BigDecimal("0.49"))
+                .grade(2)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale r3 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(new java.math.BigDecimal("0.50"))
+                .maxCoefficient(new java.math.BigDecimal("0.69"))
+                .grade(3)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale r4 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(new java.math.BigDecimal("0.70"))
+                .maxCoefficient(new java.math.BigDecimal("0.84"))
+                .grade(4)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale r5 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .minCoefficient(new java.math.BigDecimal("0.85"))
+                .maxCoefficient(new java.math.BigDecimal("1.00"))
+                .grade(5)
+                .build();
+
+        org.mockito.Mockito.when(gradingScaleRepository.findAll())
+                .thenReturn(java.util.List.of(r2, r3, r4, r5));
+
+        // S = 0.90%, L = 0.90%, K = 0.90% must be grade 2 (not 4)
+        assertThat(gradingService.calculateGrade(0.90, 0.90, 0.90)).isEqualTo(2);
+        // No gaps between 49..50, 69..70, 84..85
+        assertThat(gradingService.calculateGrade(49.50, 80.0, 80.0)).isEqualTo(2);
+        assertThat(gradingService.calculateGrade(69.50, 80.0, 80.0)).isEqualTo(3);
+        assertThat(gradingService.calculateGrade(84.50, 80.0, 80.0)).isEqualTo(4);
+        assertThat(gradingService.calculateGrade(85.00, 60.0, 60.0)).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("calculateGrade scopes scales by flowId (flow -> global -> default) without cross-flow leakage")
+    void testFlowIdIsolationAndPriority() {
+        java.util.UUID flowA = java.util.UUID.randomUUID();
+        java.util.UUID flowB = java.util.UUID.randomUUID();
+
+        com.arcx.ctfplatform.academic.entity.GradingScale flowARule5 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .flowId(flowA)
+                .minCoefficient(java.math.BigDecimal.valueOf(95.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(100.0))
+                .grade(5)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale flowARule4 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .flowId(flowA)
+                .minCoefficient(java.math.BigDecimal.valueOf(70.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(95.0))
+                .grade(4)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale globalRule5 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .flowId(null)
+                .minCoefficient(java.math.BigDecimal.valueOf(80.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(100.0))
+                .grade(5)
+                .build();
+        com.arcx.ctfplatform.academic.entity.GradingScale globalRule4 = com.arcx.ctfplatform.academic.entity.GradingScale.builder()
+                .flowId(null)
+                .minCoefficient(java.math.BigDecimal.valueOf(65.0))
+                .maxCoefficient(java.math.BigDecimal.valueOf(80.0))
+                .grade(4)
+                .build();
+
+        org.mockito.Mockito.when(gradingScaleRepository.findAll())
+                .thenReturn(java.util.List.of(flowARule5, flowARule4, globalRule5, globalRule4));
+
+        // Flow A requires 95% for 5 -> 88% gives 4
+        assertThat(gradingService.calculateGrade(88.0, 80.0, 80.0, flowA)).isEqualTo(4);
+        assertThat(gradingService.calculateGrade(95.0, 80.0, 80.0, flowA)).isEqualTo(5);
+
+        // Flow B has no custom scale -> falls back to global (80% for 5) and ignores Flow A
+        assertThat(gradingService.calculateGrade(82.0, 80.0, 80.0, flowB)).isEqualTo(5);
+        assertThat(gradingService.calculateGrade(82.0, 80.0, 80.0, (java.util.UUID) null)).isEqualTo(5);
     }
 }

@@ -71,6 +71,11 @@ export const AdminGradingScalePage = () => {
       return false;
     }
 
+    if (currentForm.minScore < 0 || currentForm.maxScore > 100) {
+      push({ title: "Баллы должны быть в диапазоне от 0 до 100", variant: "error" });
+      return false;
+    }
+
     if (currentForm.minScore >= currentForm.maxScore) {
       push({ title: "Минимальный балл должен быть меньше максимального", variant: "error" });
       return false;
@@ -127,7 +132,8 @@ export const AdminGradingScalePage = () => {
       setIsModalOpen(false);
       void loadData();
     } catch (error) {
-      push({ title: "Ошибка сохранения шкалы", variant: "error" });
+      const message = error instanceof Error && error.message ? error.message : "Ошибка сохранения шкалы";
+      push({ title: message, variant: "error" });
     } finally {
       setIsSaving(false);
     }
@@ -167,12 +173,6 @@ export const AdminGradingScalePage = () => {
   const tableRows = scales.map((scale) => ({
     ...scale,
     flowName: scale.flowId ? flows.find(f => f.id === scale.flowId)?.name || "Неизвестно" : "Глобальная",
-    actions: (
-      <div className="table-actions">
-        <Button onClick={() => handleEdit(scale)} variant="ghost">Редактировать</Button>
-        <Button onClick={() => handleDelete(scale.id)} variant="danger">Удалить</Button>
-      </div>
-    ),
   }));
 
   return (
@@ -235,7 +235,16 @@ export const AdminGradingScalePage = () => {
           { key: "minScore", title: "Мин. Балл" },
           { key: "maxScore", title: "Макс. Балл" },
           { key: "gradeName", title: "Оценка" },
-          { key: "actions", title: "Действия" },
+          {
+            key: "actions",
+            title: "Действия",
+            render: (row) => (
+              <div className="table-actions">
+                <Button onClick={() => handleEdit(row)} variant="ghost">Редактировать</Button>
+                <Button onClick={() => handleDelete(row.id)} variant="danger">Удалить</Button>
+              </div>
+            ),
+          },
         ]}
         rows={tableRows}
       />

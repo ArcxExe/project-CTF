@@ -25,6 +25,19 @@ export interface GradingScalePayload {
   description?: string;
 }
 
+function parseOptionalGrade(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 2 && value <= 5) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^[2-5]$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+  }
+  return undefined;
+}
+
 export function normalizeGradingScale(raw: any): GradingScale {
   const minScore = Number(raw.minScore ?? raw.minCoefficient ?? 0);
   const maxScore = Number(raw.maxScore ?? raw.maxCoefficient ?? 0);
@@ -41,7 +54,7 @@ export function normalizeGradingScale(raw: any): GradingScale {
     maxScore,
     minCoefficient: raw.minCoefficient ?? minScore,
     maxCoefficient: raw.maxCoefficient ?? maxScore,
-    grade: raw.grade ?? (parseInt(gradeName, 10) || 5),
+    grade: parseOptionalGrade(raw.grade) ?? parseOptionalGrade(gradeName),
     description: raw.description ?? gradeName,
   };
 }
@@ -51,9 +64,9 @@ export function toGradingScaleRequestBody(payload: GradingScalePayload) {
   const maxScore = Number(payload.maxScore ?? payload.maxCoefficient ?? 0);
   const gradeName = String(
     payload.gradeName ?? (payload.grade != null ? String(payload.grade) : (payload.description ?? ""))
-  );
-  const flowId = payload.flowId ?? "";
-  const grade = payload.grade ?? (parseInt(String(gradeName), 10) || 5);
+  ).trim();
+  const flowId = payload.flowId && payload.flowId.trim() ? payload.flowId.trim() : null;
+  const grade = parseOptionalGrade(payload.grade) ?? parseOptionalGrade(gradeName);
   const description = payload.description ?? gradeName;
 
   return {
@@ -63,7 +76,7 @@ export function toGradingScaleRequestBody(payload: GradingScalePayload) {
     maxScore,
     minCoefficient: minScore,
     maxCoefficient: maxScore,
-    grade,
+    ...(grade !== undefined ? { grade } : {}),
     description,
   };
 }

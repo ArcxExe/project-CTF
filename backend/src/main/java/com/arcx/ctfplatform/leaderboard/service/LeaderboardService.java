@@ -478,9 +478,13 @@ public class LeaderboardService {
             double sScore = roundToTwoDecimals(0.50 * lPercent + 0.25 * kPercent + 0.25 * cPercent);
 
             // --- 6. RECOMMENDED ACADEMIC GRADE ---
+            AcademicGroup studentGroup = student.getGroupId() != null ? groupMap.get(student.getGroupId()) : null;
+            UUID studentFlowId = studentGroup != null ? studentGroup.getStreamId() : null;
             Integer recommendedGrade = null;
             if (isEligible) {
-                Integer baseGrade = gradingService.calculateGrade(sScore, lPercent, kPercent);
+                Integer baseGrade = studentFlowId != null
+                        ? gradingService.calculateGrade(sScore, lPercent, kPercent, studentFlowId)
+                        : gradingService.calculateGrade(sScore, lPercent, kPercent);
                 if (student.getExamScore() != null && baseGrade != null) {
                     Integer mappedExam = gradingService.mapExamScoreToGrade(student.getExamScore());
                     int examGrade = (mappedExam != null && mappedExam >= 2)
@@ -610,9 +614,6 @@ public class LeaderboardService {
     }
 
     private int mapExamScoreFallback(int examScore) {
-        if (examScore >= 2 && examScore <= 5) {
-            return examScore;
-        }
         if (examScore < 50) {
             return 2;
         } else if (examScore < 70) {
