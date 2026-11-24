@@ -43,6 +43,28 @@ export interface QuizAttempt {
   completedAt?: string;
   score: number;
   status: "IN_PROGRESS" | "COMPLETED";
+  serverNow?: string | null;
+  remainingSeconds?: number | null;
+}
+
+export function computeInitialRemainingMs(
+  attempt: Pick<QuizAttempt, "startedAt" | "serverNow" | "remainingSeconds" | "status">,
+  timeLimitMinutes: number | null | undefined,
+  fallbackNowMs: number = Date.now(),
+): number | null {
+  if (attempt.status === "COMPLETED" || !timeLimitMinutes || timeLimitMinutes <= 0) {
+    return null;
+  }
+  if (typeof attempt.remainingSeconds === "number" && Number.isFinite(attempt.remainingSeconds)) {
+    return Math.max(0, attempt.remainingSeconds * 1000);
+  }
+  const startedMs = new Date(attempt.startedAt).getTime();
+  if (Number.isNaN(startedMs)) {
+    return null;
+  }
+  const parsedServerNow = attempt.serverNow ? new Date(attempt.serverNow).getTime() : Number.NaN;
+  const referenceNowMs = !Number.isNaN(parsedServerNow) ? parsedServerNow : fallbackNowMs;
+  return Math.max(0, startedMs + timeLimitMinutes * 60000 - referenceNowMs);
 }
 
 export interface CtfTestPayload {

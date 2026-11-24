@@ -1,13 +1,19 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
-import { testsApi } from "@/shared/api/services/tests";
+import { testsApi, computeInitialRemainingMs } from "@/shared/api/services/tests";
 import type { QuizQuestion, QuizAttempt, CtfTest } from "@/shared/api/services/tests";
 import { Button } from "@/shared/ui/Button/Button";
 import { Card } from "@/shared/ui/Card/Card";
 import { Loader } from "@/shared/ui/Loader/Loader";
 import { PageHeader } from "@/shared/ui/PageHeader/PageHeader";
 import "./pages.css";
+
+interface TimerAnchor {
+  attemptId: string;
+  initialRemainingMs: number;
+  anchoredAtPerfMs: number;
+}
 
 export const ParticipantTestRunnerPage = () => {
   const { testId } = useParams();
@@ -20,17 +26,29 @@ export const ParticipantTestRunnerPage = () => {
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const answersRef = useRef<Record<string, string[]>>(answers);
   answersRef.current = answers;
-  const autoSubmittedRef = useRef(false);
+  const attemptRef = useRef<QuizAttempt | null>(attempt);
+  attemptRef.current = attempt;
+  const isSubmittingRef = useRef(false);
+  const isHydratedRef = useRef(false);
+  const autoSubmittedAttemptIdRef = useRef<string | null>(null);
   const [sequenceInputs, setSequenceInputs] = useState<Record<string, string>>({});
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [timerAnchor, setTimerAnchor] = useState<TimerAnchor | null>(null);
 
   useEffect(() => {
     if (!testId) return;
     let cancelled = false;
+    isHydratedRef.current = false;
+    setAttempt(null);
+    setQuestions([]);
+    setAnswers({});
+    setSequenceInputs({});
+    setTimerAnchor(null);
+    setTimeLeft(null);
 
     const loadData = async () => {
       setIsLoading(true);
@@ -55,27 +73,26 @@ export const ParticipantTestRunnerPage = () => {
         }
 
         const newAttempt = await testsApi.startQuiz(testId);
+        const attemptReceivedAtPerfMs = performance.now();
         if (cancelled) return;
-        setAttempt(newAttempt);
 
         if (newAttempt.status === "COMPLETED") {
+          setAttempt(newAttempt);
           return;
         }
 
         const loadedQuestions = await testsApi.getQuestions(testId);
         if (cancelled) return;
-        setQuestions(loadedQuestions);
 
-        // Load saved answers from local storage if available
-        if (newAttempt && newAttempt.status === "IN_PROGRESS") {
-          const savedAnswers = localStorage.getItem(`quiz_answers_${testId}`);
-          if (savedAnswers) {
-            try {
-              const parsed = JSON.parse(savedAnswers) as Record<string, string[]>;
-              setAnswers(parsed);
-
-              // Initialize sequenceInputs from parsed answers
-              const inputs: Record<string, string> = {};
+        // Hydrate saved answers from localStorage BEFORE activating attempt/timer/persistence effects
+        let hydratedAnswers: Record<string, string[]> = {};
+        const hydratedInputs: Record<string, string> = {};
+        const savedAnswers = localStorage.getItem(`quiz_answers_${testId}`);
+        if (savedAnswers) {
+          try {
+            const parsed = JSON.parse(savedAnswers) as Record<string, string[]>;
+            if (parsed && typeof parsed === "object") {
+              hydratedAnswers = parsed;
               loadedQuestions.forEach(q => {
                 if (q.type === "SEQUENCE") {
                   const ans = parsed[q.id] || [];
@@ -83,16 +100,35 @@ export const ParticipantTestRunnerPage = () => {
                     const idx = q.options.findIndex(opt => opt.id === id);
                     return idx !== -1 ? String(idx + 1) : "";
                   }).filter(Boolean);
-                  inputs[q.id] = indices.join(", ");
+                  hydratedInputs[q.id] = indices.join(", ");
                 }
               });
-              setSequenceInputs(inputs);
-            } catch (e) {
-              console.error("Failed to parse saved answers", e);
             }
+          } catch (e) {
+            console.error("Failed to parse saved answers", e);
           }
         }
 
+        answersRef.current = hydratedAnswers;
+        isHydratedRef.current = true;
+        setQuestions(loadedQuestions);
+        setAnswers(hydratedAnswers);
+        setSequenceInputs(hydratedInputs);
+
+        const initialRemainingMs = computeInitialRemainingMs(newAttempt, currentTest.timeLimitMinutes);
+        if (initialRemainingMs !== null) {
+          setTimerAnchor({
+            attemptId: newAttempt.id,
+            initialRemainingMs,
+            anchoredAtPerfMs: attemptReceivedAtPerfMs,
+          });
+          setTimeLeft(initialRemainingMs);
+        } else {
+          setTimerAnchor(null);
+          setTimeLeft(null);
+        }
+
+        setAttempt(newAttempt);
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Ошибка загрузки теста";
@@ -115,16 +151,16 @@ export const ParticipantTestRunnerPage = () => {
   }, [testId, push]);
 
   const handleSubmit = useCallback(async (isAuto = false, overrideAnswers?: Record<string, string[]>) => {
-    if (!attempt || attempt.status === "COMPLETED" || isSubmitting || !testId) return;
+    const currentAttempt = attemptRef.current;
+    if (!currentAttempt || currentAttempt.status === "COMPLETED" || isSubmittingRef.current || !testId) return;
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       const payloadAnswers = overrideAnswers ?? answersRef.current;
       const result = await testsApi.submitAnswers(testId, payloadAnswers);
       setAttempt(result);
-      if (testId) {
-        localStorage.removeItem(`quiz_answers_${testId}`);
-      }
+      localStorage.removeItem(`quiz_answers_${testId}`);
       push({
         title: `Ответы ${isAuto ? 'автоматически отправлены' : 'сохранены'}!`,
         variant: "success",
@@ -135,41 +171,43 @@ export const ParticipantTestRunnerPage = () => {
         variant: "error",
       });
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [attempt, isSubmitting, testId, push]);
+  }, [testId, push]);
 
-  const handleAutoSubmit = useCallback(async () => {
+  const handleAutoSubmitRef = useRef<() => Promise<void>>(async () => {});
+  handleAutoSubmitRef.current = async () => {
     await handleSubmit(true, answersRef.current);
-  }, [handleSubmit]);
+  };
 
-  // Timer effect
+  // Monotonic server-synced timer effect (decoupled from submit callbacks to prevent retry loops)
   useEffect(() => {
-    if (!attempt || !test || attempt.status === "COMPLETED" || !test.timeLimitMinutes || test.timeLimitMinutes <= 0) {
+    if (!attempt || attempt.status === "COMPLETED" || !timerAnchor || timerAnchor.attemptId !== attempt.id) {
       return;
     }
 
-    autoSubmittedRef.current = false;
-    const endTime = new Date(attempt.startedAt).getTime() + test.timeLimitMinutes * 60000;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const updateTimer = () => {
-      const remaining = Math.max(0, endTime - Date.now());
+      const elapsedMs = Math.max(0, performance.now() - timerAnchor.anchoredAtPerfMs);
+      const remaining = Math.max(0, timerAnchor.initialRemainingMs - elapsedMs);
       setTimeLeft(remaining);
       if (remaining <= 0) {
         if (intervalId !== null) {
           clearInterval(intervalId);
           intervalId = null;
         }
-        if (!autoSubmittedRef.current) {
-          autoSubmittedRef.current = true;
-          void handleAutoSubmit();
+        if (autoSubmittedAttemptIdRef.current !== attempt.id) {
+          autoSubmittedAttemptIdRef.current = attempt.id;
+          void handleAutoSubmitRef.current();
         }
       }
     };
 
-    updateTimer(); // Initial call
-    if (endTime - Date.now() > 0) {
+    updateTimer();
+    const initialElapsed = Math.max(0, performance.now() - timerAnchor.anchoredAtPerfMs);
+    if (timerAnchor.initialRemainingMs - initialElapsed > 0) {
       intervalId = setInterval(updateTimer, 1000);
     }
     return () => {
@@ -177,11 +215,11 @@ export const ParticipantTestRunnerPage = () => {
         clearInterval(intervalId);
       }
     };
-  }, [attempt, test, handleAutoSubmit]);
+  }, [attempt?.id, attempt?.status, timerAnchor]);
 
-  // Save answers to local storage whenever they change
+  // Save answers to local storage only after hydration completes
   useEffect(() => {
-    if (attempt && attempt.status === "IN_PROGRESS" && testId) {
+    if (isHydratedRef.current && attempt && attempt.status === "IN_PROGRESS" && testId) {
       localStorage.setItem(`quiz_answers_${testId}`, JSON.stringify(answers));
     }
   }, [answers, attempt, testId]);
