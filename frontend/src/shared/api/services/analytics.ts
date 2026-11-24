@@ -18,6 +18,7 @@ export interface GroupMetrics {
   grade4Count?: number;
   grade3Count?: number;
   grade2Count?: number;
+  maxKtScore?: number;
 }
 
 export interface StudentAnalytics {
@@ -47,6 +48,8 @@ export interface StudentAnalytics {
   recommendedGrade: string;
   numericGrade?: number;
   attendancePercent?: number;
+  maxKtScore?: number;
+  maxTotalPoints?: number;
 }
 
 export interface AnalyticsSummary {
@@ -71,7 +74,9 @@ export interface StudentTestAnalytics {
   testTitle: string;
   status: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED";
   score: number;
-  passingScore: number;
+  maxScore?: number;
+  percentage?: number;
+  passingScore?: number;
   date: string;
 }
 

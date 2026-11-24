@@ -308,7 +308,23 @@ export const ParticipantTestRunnerPage = () => {
         <Card>
           <div className="page-stack">
             <h2>Тест завершен</h2>
-            <p>Ваш результат: <strong>{attempt?.score} баллов</strong></p>
+            <p>
+              Ваш результат:{" "}
+              <strong>
+                {attempt?.score}
+                {(() => {
+                  const maxScore =
+                    test.maxScore > 0
+                      ? test.maxScore
+                      : questions.reduce((acc, q) => acc + (q.points || 0), 0);
+                  if (maxScore > 0) {
+                    const pct = Math.min(100, Math.round(((attempt?.score ?? 0) / maxScore) * 1000) / 10);
+                    return ` из ${maxScore} баллов (${pct}%)`;
+                  }
+                  return " баллов";
+                })()}
+              </strong>
+            </p>
             <Button onClick={() => navigate("/participant/test")}>Вернуться к списку тестов</Button>
           </div>
         </Card>

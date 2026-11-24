@@ -66,10 +66,12 @@ export const ParticipantProfilePage = () => {
   const totalLab = myGradebook?.totalLab ?? 0;
   const lPercent = myGradebook?.lPercent ?? myLbEntry?.lPercent ?? 0;
   const totalKt = myGradebook?.totalKt ?? 0;
+  const maxTotalKt = myGradebook?.maxTotalKt ?? 100;
   const kPercent = myGradebook?.kPercent ?? myLbEntry?.kPercent ?? 0;
   const cPercent = myGradebook?.cPercent ?? myLbEntry?.cPercent ?? 0;
   const ctfCoeff = myGradebook?.ctfCoeff ?? Math.min(ctfScore / 800, 1);
   const totalPoints = myGradebook?.totalPoints ?? totalLab + totalKt;
+  const maxTotalPoints = myGradebook?.maxTotalPoints ?? 143 + maxTotalKt;
   const sScore = myGradebook?.sScore ?? myLbEntry?.sScore ?? 0;
   const isEligible = myGradebook?.isEligible ?? myLbEntry?.isEligible ?? false;
   const acceptedLabs = myGradebook?.acceptedLabsCount ?? 0;
@@ -87,7 +89,7 @@ export const ParticipantProfilePage = () => {
     <div className="page-stack">
       <PageHeader
         title="Профиль студента и успеваемость"
-        subtitle="Сводка баллов по регламенту курса: Лабораторные (143 б.), Контрольные точки (100 б.), CTF (800 б.), Успеваемость S% и Посещаемость."
+        subtitle="Сводка баллов по регламенту курса: Лабораторные (143 б.), Контрольные точки (КТ 1–4), CTF (800 б.), Успеваемость S% и Посещаемость."
       />
 
       <div className="grid grid-2">
@@ -107,10 +109,12 @@ export const ParticipantProfilePage = () => {
               </strong>
               <span>Контрольные точки (Общее КТ):</span>
               <strong>
-                {totalKt.toFixed(2)} / 100.00 ({kPercent.toFixed(2)}%)
+                {totalKt.toFixed(2)} / {maxTotalKt.toFixed(2)} ({kPercent.toFixed(2)}%)
               </strong>
               <span>Итог баллов (ЛР + КТ):</span>
-              <strong>{totalPoints.toFixed(2)} / 243.00</strong>
+              <strong>
+                {totalPoints.toFixed(2)} / {maxTotalPoints.toFixed(2)}
+              </strong>
               <span>Практикум CTF:</span>
               <strong>
                 {ctfScore} / 800 (коэфф. {ctfCoeff.toFixed(2)}, {cPercent.toFixed(2)}%)

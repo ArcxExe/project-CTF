@@ -788,8 +788,6 @@ const AdminTestsManagerPage = () => {
     type: "LECTURE" as "LECTURE" | "CONTROL_POINT",
     ktNumber: "",
     timeLimitMinutes: "30",
-    passingScore: "70",
-    questionsCount: "10",
     competitionId: "",
   });
 
@@ -833,8 +831,6 @@ const AdminTestsManagerPage = () => {
       type: "LECTURE",
       ktNumber: "",
       timeLimitMinutes: "30",
-      passingScore: "70",
-      questionsCount: "10",
       competitionId: "",
     });
     setIsModalOpen(true);
@@ -849,8 +845,6 @@ const AdminTestsManagerPage = () => {
       type: test.type || "LECTURE",
       ktNumber: test.ktNumber != null ? String(test.ktNumber) : "",
       timeLimitMinutes: String(test.timeLimitMinutes),
-      passingScore: String(test.passingScore),
-      questionsCount: String(test.questionsCount),
       competitionId: test.competitionId || "",
     });
     setIsModalOpen(true);
@@ -885,8 +879,6 @@ const AdminTestsManagerPage = () => {
         type: test.type,
         ktNumber: test.ktNumber,
         timeLimitMinutes: test.timeLimitMinutes,
-        passingScore: test.passingScore,
-        questionsCount: test.questionsCount,
         competitionId: test.competitionId || undefined,
       });
       setTests((current) => current.map((t) => (t.id === test.id ? updated : t)));
@@ -910,8 +902,6 @@ const AdminTestsManagerPage = () => {
       type: form.type,
       ktNumber: form.ktNumber ? Number(form.ktNumber) : null,
       timeLimitMinutes: Number(form.timeLimitMinutes),
-      passingScore: Number(form.passingScore),
-      questionsCount: Number(form.questionsCount),
       competitionId: form.competitionId || undefined,
     };
 
@@ -933,8 +923,6 @@ const AdminTestsManagerPage = () => {
         type: "LECTURE",
         ktNumber: "",
         timeLimitMinutes: "30",
-        passingScore: "70",
-        questionsCount: "10",
         competitionId: "",
       });
       setIsModalOpen(false);
@@ -993,6 +981,14 @@ const AdminTestsManagerPage = () => {
     });
   };
 
+  const syncTestQuestionStats = (testId: string, updatedQuestions: QuizQuestion[]) => {
+    const qCount = updatedQuestions.length;
+    const maxScore = updatedQuestions.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
+    setTests((current) =>
+      current.map((t) => (t.id === testId ? { ...t, questionsCount: qCount, maxScore } : t))
+    );
+  };
+
   const handleSaveQuestion = async (event: FormEvent) => {
     event.preventDefault();
     if (!constructorTest) return;
@@ -1006,7 +1002,9 @@ const AdminTestsManagerPage = () => {
           points: Number(questionForm.points),
           ordering: questions.find(q => q.id === editingQuestionId)?.ordering || 1,
         });
-        setQuestions(current => current.map(q => q.id === editingQuestionId ? { ...q, ...updated, options: q.options } : q));
+        const nextQuestions = questions.map(q => q.id === editingQuestionId ? { ...q, ...updated, options: q.options } : q);
+        setQuestions(nextQuestions);
+        syncTestQuestionStats(constructorTest.id, nextQuestions);
         push({ title: "Вопрос обновлен", variant: "success" });
       } else {
         const nextOrdering = questions.reduce((max, q) => Math.max(max, q.ordering), 0) + 1;
@@ -1016,7 +1014,9 @@ const AdminTestsManagerPage = () => {
           points: Number(questionForm.points),
           ordering: nextOrdering,
         });
-        setQuestions(current => [...current, created]);
+        const nextQuestions = [...questions, created];
+        setQuestions(nextQuestions);
+        syncTestQuestionStats(constructorTest.id, nextQuestions);
         setSelectedQuestionId(created.id);
         push({ title: "Вопрос добавлен", variant: "success" });
       }
@@ -1037,7 +1037,11 @@ const AdminTestsManagerPage = () => {
     }
     try {
       await adminTestsApi.deleteQuestion(id);
-      setQuestions(current => current.filter(q => q.id !== id));
+      const nextQuestions = questions.filter(q => q.id !== id);
+      setQuestions(nextQuestions);
+      if (constructorTest) {
+        syncTestQuestionStats(constructorTest.id, nextQuestions);
+      }
       if (selectedQuestionId === id) {
         setSelectedQuestionId(null);
       }
@@ -1167,13 +1171,13 @@ const AdminTestsManagerPage = () => {
             key: "type",
             title: "Тип / КТ",
             render: (test) => {
-              if (test.ktNumber) return `КТ ${test.ktNumber} (до 25 б.)`;
+              if (test.ktNumber) return `КТ ${test.ktNumber}`;
               return test.type === "CONTROL_POINT" ? "Контрольная точка (КТ)" : "Лекционный тест";
             },
           },
           { key: "questionsCount", title: "Вопросов" },
+          { key: "maxScore", title: "Макс. баллов" },
           { key: "timeLimitMinutes", title: "Лимит, мин" },
-          { key: "passingScore", title: "Проходной %" },
           {
             key: "status",
             title: "Статус",
@@ -1263,10 +1267,10 @@ const AdminTestsManagerPage = () => {
                 }
               >
                 <option value="">Без прямой привязки к колонке КТ</option>
-                <option value="1">КТ 1 (макс. 25 б.)</option>
-                <option value="2">КТ 2 (макс. 25 б.)</option>
-                <option value="3">КТ 3 (макс. 25 б.)</option>
-                <option value="4">КТ 4 (макс. 25 б.)</option>
+                <option value="1">КТ 1</option>
+                <option value="2">КТ 2</option>
+                <option value="3">КТ 3</option>
+                <option value="4">КТ 4</option>
               </select>
             </label>
           </div>
@@ -1295,23 +1299,6 @@ const AdminTestsManagerPage = () => {
               max={480}
               value={form.timeLimitMinutes}
               onChange={(event) => setForm((current) => ({ ...current, timeLimitMinutes: event.target.value }))}
-              required
-            />
-            <Input
-              label="Проходной %"
-              type="number"
-              min={1}
-              max={100}
-              value={form.passingScore}
-              onChange={(event) => setForm((current) => ({ ...current, passingScore: event.target.value }))}
-              required
-            />
-            <Input
-              label="Вопросов"
-              type="number"
-              min={0}
-              value={form.questionsCount}
-              onChange={(event) => setForm((current) => ({ ...current, questionsCount: event.target.value }))}
               required
             />
             <label className="ui-field">
@@ -1351,7 +1338,10 @@ const AdminTestsManagerPage = () => {
         <div className="constructor-layout" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", height: "580px", overflow: "hidden" }}>
           {/* Left Column: Questions List & Add/Edit Question */}
           <div style={{ display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)", paddingRight: "1.5rem", height: "100%", minHeight: 0 }}>
-            <h4>Вопросы ({questions.length})</h4>
+            <h4>
+              Вопросы ({questions.length}) · Макс. баллов:{" "}
+              {questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0)}
+            </h4>
             <div style={{ flex: 1, overflowY: "auto", minHeight: 0, marginBottom: "1rem" }}>
               {isQuestionsLoading ? (
                 <Loader label="Загрузка вопросов..." />

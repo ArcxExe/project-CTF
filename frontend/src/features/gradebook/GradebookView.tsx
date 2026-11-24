@@ -52,7 +52,7 @@ interface RowDraft {
 export const GradebookView = ({
   editable = false,
   title = "Электронная ведомость (Рейтинг)",
-  subtitle = "Сводная ведомость успеваемости по регламенту курса: ЛР 1–8 (макс. 143), КТ 1–4 (макс. 100), Итог баллов (макс. 243), CTF, Токен, Успеваемость S% и Оценка",
+  subtitle = "Сводная ведомость успеваемости по регламенту курса: ЛР 1–8 (макс. 143), КТ 1–4, Итог баллов, CTF, Токен, Успеваемость S% и Оценка",
 }: GradebookViewProps) => {
   const { push } = useToastStore();
 
@@ -551,11 +551,19 @@ export const GradebookView = ({
                   >
                     Общее ЛР
                   </th>
-                  {[1, 2, 3, 4].map((ktNum) => (
-                    <th key={ktNum} style={cellStyle} title="Макс: 25,00 б.">
-                      КТ {ktNum}
-                    </th>
-                  ))}
+                  {[1, 2, 3, 4].map((ktNum) => {
+                    const maxKey = `maxKt${ktNum}` as "maxKt1" | "maxKt2" | "maxKt3" | "maxKt4";
+                    const maxKtVal = rows[0]?.[maxKey];
+                    return (
+                      <th
+                        key={ktNum}
+                        style={cellStyle}
+                        title={maxKtVal != null ? `Макс: ${formatCommaDecimal(maxKtVal)} б.` : "Контрольная точка"}
+                      >
+                        КТ {ktNum}
+                      </th>
+                    );
+                  })}
                   <th
                     style={{
                       ...cellStyle,
@@ -571,7 +579,7 @@ export const GradebookView = ({
                       background: "rgba(234, 179, 8, 0.14)",
                       fontWeight: 700,
                     }}
-                    title="Общее ЛР + Общее КТ (макс. 243,00)"
+                    title={`Общее ЛР + Общее КТ (макс. ${formatCommaDecimal(rows[0]?.maxTotalPoints ?? 243)})`}
                   >
                     Итог баллов
                   </th>
@@ -773,7 +781,6 @@ export const GradebookView = ({
                                   type="number"
                                   step="0.5"
                                   min={0}
-                                  max={25}
                                   style={compactInputStyle}
                                   value={draft[fieldKey]}
                                   onChange={(e) =>
@@ -922,15 +929,23 @@ export const GradebookView = ({
                   <td style={{ ...cellStyle, background: "rgba(59, 130, 246, 0.2)" }}>
                     143,00
                   </td>
-                  <td style={cellStyle}>25</td>
-                  <td style={cellStyle}>25</td>
-                  <td style={cellStyle}>25</td>
-                  <td style={cellStyle}>25</td>
+                  <td style={cellStyle}>
+                    {rows[0]?.maxKt1 != null ? formatCommaDecimal(rows[0].maxKt1) : "25"}
+                  </td>
+                  <td style={cellStyle}>
+                    {rows[0]?.maxKt2 != null ? formatCommaDecimal(rows[0].maxKt2) : "25"}
+                  </td>
+                  <td style={cellStyle}>
+                    {rows[0]?.maxKt3 != null ? formatCommaDecimal(rows[0].maxKt3) : "25"}
+                  </td>
+                  <td style={cellStyle}>
+                    {rows[0]?.maxKt4 != null ? formatCommaDecimal(rows[0].maxKt4) : "25"}
+                  </td>
                   <td style={{ ...cellStyle, background: "rgba(168, 85, 247, 0.2)" }}>
-                    100,00
+                    {formatCommaDecimal(rows[0]?.maxTotalKt ?? 100)}
                   </td>
                   <td style={{ ...cellStyle, background: "rgba(234, 179, 8, 0.2)" }}>
-                    243,00
+                    {formatCommaDecimal(rows[0]?.maxTotalPoints ?? 243)}
                   </td>
                   <td style={cellStyle}>1,00</td>
                   <td style={cellStyle}></td>

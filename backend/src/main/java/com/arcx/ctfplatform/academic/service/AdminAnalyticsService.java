@@ -18,9 +18,12 @@ import com.arcx.ctfplatform.students.entity.lab.StudentLab;
 import com.arcx.ctfplatform.students.repository.lab.LabScoreRepository;
 import com.arcx.ctfplatform.students.repository.lab.StudentLabRepository;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
+import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
+import com.arcx.ctfplatform.tests.service.KtScoreCalculator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -55,6 +58,13 @@ public class AdminAnalyticsService {
 
     @Autowired(required = false)
     private AttendanceService attendanceService;
+
+    @Autowired(required = false)
+    private QuizQuestionRepository quizQuestionRepository;
+
+    public void setQuizQuestionRepository(QuizQuestionRepository quizQuestionRepository) {
+        this.quizQuestionRepository = quizQuestionRepository;
+    }
 
     @Autowired
     public AdminAnalyticsService(
@@ -94,7 +104,8 @@ public class AdminAnalyticsService {
             int grade5Count,
             int grade4Count,
             int grade3Count,
-            int grade2Count
+            int grade2Count,
+            double maxKtScore
     ) {
         public GroupMetrics(
                 int maxLabScore,
@@ -121,7 +132,8 @@ public class AdminAnalyticsService {
                     0,
                     0,
                     0,
-                    0
+                    0,
+                    100.0
             );
         }
     }
@@ -152,7 +164,9 @@ public class AdminAnalyticsService {
             double sScore,
             String recommendedGrade,
             int numericGrade,
-            double attendancePercent
+            double attendancePercent,
+            double maxKtScore,
+            double maxTotalPoints
     ) {
         public StudentAnalytics(
                 UUID id,
@@ -192,7 +206,9 @@ public class AdminAnalyticsService {
                     totalScore100,
                     recommendedGrade,
                     parseNumericGrade(recommendedGrade),
-                    0.0
+                    0.0,
+                    100.0,
+                    243.0
             );
         }
 
@@ -228,6 +244,8 @@ public class AdminAnalyticsService {
             String testTitle,
             String status,
             int score,
+            int maxScore,
+            double percentage,
             int passingScore,
             String date
     ) {}
@@ -248,7 +266,8 @@ public class AdminAnalyticsService {
 
     @Transactional(readOnly = true)
     public AnalyticsSummary getGroupAnalytics(UUID groupId, UUID flowId) {
-        List<Student> students = filterStudents(studentRepository.findAll(), groupId, flowId);
+        List<Student> allStudents = studentRepository.findAll();
+        List<Student> students = filterStudents(allStudents, groupId, flowId);
 
         String scopeType = "GLOBAL";
         UUID scopeId = null;
@@ -263,6 +282,26 @@ public class AdminAnalyticsService {
         List<LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(scopeType, scopeId);
         Map<UUID, LeaderboardEntry> leadMap = leaderboard.stream()
                 .collect(Collectors.toMap(LeaderboardEntry::studentId, l -> l, (a, b) -> a));
+
+        List<Test> allTests = testRepository.findAll();
+        Map<UUID, Test> testMap = allTests.stream()
+                .collect(Collectors.toMap(Test::getId, t -> t, (a, b) -> a));
+        List<QuizAttempt> allQuizAttempts = quizAttemptRepository.findAll();
+        Map<UUID, List<QuizAttempt>> quizzesByStudent = allQuizAttempts.stream()
+                .collect(Collectors.groupingBy(QuizAttempt::getStudentId));
+        List<QuizQuestion> allQuestions = quizQuestionRepository != null
+                ? quizQuestionRepository.findAll()
+                : Collections.emptyList();
+        Map<UUID, Integer> questionPointsByTestId = KtScoreCalculator.computeQuestionMaxScores(allQuestions);
+        KtScoreCalculator.KtMaxProfile ktMaxProfile = KtScoreCalculator.computeMaxProfile(
+                allStudents,
+                allTests,
+                allQuizAttempts,
+                questionPointsByTestId
+        );
+        double maxKtScore = ktMaxProfile.totalKtMax();
+        double maxTotalPoints = roundStatic(143.0 + maxKtScore);
+        boolean hasRealKtData = !allQuizAttempts.isEmpty() || !allTests.isEmpty();
 
         Map<UUID, Double> attendanceMap = new HashMap<>();
         if (attendanceService != null) {
@@ -371,8 +410,24 @@ public class AdminAnalyticsService {
             }
 
             double lPercent = entry != null ? entry.lPercent() : roundStatic(Math.min((exactLabScore / 143.0) * 100.0, 100.0));
-            double kPercent = entry != null ? entry.kPercent() : 0.0;
-            double ktScore = roundStatic(kPercent); // Since max KT is 100.0, kPercent == ktScore
+            KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
+                    s,
+                    quizzesByStudent.getOrDefault(s.getId(), Collections.emptyList()),
+                    testMap,
+                    ktMaxProfile
+            );
+            double kPercent;
+            double ktScore;
+            if (ktResult.totalKt() > 0 || hasRealKtData) {
+                ktScore = ktResult.totalKt();
+                kPercent = entry != null && !hasRealKtData ? entry.kPercent() : ktResult.kPercent();
+            } else if (entry != null && entry.kPercent() > 0) {
+                kPercent = entry.kPercent();
+                ktScore = roundStatic((kPercent / 100.0) * maxKtScore);
+            } else {
+                ktScore = 0.0;
+                kPercent = 0.0;
+            }
             double cPercent = entry != null ? entry.cPercent() : 0.0;
             double ctfCoeff = roundStatic(Math.min(ctfScore / 800.0, 1.0));
             double sCoeff = entry != null ? entry.sScore() : 0.0;
@@ -438,7 +493,9 @@ public class AdminAnalyticsService {
                     sCoeff,
                     recGrade,
                     numericGrade,
-                    attPct
+                    attPct,
+                    maxKtScore,
+                    maxTotalPoints
             ));
         }
 
@@ -471,7 +528,8 @@ public class AdminAnalyticsService {
                 grade5,
                 grade4,
                 grade3,
-                grade2
+                grade2,
+                maxKtScore
         );
 
         return new AnalyticsSummary(metrics, studentAnalyticsList);
@@ -546,6 +604,11 @@ public class AdminAnalyticsService {
                 .filter(t -> t.getStatus() == com.arcx.ctfplatform.tests.entity.TestStatus.PUBLISHED)
                 .toList();
 
+        List<QuizQuestion> allQuestions = quizQuestionRepository != null
+                ? quizQuestionRepository.findAll()
+                : Collections.emptyList();
+        Map<UUID, Integer> questionPointsByTestId = KtScoreCalculator.computeQuestionMaxScores(allQuestions);
+
         List<QuizAttempt> allAttempts = quizAttemptRepository.findAll();
         Map<UUID, List<QuizAttempt>> attemptsByStudent = allAttempts.stream()
                 .collect(Collectors.groupingBy(QuizAttempt::getStudentId));
@@ -567,11 +630,16 @@ public class AdminAnalyticsService {
                 QuizAttempt attempt = attemptByQuiz.get(t.getId());
                 String status = "NOT_STARTED";
                 int score = 0;
+                int maxScore = questionPointsByTestId.getOrDefault(t.getId(), 0);
+                double percentage = 0.0;
                 String date = "-";
 
                 if (attempt != null) {
                     status = attempt.getStatus().name();
                     score = attempt.getScore() != null ? (int) Math.round(attempt.getScore()) : 0;
+                    if (maxScore > 0) {
+                        percentage = roundStatic(Math.max(0.0, Math.min((score / (double) maxScore) * 100.0, 100.0)));
+                    }
                     Instant time = attempt.getCompletedAt() != null ? attempt.getCompletedAt() : attempt.getStartedAt();
                     if (time != null) {
                         date = time.toString();
@@ -586,6 +654,8 @@ public class AdminAnalyticsService {
                         t.getTitle(),
                         status,
                         score,
+                        maxScore,
+                        percentage,
                         t.getPassingScore(),
                         date
                 ));

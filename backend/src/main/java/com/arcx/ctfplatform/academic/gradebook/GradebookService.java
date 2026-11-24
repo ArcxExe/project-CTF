@@ -19,10 +19,12 @@ import com.arcx.ctfplatform.students.entity.lab.StudentLab;
 import com.arcx.ctfplatform.students.repository.lab.StudentLabRepository;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
-import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
+import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
+import com.arcx.ctfplatform.tests.service.KtScoreCalculator;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 import java.math.BigDecimal;
@@ -42,6 +44,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,9 +90,17 @@ public class GradebookService {
     private final UserRepository userRepository;
     private final LeaderboardService leaderboardService;
 
+    @Autowired(required = false)
+    private QuizQuestionRepository quizQuestionRepository;
+
+    public void setQuizQuestionRepository(QuizQuestionRepository quizQuestionRepository) {
+        this.quizQuestionRepository = quizQuestionRepository;
+    }
+
     @Transactional(readOnly = true)
     public List<GradebookRowDto> getGradebook(UUID groupId, UUID flowId) {
-        List<Student> students = studentRepository.findAll();
+        List<Student> allStudents = studentRepository.findAll();
+        List<Student> students = allStudents;
         Map<UUID, AcademicGroup> groupMap = academicGroupRepository.findAll().stream()
                 .collect(Collectors.toMap(AcademicGroup::getId, g -> g));
 
@@ -114,10 +125,22 @@ public class GradebookService {
 
         Map<UUID, List<Attempt>> attemptsByStudent = attemptRepository.findAll().stream()
                 .collect(Collectors.groupingBy(Attempt::getStudentId));
-        Map<UUID, List<QuizAttempt>> quizzesByStudent = quizAttemptRepository.findAll().stream()
+        List<QuizAttempt> allQuizAttempts = quizAttemptRepository.findAll();
+        Map<UUID, List<QuizAttempt>> quizzesByStudent = allQuizAttempts.stream()
                 .collect(Collectors.groupingBy(QuizAttempt::getStudentId));
-        Map<UUID, Test> testMap = testRepository.findAll().stream()
+        List<Test> allTests = testRepository.findAll();
+        Map<UUID, Test> testMap = allTests.stream()
                 .collect(Collectors.toMap(Test::getId, t -> t));
+        List<QuizQuestion> allQuestions = quizQuestionRepository != null
+                ? quizQuestionRepository.findAll()
+                : Collections.emptyList();
+        Map<UUID, Integer> questionPointsByTestId = KtScoreCalculator.computeQuestionMaxScores(allQuestions);
+        KtScoreCalculator.KtMaxProfile ktMaxProfile = KtScoreCalculator.computeMaxProfile(
+                allStudents,
+                allTests,
+                allQuizAttempts,
+                questionPointsByTestId
+        );
         Map<UUID, List<PromoCodeClaim>> claimsByStudent = promoCodeClaimRepository.findAllWithPromoCode().stream()
                 .filter(c -> c.getStudentId() != null)
                 .collect(Collectors.groupingBy(PromoCodeClaim::getStudentId));
@@ -156,6 +179,7 @@ public class GradebookService {
                     attemptsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     testMap,
+                    ktMaxProfile,
                     claimsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     labsByStudent.get(student.getId()),
@@ -189,16 +213,16 @@ public class GradebookService {
             student.setPairNumber(req.pairNumber() > 0 ? req.pairNumber() : null);
         }
         if (req.kt1() != null) {
-            student.setKt1(roundToTwoDecimals(Math.max(0.0, Math.min(req.kt1(), 25.0))));
+            student.setKt1(roundToTwoDecimals(Math.max(0.0, req.kt1())));
         }
         if (req.kt2() != null) {
-            student.setKt2(roundToTwoDecimals(Math.max(0.0, Math.min(req.kt2(), 25.0))));
+            student.setKt2(roundToTwoDecimals(Math.max(0.0, req.kt2())));
         }
         if (req.kt3() != null) {
-            student.setKt3(roundToTwoDecimals(Math.max(0.0, Math.min(req.kt3(), 25.0))));
+            student.setKt3(roundToTwoDecimals(Math.max(0.0, req.kt3())));
         }
         if (req.kt4() != null) {
-            student.setKt4(roundToTwoDecimals(Math.max(0.0, Math.min(req.kt4(), 25.0))));
+            student.setKt4(roundToTwoDecimals(Math.max(0.0, req.kt4())));
         }
         if (req.token() != null) {
             student.setTokenInfo(req.token().trim().isEmpty() ? null : req.token().trim());
@@ -332,6 +356,13 @@ public class GradebookService {
             sb.append(String.join(",", cols)).append("\n");
         }
 
+        double maxKt1 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt1();
+        double maxKt2 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt2();
+        double maxKt3 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt3();
+        double maxKt4 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt4();
+        double maxTotalKt = rows.isEmpty() ? 100.0 : rows.get(0).maxTotalKt();
+        double maxTotalPoints = rows.isEmpty() ? 243.0 : rows.get(0).maxTotalPoints();
+
         // MAX footer row matching attached Рейтинг spreadsheet
         List<String> maxRow = List.of(
                 "",
@@ -346,12 +377,12 @@ public class GradebookService {
                 formatDecimal(20.0),
                 formatDecimal(22.0),
                 formatDecimal(143.0),
-                "25",
-                "25",
-                "25",
-                "25",
-                formatDecimal(100.0),
-                formatDecimal(243.0),
+                formatCompactNumber(maxKt1),
+                formatCompactNumber(maxKt2),
+                formatCompactNumber(maxKt3),
+                formatCompactNumber(maxKt4),
+                formatDecimal(maxTotalKt),
+                formatDecimal(maxTotalPoints),
                 formatDecimal(1.0),
                 "",
                 "100.00",
@@ -389,6 +420,13 @@ public class GradebookService {
             sheetRows.add(cols);
         }
 
+        double maxKt1 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt1();
+        double maxKt2 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt2();
+        double maxKt3 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt3();
+        double maxKt4 = rows.isEmpty() ? 25.0 : rows.get(0).maxKt4();
+        double maxTotalKt = rows.isEmpty() ? 100.0 : rows.get(0).maxTotalKt();
+        double maxTotalPoints = rows.isEmpty() ? 243.0 : rows.get(0).maxTotalPoints();
+
         List<Object> maxRow = new ArrayList<>(22);
         maxRow.add("");
         maxRow.add("");
@@ -402,12 +440,12 @@ public class GradebookService {
         maxRow.add(20.0);
         maxRow.add(22.0);
         maxRow.add(143.0);
-        maxRow.add(25);
-        maxRow.add(25);
-        maxRow.add(25);
-        maxRow.add(25);
-        maxRow.add(100.0);
-        maxRow.add(243.0);
+        maxRow.add(maxKt1 == Math.floor(maxKt1) ? (int) maxKt1 : maxKt1);
+        maxRow.add(maxKt2 == Math.floor(maxKt2) ? (int) maxKt2 : maxKt2);
+        maxRow.add(maxKt3 == Math.floor(maxKt3) ? (int) maxKt3 : maxKt3);
+        maxRow.add(maxKt4 == Math.floor(maxKt4) ? (int) maxKt4 : maxKt4);
+        maxRow.add(maxTotalKt);
+        maxRow.add(maxTotalPoints);
         maxRow.add(1.0);
         maxRow.add("");
         maxRow.add(100.0);
@@ -444,6 +482,17 @@ public class GradebookService {
         if (preloadedScales == null) {
             preloadedScales = Optional.empty();
         }
+        List<Test> ktTests = new ArrayList<>(testMap.values());
+        List<QuizQuestion> ktQuestions = (quizQuestionRepository != null && !quizIds.isEmpty())
+                ? quizQuestionRepository.findAllByTestIdIn(quizIds)
+                : Collections.emptyList();
+        Map<UUID, Integer> questionPointsByTestId = KtScoreCalculator.computeQuestionMaxScores(ktQuestions);
+        KtScoreCalculator.KtMaxProfile ktMaxProfile = KtScoreCalculator.computeMaxProfile(
+                List.of(student),
+                ktTests,
+                quizzes,
+                questionPointsByTestId
+        );
         return buildRowForStudent(
                 student,
                 1,
@@ -451,6 +500,7 @@ public class GradebookService {
                 attempts,
                 quizzes,
                 testMap,
+                ktMaxProfile,
                 claims,
                 adjustments,
                 studentLabs,
@@ -466,6 +516,7 @@ public class GradebookService {
             List<Attempt> attempts,
             List<QuizAttempt> quizzes,
             Map<UUID, Test> testMap,
+            KtScoreCalculator.KtMaxProfile ktMaxProfile,
             List<PromoCodeClaim> claims,
             List<ScoreAdjustment> adjustments,
             List<StudentLab> preloadedLabs,
@@ -513,33 +564,14 @@ public class GradebookService {
                 : labScoreService.isEligible(student.getId());
         double lPercent = roundToTwoDecimals(Math.max(0.0, Math.min((totalLab / 143.0) * 100.0, 100.0)));
 
-        // KT 1..4
-        double[] slotKt = new double[] {
-                roundToTwoDecimals(Math.max(0.0, Math.min(student.getKt1(), 25.0))),
-                roundToTwoDecimals(Math.max(0.0, Math.min(student.getKt2(), 25.0))),
-                roundToTwoDecimals(Math.max(0.0, Math.min(student.getKt3(), 25.0))),
-                roundToTwoDecimals(Math.max(0.0, Math.min(student.getKt4(), 25.0)))
-        };
-        Map<UUID, Double> unslottedKt = new HashMap<>();
-        for (QuizAttempt qa : quizzes) {
-            if (qa.getStatus() == QuizAttemptStatus.COMPLETED) {
-                Test t = testMap.get(qa.getQuizId());
-                if (t != null && t.isControlPoint()) {
-                    double qScore = qa.getScore() != null ? Math.max(0.0, qa.getScore().doubleValue()) : 0.0;
-                    double capped = roundToTwoDecimals(Math.min(qScore, 25.0));
-                    Integer ktNum = t.getEffectiveKtNumber();
-                    if (ktNum != null && ktNum >= 1 && ktNum <= 4) {
-                        slotKt[ktNum - 1] = Math.max(slotKt[ktNum - 1], capped);
-                    } else {
-                        unslottedKt.merge(t.getId(), capped, Math::max);
-                    }
-                }
-            }
-        }
-        double totalKt = slotKt[0] + slotKt[1] + slotKt[2] + slotKt[3]
-                + unslottedKt.values().stream().mapToDouble(Double::doubleValue).sum();
-        totalKt = roundToTwoDecimals(Math.min(totalKt, 100.0));
-        double kPercent = roundToTwoDecimals(Math.max(0.0, Math.min((totalKt / 100.0) * 100.0, 100.0)));
+        // KT 1..4 (no hardcoded 25-point cap; percentage computed from actual max KT score)
+        KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
+                student, quizzes, testMap, ktMaxProfile
+        );
+        double totalKt = ktResult.totalKt();
+        double kPercent = ktResult.kPercent();
+        double maxTotalKt = ktMaxProfile.totalKtMax();
+        double maxTotalPoints = roundToTwoDecimals(143.0 + maxTotalKt);
 
         double totalPoints = roundToTwoDecimals(totalLab + totalKt);
 
@@ -606,10 +638,10 @@ public class GradebookService {
                 acceptedCount,
                 isEligible,
                 lPercent,
-                slotKt[0],
-                slotKt[1],
-                slotKt[2],
-                slotKt[3],
+                ktResult.kt1(),
+                ktResult.kt2(),
+                ktResult.kt3(),
+                ktResult.kt4(),
                 totalKt,
                 kPercent,
                 totalPoints,
@@ -620,8 +652,22 @@ public class GradebookService {
                 sScore,
                 student.getExamScore(),
                 recommendedGrade,
-                numericGrade
+                numericGrade,
+                ktMaxProfile.kt1Max(),
+                ktMaxProfile.kt2Max(),
+                ktMaxProfile.kt3Max(),
+                ktMaxProfile.kt4Max(),
+                maxTotalKt,
+                maxTotalPoints
         );
+    }
+
+    private String formatCompactNumber(double val) {
+        double rounded = roundToTwoDecimals(val);
+        if (rounded == Math.floor(rounded)) {
+            return String.valueOf((long) rounded);
+        }
+        return formatDecimal(rounded);
     }
 
     private String formatDecimal(double val) {

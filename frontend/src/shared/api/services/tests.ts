@@ -11,8 +11,9 @@ export interface CtfTest {
   type?: "LECTURE" | "CONTROL_POINT";
   ktNumber?: number | null;
   timeLimitMinutes: number;
-  passingScore: number;
+  passingScore?: number;
   questionsCount: number;
+  maxScore: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,8 +76,8 @@ export interface CtfTestPayload {
   type?: "LECTURE" | "CONTROL_POINT";
   ktNumber?: number | null;
   timeLimitMinutes: number;
-  passingScore: number;
-  questionsCount: number;
+  passingScore?: number;
+  questionsCount?: number;
 }
 
 interface BackendTestResponse {
@@ -88,8 +89,9 @@ interface BackendTestResponse {
   type?: "LECTURE" | "CONTROL_POINT";
   ktNumber?: number | null;
   timeLimitMinutes: number;
-  passingScore: number;
+  passingScore?: number;
   questionsCount: number;
+  maxScore?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -115,8 +117,9 @@ const toTest = (response: BackendTestResponse): CtfTest => ({
   type: response.type ?? "LECTURE",
   ktNumber: response.ktNumber ?? null,
   timeLimitMinutes: response.timeLimitMinutes,
-  passingScore: response.passingScore,
-  questionsCount: response.questionsCount,
+  passingScore: response.passingScore ?? 0,
+  questionsCount: response.questionsCount ?? 0,
+  maxScore: response.maxScore ?? 0,
   createdAt: response.createdAt,
   updatedAt: response.updatedAt,
 });
@@ -129,8 +132,8 @@ const toBackendPayload = (payload: CtfTestPayload) => ({
   type: payload.type ?? "LECTURE",
   ktNumber: payload.type === "CONTROL_POINT" ? (payload.ktNumber ?? null) : null,
   timeLimitMinutes: payload.timeLimitMinutes,
-  passingScore: payload.passingScore,
-  questionsCount: payload.questionsCount,
+  passingScore: payload.passingScore ?? 0,
+  questionsCount: payload.questionsCount ?? 0,
 });
 
 export const testsApi = {

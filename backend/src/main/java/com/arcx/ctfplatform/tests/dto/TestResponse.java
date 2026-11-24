@@ -22,18 +22,25 @@ public record TestResponse(
         Instant createdAt,
         Instant updatedAt,
         TestType type,
-        Integer ktNumber
+        Integer ktNumber,
+        Integer maxScore
 ) {
     public TestResponse(UUID id, String title, String description, TestStatus status,
                         Integer timeLimitMinutes, Integer passingScore, Integer questionsCount,
+                        UUID competitionId, Instant createdAt, Instant updatedAt, TestType type, Integer ktNumber) {
+        this(id, title, description, status, timeLimitMinutes, passingScore, questionsCount, competitionId, createdAt, updatedAt, type, ktNumber, 0);
+    }
+
+    public TestResponse(UUID id, String title, String description, TestStatus status,
+                        Integer timeLimitMinutes, Integer passingScore, Integer questionsCount,
                         UUID competitionId, Instant createdAt, Instant updatedAt, TestType type) {
-        this(id, title, description, status, timeLimitMinutes, passingScore, questionsCount, competitionId, createdAt, updatedAt, type, null);
+        this(id, title, description, status, timeLimitMinutes, passingScore, questionsCount, competitionId, createdAt, updatedAt, type, null, 0);
     }
 
     public TestResponse(UUID id, String title, String description, TestStatus status,
                         Integer timeLimitMinutes, Integer passingScore, Integer questionsCount,
                         UUID competitionId, Instant createdAt, Instant updatedAt) {
-        this(id, title, description, status, timeLimitMinutes, passingScore, questionsCount, competitionId, createdAt, updatedAt, TestType.LECTURE, null);
+        this(id, title, description, status, timeLimitMinutes, passingScore, questionsCount, competitionId, createdAt, updatedAt, TestType.LECTURE, null, 0);
     }
 
     @Component
@@ -55,7 +62,8 @@ public record TestResponse(
                     from.getCreatedAt(),
                     from.getUpdatedAt(),
                     from.getType() != null ? from.getType() : TestType.LECTURE,
-                    from.getEffectiveKtNumber()
+                    from.getEffectiveKtNumber(),
+                    0
             );
         }
     }

@@ -311,7 +311,7 @@ public class StudentImportService {
                     String rawKt = getCell(row, ktEntry.getValue());
                     Double val = parseDoubleOrNull(rawKt);
                     if (val != null) {
-                        double clamped = Math.max(0.0, Math.min(val, 25.0));
+                        double clamped = Math.max(0.0, val);
                         switch (ktNum) {
                             case 1 -> student.setKt1(clamped);
                             case 2 -> student.setKt2(clamped);

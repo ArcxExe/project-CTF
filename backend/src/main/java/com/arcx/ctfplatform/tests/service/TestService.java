@@ -1,8 +1,11 @@
 package com.arcx.ctfplatform.tests.service;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,9 +20,11 @@ import com.arcx.ctfplatform.challenges.repository.CtfTaskRepository;
 import com.arcx.ctfplatform.common.config.IMapping;
 import com.arcx.ctfplatform.tests.dto.TestRequest;
 import com.arcx.ctfplatform.tests.dto.TestResponse;
+import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.entity.TestStatus;
 import com.arcx.ctfplatform.tests.entity.TestType;
+import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
@@ -38,9 +43,12 @@ public class TestService {
     private final IMapping<CtfTask, CtfTaskResponse> ctfTaskMapper;
     private final LeaderboardService leaderboardService;
 
+    @Autowired(required = false)
+    private QuizQuestionRepository quizQuestionRepository;
+
     @Transactional(readOnly = true)
     public List<TestResponse> getPublishedTests() {
-        return testMapper.mappingList(testRepository.findAllByStatus(TestStatus.PUBLISHED));
+        return mapTests(testRepository.findAllByStatus(TestStatus.PUBLISHED));
     }
 
     @Transactional(readOnly = true)
@@ -106,12 +114,12 @@ public class TestService {
 
     @Transactional(readOnly = true)
     public List<TestResponse> getAllTests() {
-        return testMapper.mappingList(testRepository.findAll());
+        return mapTests(testRepository.findAll());
     }
 
     @Transactional(readOnly = true)
     public TestResponse getTestById(UUID id) {
-        return testMapper.mapping(testRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Test not found")));
+        return mapTest(testRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Test not found")));
     }
 
     @Transactional
@@ -122,13 +130,13 @@ public class TestService {
                 .description(request.description())
                 .status(request.status())
                 .timeLimitMinutes(request.timeLimitMinutes())
-                .passingScore(request.passingScore())
-                .questionsCount(request.questionsCount())
+                .passingScore(request.passingScore() != null ? request.passingScore() : 0)
+                .questionsCount(request.questionsCount() != null ? request.questionsCount() : 0)
                 .competitionId(request.competitionId())
                 .type(type)
                 .ktNumber(type != null && type.isControlPoint() ? request.ktNumber() : null)
                 .build();
-        return testMapper.mapping(testRepository.save(test));
+        return mapTest(testRepository.save(test));
     }
 
     @Transactional
@@ -140,8 +148,12 @@ public class TestService {
         test.setDescription(request.description());
         test.setStatus(request.status());
         test.setTimeLimitMinutes(request.timeLimitMinutes());
-        test.setPassingScore(request.passingScore());
-        test.setQuestionsCount(request.questionsCount());
+        if (request.passingScore() != null) {
+            test.setPassingScore(request.passingScore());
+        }
+        if (request.questionsCount() != null) {
+            test.setQuestionsCount(request.questionsCount());
+        }
         test.setCompetitionId(request.competitionId());
         if (request.type() != null) {
             test.setType(request.type());
@@ -156,7 +168,55 @@ public class TestService {
             test.setKtNumber(null);
         }
 
-        return testMapper.mapping(testRepository.save(test));
+        return mapTest(testRepository.save(test));
+    }
+
+    private List<TestResponse> mapTests(List<Test> tests) {
+        if (tests == null || tests.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<UUID> ids = tests.stream().map(Test::getId).toList();
+        List<QuizQuestion> questions = quizQuestionRepository != null
+                ? quizQuestionRepository.findAllByTestIdIn(ids)
+                : Collections.emptyList();
+        Map<UUID, Integer> counts = KtScoreCalculator.computeQuestionCounts(questions);
+        Map<UUID, Integer> maxScores = KtScoreCalculator.computeQuestionMaxScores(questions);
+        return tests.stream()
+                .map(t -> toTestResponse(t, counts.getOrDefault(t.getId(), 0), maxScores.getOrDefault(t.getId(), 0)))
+                .toList();
+    }
+
+    private TestResponse mapTest(Test test) {
+        if (test == null) {
+            return null;
+        }
+        List<QuizQuestion> questions = (quizQuestionRepository != null && test.getId() != null)
+                ? quizQuestionRepository.findAllByTestIdOrderByOrderingAsc(test.getId())
+                : Collections.emptyList();
+        int count = questions.size();
+        int maxScore = questions.stream()
+                .mapToInt(q -> q.getPoints() != null ? Math.max(0, q.getPoints()) : 0)
+                .sum();
+        return toTestResponse(test, count, maxScore);
+    }
+
+    private TestResponse toTestResponse(Test from, int actualQuestionCount, int maxScore) {
+        TestResponse base = testMapper.mapping(from);
+        return new TestResponse(
+                base.id(),
+                base.title(),
+                base.description(),
+                base.status(),
+                base.timeLimitMinutes(),
+                base.passingScore(),
+                actualQuestionCount,
+                base.competitionId(),
+                base.createdAt(),
+                base.updatedAt(),
+                base.type(),
+                base.ktNumber(),
+                maxScore
+        );
     }
 
     private boolean isAdminOrInstructor(User user) {

@@ -14,9 +14,12 @@ import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
+import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.entity.TestStatus;
 import com.arcx.ctfplatform.tests.entity.TestType;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
@@ -50,6 +53,8 @@ class LeaderboardServiceTest {
     @Mock
     private TestRepository testRepository;
     @Mock
+    private QuizQuestionRepository quizQuestionRepository;
+    @Mock
     private PromoCodeRepository promoCodeRepository;
     @Mock
     private PromoCodeClaimRepository promoCodeClaimRepository;
@@ -78,6 +83,8 @@ class LeaderboardServiceTest {
                 competitionRepository,
                 academicGroupRepository
         );
+        leaderboardService.setQuizQuestionRepository(quizQuestionRepository);
+        lenient().when(quizQuestionRepository.findAll()).thenReturn(Collections.emptyList());
         lenient().when(competitionRepository.findAll()).thenReturn(Collections.emptyList());
         lenient().when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(Collections.emptyList());
         lenient().when(scoreAdjustmentRepository.findAll()).thenReturn(Collections.emptyList());
@@ -255,7 +262,7 @@ class LeaderboardServiceTest {
     }
 
     @org.junit.jupiter.api.Test
-    @DisplayName("Tests separation: lecture quizzes are excluded from K and CTF scores, control points capped at 25 per KT")
+    @DisplayName("Tests separation: lecture quizzes excluded, control points use actual points without 25-point cap")
     void testLectureQuizzesExcludedFromKtAndCtf() {
         UUID studentId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -268,15 +275,17 @@ class LeaderboardServiceTest {
 
         when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
 
-        // 1 Control point (score 30, capped at 25)
+        // 1 Control point with max 40 points (student earned 30 -> 75.00%, no 25-point cap)
         UUID ktId = UUID.randomUUID();
-        Test kt = Test.builder().id(ktId).title("КТ-1").type(TestType.CONTROL_POINT).build();
+        Test kt = Test.builder().id(ktId).title("КТ-1").type(TestType.CONTROL_POINT).ktNumber(1).status(TestStatus.PUBLISHED).build();
+        QuizQuestion ktQ = QuizQuestion.builder().id(UUID.randomUUID()).testId(ktId).points(40).ordering(1).build();
 
         // 1 Lecture quiz (score 50, should be completely ignored)
         UUID lecId = UUID.randomUUID();
-        Test lec = Test.builder().id(lecId).title("Входной тест к лекции 1").type(TestType.LECTURE).build();
+        Test lec = Test.builder().id(lecId).title("Входной тест к лекции 1").type(TestType.LECTURE).status(TestStatus.PUBLISHED).build();
 
         when(testRepository.findAll()).thenReturn(List.of(kt, lec));
+        when(quizQuestionRepository.findAll()).thenReturn(List.of(ktQ));
 
         QuizAttempt qaKt = QuizAttempt.builder().studentId(studentId).quizId(ktId).status(QuizAttemptStatus.COMPLETED).score(30).build();
         QuizAttempt qaLec = QuizAttempt.builder().studentId(studentId).quizId(lecId).status(QuizAttemptStatus.COMPLETED).score(50).build();
@@ -292,8 +301,41 @@ class LeaderboardServiceTest {
         LeaderboardService.LeaderboardEntry entry = leaderboard.get(0);
         // CTF score should be 0 (no quiz points added!)
         assertThat(entry.ctfScore()).isEqualTo(0);
-        // K percent: only KT counts, capped at 25 points -> 25 / 100 * 100 = 25.00%
-        assertThat(entry.kPercent()).isEqualTo(25.00);
+        // K percent: 30 / 40 * 100 = 75.00%
+        assertThat(entry.kPercent()).isEqualTo(75.00);
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Arbitrary KT point scale (e.g. 750 out of 1000) calculates K% from actual max question points")
+    void testArbitraryKtPointScale() {
+        UUID studentId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Student student = Student.builder().id(studentId).userId(userId).studentCode("S1").build();
+        User user = User.builder().id(userId).username("student1").build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(student));
+        when(userRepository.findAll()).thenReturn(List.of(user));
+        when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
+        when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
+
+        UUID ktId = UUID.randomUUID();
+        Test kt = Test.builder().id(ktId).title("КТ 1").type(TestType.CONTROL_POINT).ktNumber(1).status(TestStatus.PUBLISHED).build();
+        QuizQuestion q1 = QuizQuestion.builder().id(UUID.randomUUID()).testId(ktId).points(600).ordering(1).build();
+        QuizQuestion q2 = QuizQuestion.builder().id(UUID.randomUUID()).testId(ktId).points(400).ordering(2).build();
+
+        when(testRepository.findAll()).thenReturn(List.of(kt));
+        when(quizQuestionRepository.findAll()).thenReturn(List.of(q1, q2));
+        when(quizAttemptRepository.findAll()).thenReturn(List.of(
+                QuizAttempt.builder().studentId(studentId).quizId(ktId).status(QuizAttemptStatus.COMPLETED).score(750).build()
+        ));
+        when(labScoreService.getFinalLabScore(studentId)).thenReturn(0.0);
+        when(labScoreService.isEligible(studentId)).thenReturn(true);
+        when(gradingService.calculateGrade(anyDouble(), anyDouble(), anyDouble())).thenReturn(2);
+
+        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(null, null);
+
+        assertThat(leaderboard).hasSize(1);
+        assertThat(leaderboard.get(0).kPercent()).isEqualTo(75.00);
     }
 
     @org.junit.jupiter.api.Test

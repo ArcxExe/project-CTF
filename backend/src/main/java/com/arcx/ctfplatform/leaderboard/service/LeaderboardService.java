@@ -21,9 +21,12 @@ import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
+import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
+import com.arcx.ctfplatform.tests.service.KtScoreCalculator;
 import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
@@ -69,6 +72,13 @@ public class LeaderboardService {
     private final CompetitionRepository competitionRepository;
     private final AcademicGroupRepository academicGroupRepository;
     private final TransactionTemplate transactionTemplate;
+
+    @Autowired(required = false)
+    private QuizQuestionRepository quizQuestionRepository;
+
+    public void setQuizQuestionRepository(QuizQuestionRepository quizQuestionRepository) {
+        this.quizQuestionRepository = quizQuestionRepository;
+    }
 
     private record Subscriber(
             SseEmitter emitter,
@@ -396,6 +406,16 @@ public class LeaderboardService {
         List<Test> allTests = testRepository.findAll();
         Map<UUID, Test> testMap = allTests.stream()
                 .collect(Collectors.toMap(Test::getId, Function.identity(), (a, b) -> a));
+        List<QuizQuestion> allQuestions = quizQuestionRepository != null
+                ? quizQuestionRepository.findAll()
+                : Collections.emptyList();
+        Map<UUID, Integer> questionPointsByTestId = KtScoreCalculator.computeQuestionMaxScores(allQuestions);
+        KtScoreCalculator.KtMaxProfile ktMaxProfile = KtScoreCalculator.computeMaxProfile(
+                allStudents,
+                allTests,
+                allQuizzes,
+                questionPointsByTestId
+        );
 
         List<AcademicGroup> allGroups = academicGroupRepository.findAll();
         Map<UUID, AcademicGroup> groupMap = allGroups.stream()
@@ -562,32 +582,10 @@ public class LeaderboardService {
             int solvedCount = correctAttempts.size();
             double cPercent = roundToTwoDecimals(Math.max(0.0, Math.min((ctfScore / 800.0) * 100.0, 100.0)));
 
-            double[] slotKt = new double[] {
-                Math.max(0.0, Math.min(student.getKt1(), 25.0)),
-                Math.max(0.0, Math.min(student.getKt2(), 25.0)),
-                Math.max(0.0, Math.min(student.getKt3(), 25.0)),
-                Math.max(0.0, Math.min(student.getKt4(), 25.0))
-            };
-            Map<UUID, Double> unslottedKtScores = new HashMap<>();
-            for (QuizAttempt qa : studentQuizzes) {
-                if (qa.getStatus() == QuizAttemptStatus.COMPLETED) {
-                    Test t = testMap.get(qa.getQuizId());
-                    if (t != null && t.isControlPoint()) {
-                        double score = qa.getScore() != null ? Math.max(0.0, qa.getScore().doubleValue()) : 0.0;
-                        double cappedScore = Math.min(score, 25.0);
-                        Integer ktNum = t.getEffectiveKtNumber();
-                        if (ktNum != null && ktNum >= 1 && ktNum <= 4) {
-                            slotKt[ktNum - 1] = Math.max(slotKt[ktNum - 1], cappedScore);
-                        } else {
-                            unslottedKtScores.merge(t.getId(), cappedScore, Math::max);
-                        }
-                    }
-                }
-            }
-            double bKt = slotKt[0] + slotKt[1] + slotKt[2] + slotKt[3]
-                    + unslottedKtScores.values().stream().mapToDouble(Double::doubleValue).sum();
-            bKt = roundToTwoDecimals(Math.min(bKt, 100.0));
-            double kPercent = roundToTwoDecimals(Math.max(0.0, Math.min((bKt / 100.0) * 100.0, 100.0)));
+            KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
+                    student, studentQuizzes, testMap, ktMaxProfile
+            );
+            double kPercent = ktResult.kPercent();
 
             LabScoreService.StudentLabSummary labSummary = labSummaries.get(student.getId());
             double bLab = labSummary != null ? labSummary.finalScore() : labScoreService.getFinalLabScore(student.getId());

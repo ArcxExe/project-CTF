@@ -23,7 +23,13 @@ import com.arcx.ctfplatform.students.repository.lab.LabScoreHistoryRepository;
 import com.arcx.ctfplatform.students.repository.lab.LabScoreRepository;
 import com.arcx.ctfplatform.students.repository.lab.StudentLabRepository;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
+import com.arcx.ctfplatform.tests.entity.QuizAttempt;
+import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
+import com.arcx.ctfplatform.tests.entity.QuizQuestion;
+import com.arcx.ctfplatform.tests.entity.TestStatus;
+import com.arcx.ctfplatform.tests.entity.TestType;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
+import com.arcx.ctfplatform.tests.repository.QuizQuestionRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 import java.io.ByteArrayInputStream;
@@ -59,6 +65,8 @@ class GradebookServiceTest {
     private QuizAttemptRepository quizAttemptRepository;
     @Mock
     private TestRepository testRepository;
+    @Mock
+    private QuizQuestionRepository quizQuestionRepository;
     @Mock
     private PromoCodeClaimRepository promoCodeClaimRepository;
     @Mock
@@ -344,5 +352,68 @@ class GradebookServiceTest {
         verify(attemptRepository, never()).findAll();
         verify(quizAttemptRepository, never()).findAll();
         verify(academicGroupRepository, never()).findAll();
+    }
+
+    @Test
+    @DisplayName("KT scores are not capped at 25 and K% is computed from actual published KT question max points")
+    void testUncappedKtScoresAndDynamicMaxKt() {
+        gradebookService.setQuizQuestionRepository(quizQuestionRepository);
+
+        Student freshStudent = Student.builder()
+                .id(UUID.randomUUID())
+                .lastName("Тестов")
+                .firstName("Иван")
+                .studentCode("STU-KT")
+                .academicGroup(group)
+                .status(StudentStatus.ACTIVE)
+                .build();
+
+        UUID kt1Id = UUID.randomUUID();
+        UUID kt2Id = UUID.randomUUID();
+        UUID kt3Id = UUID.randomUUID();
+        var kt1 = com.arcx.ctfplatform.tests.entity.Test.builder()
+                .id(kt1Id).title("КТ 1").type(TestType.CONTROL_POINT).ktNumber(1).status(TestStatus.PUBLISHED).build();
+        var kt2 = com.arcx.ctfplatform.tests.entity.Test.builder()
+                .id(kt2Id).title("КТ 2").type(TestType.CONTROL_POINT).ktNumber(2).status(TestStatus.PUBLISHED).build();
+        var kt3 = com.arcx.ctfplatform.tests.entity.Test.builder()
+                .id(kt3Id).title("КТ 3").type(TestType.CONTROL_POINT).ktNumber(3).status(TestStatus.PUBLISHED).build();
+
+        List<QuizQuestion> questions = List.of(
+                QuizQuestion.builder().id(UUID.randomUUID()).testId(kt1Id).points(40).ordering(1).build(),
+                QuizQuestion.builder().id(UUID.randomUUID()).testId(kt2Id).points(20).ordering(1).build(),
+                QuizQuestion.builder().id(UUID.randomUUID()).testId(kt3Id).points(40).ordering(1).build()
+        );
+
+        List<QuizAttempt> quizAttempts = List.of(
+                QuizAttempt.builder().studentId(freshStudent.getId()).quizId(kt1Id).status(QuizAttemptStatus.COMPLETED).score(40.0).build(),
+                QuizAttempt.builder().studentId(freshStudent.getId()).quizId(kt3Id).status(QuizAttemptStatus.COMPLETED).score(10.0).build()
+        );
+
+        when(studentRepository.findAll()).thenReturn(List.of(freshStudent));
+        when(academicGroupRepository.findAll()).thenReturn(List.of(group));
+        when(studentLabRepository.findAllByStudentIdIn(List.of(freshStudent.getId()))).thenReturn(List.of());
+        when(attemptRepository.findAll()).thenReturn(List.of());
+        when(quizAttemptRepository.findAll()).thenReturn(quizAttempts);
+        when(testRepository.findAll()).thenReturn(List.of(kt1, kt2, kt3));
+        when(quizQuestionRepository.findAll()).thenReturn(questions);
+        when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAll()).thenReturn(List.of());
+
+        List<GradebookRowDto> rows = gradebookService.getGradebook(groupId, null);
+        assertThat(rows).hasSize(1);
+        GradebookRowDto row = rows.get(0);
+
+        assertThat(row.kt1()).isEqualTo(40.0);
+        assertThat(row.kt2()).isEqualTo(0.0);
+        assertThat(row.kt3()).isEqualTo(10.0);
+        assertThat(row.kt4()).isEqualTo(0.0);
+        assertThat(row.totalKt()).isEqualTo(50.0);
+        assertThat(row.maxKt1()).isEqualTo(40.0);
+        assertThat(row.maxKt2()).isEqualTo(20.0);
+        assertThat(row.maxKt3()).isEqualTo(40.0);
+        assertThat(row.maxKt4()).isEqualTo(0.0);
+        assertThat(row.maxTotalKt()).isEqualTo(100.0);
+        assertThat(row.maxTotalPoints()).isEqualTo(243.0);
+        assertThat(row.kPercent()).isEqualTo(50.0);
     }
 }

@@ -41,6 +41,12 @@ export interface GradebookRowDto {
   examScore: number | null;
   recommendedGrade: number | null;
   grade: number;
+  maxKt1?: number;
+  maxKt2?: number;
+  maxKt3?: number;
+  maxKt4?: number;
+  maxTotalKt?: number;
+  maxTotalPoints?: number;
 }
 
 export interface GradebookUpdateRequest {

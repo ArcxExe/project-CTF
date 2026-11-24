@@ -14,8 +14,8 @@ public record TestRequest(
         String description,
         @NotNull TestStatus status,
         @NotNull @Min(1) Integer timeLimitMinutes,
-        @NotNull @Min(0) Integer passingScore,
-        @NotNull @Min(0) Integer questionsCount,
+        @Min(0) Integer passingScore,
+        @Min(0) Integer questionsCount,
         UUID competitionId,
         TestType type,
         Integer ktNumber

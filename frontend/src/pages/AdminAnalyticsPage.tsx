@@ -115,6 +115,9 @@ export const AdminAnalyticsPage = () => {
     return studentChallenges.filter((c) => c.studentId === selectedStudentId);
   }, [studentChallenges, selectedStudentId]);
 
+  const maxKtScore = analytics?.metrics?.maxKtScore ?? 100;
+  const maxTotalPoints = 143 + maxKtScore;
+
   const escapeCSV = (str: string | number | null | undefined) =>
     `"${String(str ?? "").replace(/"/g, '""')}"`;
 
@@ -129,9 +132,9 @@ export const AdminAnalyticsPage = () => {
       "Общее ЛР (из 143)",
       "Допуск ЛР (из 8)",
       "L%",
-      "Общее КТ (из 100)",
+      `Общее КТ (из ${maxKtScore})`,
       "K%",
-      "Итог баллов (из 243)",
+      `Итог баллов (из ${maxTotalPoints})`,
       "Балл CTF (из 800)",
       "Коэфф. CTF",
       "C%",
@@ -190,7 +193,7 @@ export const AdminAnalyticsPage = () => {
     <div className="page-stack">
       <PageHeader
         title="Аналитика с учётом лабораторных и успеваемости"
-        subtitle="Комплексная аналитика по регламенту курса: лабораторные работы (143 б., допуск 8/8), контрольные точки (100 б.), практикум CTF (800 б.), посещаемость и итоговые оценки."
+        subtitle="Комплексная аналитика по регламенту курса: лабораторные работы (143 б., допуск 8/8), контрольные точки (КТ 1–4), практикум CTF (800 б.), посещаемость и итоговые оценки."
         actions={
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <Button variant="secondary" onClick={handleExportCsv}>
@@ -270,7 +273,9 @@ export const AdminAnalyticsPage = () => {
             <Card>
               <div className="metric-card">
                 <span className="muted">Контрольные точки (КТ 1–4)</span>
-                <strong>{(analytics.metrics.avgKtScore ?? 0).toFixed(2)} / 100</strong>
+                <strong>
+                  {(analytics.metrics.avgKtScore ?? 0).toFixed(2)} / {maxKtScore}
+                </strong>
                 <Badge tone="info">Ср. K%: {(analytics.metrics.avgKtPercent ?? 0).toFixed(1)}%</Badge>
               </div>
             </Card>
@@ -369,7 +374,7 @@ export const AdminAnalyticsPage = () => {
                 },
                 {
                   key: "ktScore",
-                  title: "Общее КТ (100)",
+                  title: `Общее КТ (${maxKtScore})`,
                   render: (r: any) => (
                     <div>
                       <strong>{(r.ktScore ?? 0).toFixed(2)}</strong>
@@ -381,7 +386,7 @@ export const AdminAnalyticsPage = () => {
                 },
                 {
                   key: "totalPoints",
-                  title: "Итог баллов (243)",
+                  title: `Итог баллов (${maxTotalPoints})`,
                   render: (r: any) => (
                     <strong>{(r.totalPoints ?? r.labScore ?? 0).toFixed(2)}</strong>
                   ),
@@ -532,7 +537,7 @@ export const AdminAnalyticsPage = () => {
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>
-                          Общее КТ (100)
+                          Общее КТ ({selectedStudent.maxKtScore ?? maxKtScore})
                         </span>
                         <strong style={{ fontSize: "1.2rem" }}>
                           {(selectedStudent.ktScore ?? 0).toFixed(2)}
@@ -540,7 +545,7 @@ export const AdminAnalyticsPage = () => {
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <span className="muted" style={{ display: "block", fontSize: "0.8rem" }}>
-                          Итог баллов (243)
+                          Итог баллов ({selectedStudent.maxTotalPoints ?? maxTotalPoints})
                         </span>
                         <strong style={{ fontSize: "1.2rem" }}>
                           {(selectedStudent.totalPoints ?? 0).toFixed(2)}
@@ -726,18 +731,19 @@ export const AdminAnalyticsPage = () => {
                           },
                           {
                             key: "score",
-                            title: "Баллы / Порог",
+                            title: "Баллы (%)",
                             render: (r: any) => {
                               if (r.status === "NOT_STARTED") return "—";
-                              const isPassed = r.score >= r.passingScore;
+                              const max = Number(r.maxScore ?? 0);
+                              const pct =
+                                r.percentage !== undefined
+                                  ? Number(r.percentage)
+                                  : max > 0
+                                  ? Math.min(100, (Number(r.score ?? 0) / max) * 100)
+                                  : 0;
                               return (
-                                <span
-                                  style={{
-                                    color: isPassed ? "var(--success)" : "var(--danger)",
-                                    fontWeight: "bold",
-                                  }}
-                                >
-                                  {r.score} (порог: {r.passingScore})
+                                <span style={{ fontWeight: "bold" }}>
+                                  {max > 0 ? `${r.score} / ${max} (${pct.toFixed(1)}%)` : `${r.score} б.`}
                                 </span>
                               );
                             },
@@ -871,18 +877,19 @@ export const AdminAnalyticsPage = () => {
                   },
                   {
                     key: "score",
-                    title: "Баллы (Проходной)",
+                    title: "Баллы (%)",
                     render: (r: any) => {
                       if (r.status === "NOT_STARTED") return "-";
-                      const isPassed = r.score >= r.passingScore;
+                      const max = Number(r.maxScore ?? 0);
+                      const pct =
+                        r.percentage !== undefined
+                          ? Number(r.percentage)
+                          : max > 0
+                          ? Math.min(100, (Number(r.score ?? 0) / max) * 100)
+                          : 0;
                       return (
-                        <span
-                          style={{
-                            color: isPassed ? "var(--success)" : "var(--danger)",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          {r.score} (порог: {r.passingScore})
+                        <span style={{ fontWeight: "bold" }}>
+                          {max > 0 ? `${r.score} / ${max} (${pct.toFixed(1)}%)` : `${r.score} б.`}
                         </span>
                       );
                     },
