@@ -13,6 +13,7 @@ import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuditService auditService;
+    private final boolean demoAccountsEnabled;
 
     public AuthService(
             UserRepository userRepository,
@@ -37,7 +39,17 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService
     ) {
-        this(userRepository, studentRepository, passwordEncoder, jwtService, null);
+        this(userRepository, studentRepository, passwordEncoder, jwtService, null, false);
+    }
+
+    public AuthService(
+            UserRepository userRepository,
+            StudentRepository studentRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            AuditService auditService
+    ) {
+        this(userRepository, studentRepository, passwordEncoder, jwtService, auditService, false);
     }
 
     @Autowired
@@ -46,13 +58,15 @@ public class AuthService {
             StudentRepository studentRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            @Autowired(required = false) AuditService auditService
+            @Autowired(required = false) AuditService auditService,
+            @Value("${app.demo-accounts.enabled:false}") boolean demoAccountsEnabled
     ) {
         this.userRepository = userRepository;
         this.studentRepository = studentRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.auditService = auditService;
+        this.demoAccountsEnabled = demoAccountsEnabled;
     }
 
     @Transactional
@@ -160,7 +174,7 @@ public class AuthService {
 
         if (user.getRole() == Role.STUDENT) {
             Optional<Student> studentOpt = studentRepository.findByUserId(user.getId());
-            if (studentOpt.isEmpty() && isDemoStudent(user)) {
+            if (demoAccountsEnabled && studentOpt.isEmpty() && isDemoStudent(user)) {
                 studentOpt = ensureDemoStudentProfile(user);
             }
             studentOpt.ifPresent(student -> {
@@ -220,7 +234,7 @@ public class AuthService {
         if (found.isPresent()) {
             return found;
         }
-        if (isDemoStudentCredential(login) && "password".equals(rawPassword)) {
+        if (demoAccountsEnabled && isDemoStudentCredential(login) && "password".equals(rawPassword)) {
             Optional<User> existingDemo = userRepository.findByEmail("student@ctf.local")
                     .or(() -> userRepository.findByUsername("student"));
             if (existingDemo.isPresent()) {

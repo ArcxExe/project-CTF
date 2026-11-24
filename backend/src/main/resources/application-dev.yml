@@ -9,3 +9,7 @@ logging:
   level:
     org.springframework.security: INFO
     org.hibernate.SQL: DEBUG
+
+app:
+  demo-accounts:
+    enabled: true

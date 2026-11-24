@@ -5,7 +5,7 @@ DECLARE
     v_group_id UUID;
     v_student_id UUID;
 BEGIN
-    -- 1. Ensure demo admin and instructor accounts exist and are ACTIVE
+    -- 1. Seed initial accounts ONLY when missing (never reset passwords or override statuses of existing accounts)
     IF NOT EXISTS (
         SELECT 1 FROM users
         WHERE id = '00000000-0000-0000-0000-000000000001'
@@ -21,11 +21,6 @@ BEGIN
             'ADMIN',
             'ACTIVE'
         );
-    ELSE
-        UPDATE users
-        SET status = 'ACTIVE'
-        WHERE id = '00000000-0000-0000-0000-000000000001'
-           OR email = 'admin@ctf.local';
     END IF;
 
     IF NOT EXISTS (
@@ -43,19 +38,15 @@ BEGIN
             'INSTRUCTOR',
             'ACTIVE'
         );
-    ELSE
-        UPDATE users
-        SET status = 'ACTIVE'
-        WHERE id = '00000000-0000-0000-0000-000000000003'
-           OR email = 'instructor@ctf.local';
     END IF;
 
-    -- 2. Restore / activate demo student account (student@ctf.local / student / password)
+    -- 2. Look up demo student account without resetting password_hash or status if it already exists
     SELECT id INTO v_student_user_id
     FROM users
     WHERE id = '00000000-0000-0000-0000-000000000002'
        OR email = 'student@ctf.local'
        OR username = 'student'
+    ORDER BY id
     LIMIT 1;
 
     IF v_student_user_id IS NULL THEN
@@ -69,12 +60,6 @@ BEGIN
             'STUDENT',
             'ACTIVE'
         );
-    ELSE
-        UPDATE users
-        SET password_hash = '$2a$10$rbloaQUVm2fsPL7xcXzoJua0N9ugpi/hGInL51tU7pqsOftbhdXaC',
-            role = 'STUDENT',
-            status = 'ACTIVE'
-        WHERE id = v_student_user_id;
     END IF;
 
     -- 3. Ensure demo flow exists
@@ -82,6 +67,7 @@ BEGIN
     FROM academic_flows
     WHERE id = '10000000-0000-0000-0000-000000000001'
        OR name = 'Computer Science 2026'
+    ORDER BY id
     LIMIT 1;
 
     IF v_flow_id IS NULL THEN
@@ -95,6 +81,7 @@ BEGIN
     FROM academic_groups
     WHERE id = '20000000-0000-0000-0000-000000000001'
        OR name = 'CS-26-A'
+    ORDER BY id
     LIMIT 1;
 
     IF v_group_id IS NULL THEN
@@ -103,20 +90,32 @@ BEGIN
         VALUES (v_group_id, 'CS-26-A', v_flow_id);
     END IF;
 
-    -- 5. Ensure demo student profile exists and is linked to v_student_user_id
+    -- 5. Link demo student profile only if not already linked to another real user
     SELECT id INTO v_student_id
     FROM students
     WHERE user_id = v_student_user_id
+    ORDER BY id
     LIMIT 1;
 
     IF v_student_id IS NULL THEN
         SELECT id INTO v_student_id
         FROM students
-        WHERE id = '30000000-0000-0000-0000-000000000001'
-           OR student_code = 'STU-0001'
+        WHERE (id = '30000000-0000-0000-0000-000000000001' OR student_code = 'STU-0001')
+          AND user_id IS NULL
+        ORDER BY id
         LIMIT 1;
 
-        IF v_student_id IS NULL THEN
+        IF v_student_id IS NOT NULL THEN
+            UPDATE students
+            SET user_id = v_student_user_id,
+                group_id = COALESCE(group_id, v_group_id)
+            WHERE id = v_student_id
+              AND user_id IS NULL;
+        ELSIF NOT EXISTS (
+            SELECT 1 FROM students
+            WHERE id = '30000000-0000-0000-0000-000000000001'
+               OR student_code = 'STU-0001'
+        ) THEN
             INSERT INTO students (id, user_id, group_id, student_code, first_name, last_name, middle_name, status)
             VALUES (
                 '30000000-0000-0000-0000-000000000001',
@@ -128,16 +127,6 @@ BEGIN
                 'Иванович',
                 'ACTIVE'
             );
-        ELSE
-            UPDATE students
-            SET user_id = v_student_user_id,
-                group_id = COALESCE(group_id, v_group_id),
-                status = 'ACTIVE'
-            WHERE id = v_student_id;
         END IF;
-    ELSE
-        UPDATE students
-        SET status = 'ACTIVE'
-        WHERE id = v_student_id;
     END IF;
 END $$;

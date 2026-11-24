@@ -35,6 +35,8 @@ management:
       show-details: when_authorized
 
 app:
+  demo-accounts:
+    enabled: ${DEMO_ACCOUNTS_ENABLED:false}
   security:
     jwt:
       secret: ${JWT_SECRET}
