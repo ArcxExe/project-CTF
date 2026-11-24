@@ -240,6 +240,9 @@ class CtfTaskImportServiceTest {
         assertThat(dryResult.mainPoolCount()).isEqualTo(1);
         assertThat(dryResult.reservePoolCount()).isEqualTo(1);
         assertThat(dryResult.linkedToCompetitionCount()).isEqualTo(1);
+        assertThat(existing.getTitle()).isEqualTo("Old Title");
+        assertThat(existing.getFlag()).isEqualTo("CTF{old}");
+        assertThat(existing.getBaseScore()).isEqualTo(1);
         verify(ctfTaskRepository, never()).saveAll(any());
         verify(competitionRepository, never()).save(any());
 
@@ -374,5 +377,37 @@ class CtfTaskImportServiceTest {
         assertThat(saved.getBaseScore()).isEqualTo(3);
         assertThat(saved.isFirstBloodOnly()).isTrue();
         assertThat(saved.getFlag()).isEqualTo("CTF{read_only}");
+    }
+
+    @Test
+    @DisplayName("Issue #29: Validation errors on later rows do not mutate existing managed tasks in-place")
+    void testValidationErrorDoesNotMutateExistingTask() {
+        CtfTask existing = new CtfTask();
+        existing.setId(UUID.randomUUID());
+        existing.setTaskCode("LIN-001");
+        existing.setTitle("Original Title");
+        existing.setBaseScore(3);
+        existing.setFlag("CTF{original}");
+
+        when(ctfTaskRepository.findAll()).thenReturn(List.of(existing));
+
+        String csv = """
+                task_id,title,description,category,difficulty,points,first_blood_only,flag,bank_id,pool
+                LIN-001,Mutated Title,New desc,Linux,Легко,10,True,CTF{mutated},GLOBAL,MAIN
+                BAD-002,,Missing title,Web,Легко,5,False,CTF{bad},GLOBAL,MAIN
+                """;
+
+        CtfTaskImportService.TaskImportResultDto result = importService.importTasks(
+                new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)),
+                "invalid.csv",
+                false,
+                null
+        );
+
+        assertThat(result.errors()).isNotEmpty();
+        assertThat(existing.getTitle()).isEqualTo("Original Title");
+        assertThat(existing.getFlag()).isEqualTo("CTF{original}");
+        assertThat(existing.getBaseScore()).isEqualTo(3);
+        verify(ctfTaskRepository, never()).saveAll(any());
     }
 }

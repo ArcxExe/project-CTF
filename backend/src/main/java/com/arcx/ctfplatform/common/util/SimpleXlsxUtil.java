@@ -44,6 +44,8 @@ public final class SimpleXlsxUtil {
 
     public static final int MAX_ZIP_ENTRIES = 100;
     public static final long MAX_TOTAL_UNCOMPRESSED_BYTES = 10L * 1024L * 1024L; // 10 MB
+    public static final int MAX_COLUMNS = 256;
+    public static final int MAX_ROWS = 50_000;
     private static final Pattern SHEET_PATH_PATTERN = Pattern.compile("^xl/worksheets/sheet(\\d+)\\.xml$");
 
     public static List<List<String>> readSheet(InputStream xlsxStream) throws IOException {
@@ -83,6 +85,8 @@ public final class SimpleXlsxUtil {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
             DocumentBuilder builder = factory.newDocumentBuilder();
 
             List<String> sharedStrings = new ArrayList<>();
@@ -118,6 +122,8 @@ public final class SimpleXlsxUtil {
                 sheets.add(parseWorksheetBytes(builder, entries.get(key), sharedStrings));
             }
             return sheets;
+        } catch (IOException e) {
+            throw e;
         } catch (Exception e) {
             throw new IOException("Failed to parse XLSX stream: " + e.getMessage(), e);
         }
@@ -167,6 +173,9 @@ public final class SimpleXlsxUtil {
         }
         Document sheetDoc = builder.parse(new ByteArrayInputStream(sheetBytes));
         NodeList rowNodes = getElementsByLocalName(sheetDoc, "row");
+        if (rowNodes.getLength() > MAX_ROWS) {
+            throw new IOException("XLSX sheet exceeds maximum allowed row count (" + MAX_ROWS + ")");
+        }
         List<List<String>> rows = new ArrayList<>();
 
         for (int r = 0; r < rowNodes.getLength(); r++) {
@@ -235,22 +244,31 @@ public final class SimpleXlsxUtil {
         return raw != null ? raw : "";
     }
 
-    private static int parseColumnIndex(String cellRef, int fallback) {
-        if (cellRef == null || cellRef.isEmpty()) {
-            return fallback;
-        }
-        int col = 0;
-        int len = 0;
-        for (int i = 0; i < cellRef.length(); i++) {
-            char ch = Character.toUpperCase(cellRef.charAt(i));
-            if (ch >= 'A' && ch <= 'Z') {
-                col = col * 26 + (ch - 'A' + 1);
-                len++;
-            } else {
-                break;
+    private static int parseColumnIndex(String cellRef, int fallback) throws IOException {
+        if (cellRef != null && !cellRef.isEmpty()) {
+            long col = 0;
+            int len = 0;
+            for (int i = 0; i < cellRef.length(); i++) {
+                char ch = Character.toUpperCase(cellRef.charAt(i));
+                if (ch >= 'A' && ch <= 'Z') {
+                    col = col * 26L + (ch - 'A' + 1);
+                    len++;
+                    if (col > MAX_COLUMNS) {
+                        throw new IOException("XLSX cell reference '" + cellRef
+                                + "' exceeds maximum allowed column count (" + MAX_COLUMNS + ")");
+                    }
+                } else {
+                    break;
+                }
+            }
+            if (len > 0) {
+                return (int) (col - 1);
             }
         }
-        return len > 0 ? col - 1 : fallback;
+        if (fallback < 0 || fallback >= MAX_COLUMNS) {
+            throw new IOException("XLSX column index exceeds maximum allowed column count (" + MAX_COLUMNS + ")");
+        }
+        return fallback;
     }
 
     public static String toColumnName(int colIndexZeroBased) {

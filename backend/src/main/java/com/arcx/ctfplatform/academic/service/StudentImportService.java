@@ -10,14 +10,18 @@ import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.common.util.SimpleXlsxUtil;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
 import com.arcx.ctfplatform.users.entity.User;
-import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,6 +38,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class StudentImportService {
+
+    private static final int MAX_STUDENT_CODE_LENGTH = 50;
+    private static final Charset WINDOWS_1251 = Charset.forName("windows-1251");
 
     private static final Set<String> SUMMARY_MARKERS = Set.of(
             "max", "макс", "максимум", "min", "мин", "итого", "всего", "среднее", "total", "average", "avg"
@@ -86,23 +93,68 @@ public class StudentImportService {
     }
 
     private List<List<String>> readCsvRows(byte[] bytes) throws IOException {
-        String content = new String(bytes, StandardCharsets.UTF_8);
+        String content = decodeCsvBytes(bytes);
         if (content.startsWith("\uFEFF")) {
             content = content.substring(1);
         }
-        List<List<String>> rows = new ArrayList<>();
         char delimiter = detectDelimiter(content);
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.trim().isEmpty()) {
-                    continue;
+        List<List<String>> rows = new ArrayList<>();
+        List<String> currentRow = new ArrayList<>();
+        StringBuilder currentCell = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int i = 0; i < content.length(); i++) {
+            char ch = content.charAt(i);
+            if (ch == '"') {
+                if (inQuotes && i + 1 < content.length() && content.charAt(i + 1) == '"') {
+                    currentCell.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
                 }
-                rows.add(parseCsvLine(line, delimiter));
+            } else if (ch == delimiter && !inQuotes) {
+                currentRow.add(clean(currentCell.toString()));
+                currentCell.setLength(0);
+            } else if ((ch == '\n' || ch == '\r') && !inQuotes) {
+                if (ch == '\r' && i + 1 < content.length() && content.charAt(i + 1) == '\n') {
+                    i++;
+                }
+                currentRow.add(clean(currentCell.toString()));
+                currentCell.setLength(0);
+                if (hasNonEmptyCell(currentRow)) {
+                    rows.add(currentRow);
+                }
+                currentRow = new ArrayList<>();
+            } else {
+                currentCell.append(ch);
             }
         }
+        currentRow.add(clean(currentCell.toString()));
+        if (hasNonEmptyCell(currentRow)) {
+            rows.add(currentRow);
+        }
         return rows;
+    }
+
+    private String decodeCsvBytes(byte[] bytes) {
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException e) {
+            return new String(bytes, WINDOWS_1251);
+        }
+    }
+
+    private boolean hasNonEmptyCell(List<String> row) {
+        for (String cell : row) {
+            if (cell != null && !cell.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private char detectDelimiter(String content) {
@@ -117,30 +169,6 @@ public class StudentImportService {
             return ';';
         }
         return ',';
-    }
-
-    private List<String> parseCsvLine(String line, char delimiter) {
-        List<String> cells = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inQuotes = false;
-        for (int i = 0; i < line.length(); i++) {
-            char ch = line.charAt(i);
-            if (ch == '"') {
-                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    current.append('"');
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (ch == delimiter && !inQuotes) {
-                cells.add(clean(current.toString()));
-                current.setLength(0);
-            } else {
-                current.append(ch);
-            }
-        }
-        cells.add(clean(current.toString()));
-        return cells;
     }
 
     private ImportResultDto importRows(List<List<String>> rows, UUID targetGroupId, User currentUser) {
@@ -162,7 +190,8 @@ public class StudentImportService {
 
         AcademicGroup defaultGroup = null;
         if (targetGroupId != null) {
-            defaultGroup = groupRepository.findById(targetGroupId).orElse(null);
+            defaultGroup = groupRepository.findById(targetGroupId)
+                    .orElseThrow(() -> new IllegalArgumentException("Group not found"));
         }
 
         int importedCount = 0;
@@ -172,6 +201,7 @@ public class StudentImportService {
         int skippedRows = 0;
 
         UUID creatorId = currentUser != null ? currentUser.getId() : null;
+        Set<String> usedCodesInBatch = new HashSet<>();
 
         if (labScoreService != null) {
             labScoreService.setSuppressBroadcast(true);
@@ -223,6 +253,9 @@ public class StudentImportService {
                 }
 
                 String studentCode = getCell(row, colMap.studentCodeCol);
+                if (studentCode != null && studentCode.length() > MAX_STUDENT_CODE_LENGTH) {
+                    throw new IllegalArgumentException("Student code exceeds 50 characters: " + studentCode);
+                }
                 String groupName = getCell(row, colMap.groupNameCol);
                 String flowName = getCell(row, colMap.flowNameCol);
 
@@ -255,7 +288,8 @@ public class StudentImportService {
                     isNew = true;
                     String finalCode = (studentCode != null && !studentCode.isEmpty())
                             ? studentCode
-                            : generateStudentCode(group.getName(), r + 1);
+                            : generateStudentCode(group.getName(), r + 1, usedCodesInBatch);
+                    usedCodesInBatch.add(finalCode.toUpperCase(Locale.ROOT));
                     student = Student.builder()
                             .lastName(lastName)
                             .firstName(firstName)
@@ -303,7 +337,7 @@ public class StudentImportService {
                         if (val != null) {
                             LabScoreService.LabSpec spec = LabScoreService.getLabSpec(labNum);
                             double clamped = Math.max(0.0, Math.min(val, spec.maxTotal()));
-                            boolean accepted = clamped >= 0.40 * spec.maxTotal();
+                            boolean accepted = isImportedLabAccepted(clamped, spec);
                             labScoreService.recordLab(student.getId(), labNum, clamped, accepted);
                             labsImported++;
                         }
@@ -320,6 +354,18 @@ public class StudentImportService {
         }
 
         return new ImportResultDto(importedCount, updatedCount, labsImported, ktImported, skippedRows);
+    }
+
+    private boolean isImportedLabAccepted(double clampedScore, LabScoreService.LabSpec spec) {
+        if (spec.maxTotal() <= 0) {
+            return false;
+        }
+        double ratio = clampedScore / spec.maxTotal();
+        double approxRaw = Math.round(spec.maxRawScore() * ratio * 100.0) / 100.0;
+        double approxDefense = Math.round((clampedScore - approxRaw) * 100.0) / 100.0;
+        boolean rawPassed = spec.maxRawScore() <= 0 || approxRaw >= 0.40 * spec.maxRawScore();
+        boolean defensePassed = spec.maxDefenseScore() <= 0 || approxDefense >= 0.50 * spec.maxDefenseScore();
+        return rawPassed && defensePassed;
     }
 
     private Optional<Student> findExistingStudent(
@@ -339,9 +385,6 @@ public class StudentImportService {
                 ? studentRepository.findByAcademicGroupId(groupId)
                 : studentRepository.findAll();
         if (candidates == null || candidates.isEmpty()) {
-            candidates = studentRepository.findAll();
-        }
-        if (candidates == null) {
             return Optional.empty();
         }
         for (Student s : candidates) {
@@ -361,13 +404,14 @@ public class StudentImportService {
     }
 
     private AcademicGroup resolveGroup(String groupName, String flowName, AcademicGroup defaultGroup) {
+        String academicYear = currentAcademicYear();
         if (groupName != null && !groupName.isEmpty()) {
             String effectiveFlowName = (flowName != null && !flowName.isEmpty()) ? flowName : "Основной поток";
             AcademicFlow flow = flowRepository.findByName(effectiveFlowName)
                     .orElseGet(() -> flowRepository.save(
                             AcademicFlow.builder()
                                     .name(effectiveFlowName)
-                                    .academicYear("2025/2026")
+                                    .academicYear(academicYear)
                                     .build()
                     ));
             return groupRepository.findByName(groupName)
@@ -385,7 +429,7 @@ public class StudentImportService {
                 .orElseGet(() -> flowRepository.save(
                         AcademicFlow.builder()
                                 .name("Основной поток")
-                                .academicYear("2025/2026")
+                                .academicYear(academicYear)
                                 .build()
                 ));
         return groupRepository.findByName("Общая группа")
@@ -397,12 +441,30 @@ public class StudentImportService {
                 ));
     }
 
-    private String generateStudentCode(String groupName, int rowNum) {
+    private String currentAcademicYear() {
+        LocalDate today = LocalDate.now();
+        int startYear = today.getMonthValue() >= 9 ? today.getYear() : today.getYear() - 1;
+        return startYear + "/" + (startYear + 1);
+    }
+
+    private String generateStudentCode(String groupName, int rowNum, Set<String> usedCodesInBatch) {
         String prefix = (groupName != null && !groupName.isBlank())
                 ? groupName.replaceAll("[^\\p{L}\\p{N}]", "").toUpperCase(Locale.ROOT)
                 : "STU";
-        String candidate = prefix + "-" + rowNum + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(Locale.ROOT);
-        return candidate;
+        if (prefix.isEmpty()) {
+            prefix = "STU";
+        }
+        for (int attempt = 0; attempt < 20; attempt++) {
+            String suffix = "-" + rowNum + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase(Locale.ROOT);
+            int maxPrefixLen = Math.max(1, MAX_STUDENT_CODE_LENGTH - suffix.length());
+            String boundedPrefix = prefix.length() > maxPrefixLen ? prefix.substring(0, maxPrefixLen) : prefix;
+            String candidate = boundedPrefix + suffix;
+            String key = candidate.toUpperCase(Locale.ROOT);
+            if (!usedCodesInBatch.contains(key) && studentRepository.findByStudentCode(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        return "STU-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(Locale.ROOT);
     }
 
     private int findHeaderRowIndex(List<List<String>> rows) {
