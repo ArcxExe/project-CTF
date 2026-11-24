@@ -79,7 +79,7 @@ public class QuizService {
 
     @Transactional
     public QuizAttempt startQuiz(UUID quizId, UUID userId) {
-        Student student = studentRepository.findByUserId(userId)
+        Student student = studentRepository.findByUserIdWithLock(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
         if (student.getStatus() == StudentStatus.PENDING_BINDING_VERIFICATION) {
             throw new IllegalStateException("Прохождение теста недоступно: ваша учётная запись ожидает подтверждения преподавателем");
@@ -97,22 +97,26 @@ public class QuizService {
 
         List<QuizAttempt> attempts = attemptRepository.findAllByQuizIdAndStudentId(quizId, student.getId());
         Instant now = Instant.now();
-        
-        Optional<QuizAttempt> activeAttempt = attempts.stream()
-                .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
-                .findFirst();
-        if (activeAttempt.isPresent()) {
-            QuizAttempt existing = activeAttempt.get();
-            if (isAttemptExpired(test, existing, now, RESUME_EXPIRY_GRACE_SECONDS)) {
-                return enrichTimingMetadata(completeExpiredAttempt(existing, now, userId), test, now);
-            }
-            return enrichTimingMetadata(existing, test, now);
-        }
 
         boolean hasCompleted = attempts.stream()
                 .anyMatch(a -> a.getStatus() == QuizAttemptStatus.COMPLETED);
         if (hasCompleted) {
             throw new IllegalStateException("Вы уже прошли этот тест");
+        }
+
+        List<QuizAttempt> activeAttempts = attempts.stream()
+                .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
+                .sorted(Comparator.comparing(QuizAttempt::getStartedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        if (!activeAttempts.isEmpty()) {
+            QuizAttempt existing = activeAttempts.get(0);
+            if (activeAttempts.size() > 1) {
+                attemptRepository.deleteAll(activeAttempts.subList(1, activeAttempts.size()));
+            }
+            if (isAttemptExpired(test, existing, now, RESUME_EXPIRY_GRACE_SECONDS)) {
+                return enrichTimingMetadata(completeExpiredAttempt(existing, now, userId), test, now);
+            }
+            return enrichTimingMetadata(existing, test, now);
         }
 
         QuizAttempt attempt = QuizAttempt.builder()
@@ -147,17 +151,26 @@ public class QuizService {
 
     @Transactional
     public QuizAttempt submitAnswers(UUID quizId, UUID userId, List<QuestionAnswerDTO> answers) {
-        Student student = studentRepository.findByUserId(userId)
+        Student student = studentRepository.findByUserIdWithLock(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
 
-        QuizAttempt attempt = attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, student.getId(), QuizAttemptStatus.IN_PROGRESS)
-                .orElseThrow(() -> new IllegalStateException("Активная попытка прохождения теста не найдена"));
+        List<QuizAttempt> activeAttempts = attemptRepository.findAllByQuizIdAndStudentId(quizId, student.getId()).stream()
+                .filter(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS)
+                .sorted(Comparator.comparing(QuizAttempt::getStartedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        if (activeAttempts.isEmpty()) {
+            throw new IllegalStateException("Активная попытка прохождения теста не найдена");
+        }
+        QuizAttempt attempt = activeAttempts.get(0);
 
         Test test = testRepository.findById(attempt.getQuizId())
                 .orElseThrow(() -> new IllegalArgumentException("Тест не найден"));
 
         Instant now = Instant.now();
         if (isAttemptExpired(test, attempt, now, SUBMIT_GRACE_SECONDS)) {
+            if (activeAttempts.size() > 1) {
+                attemptRepository.deleteAll(activeAttempts.subList(1, activeAttempts.size()));
+            }
             return enrichTimingMetadata(completeExpiredAttempt(attempt, now, userId), test, now);
         }
         
@@ -214,6 +227,9 @@ public class QuizService {
         attempt.setCompletedAt(now);
         attempt.setStatus(QuizAttemptStatus.COMPLETED);
 
+        if (activeAttempts.size() > 1) {
+            attemptRepository.deleteAll(activeAttempts.subList(1, activeAttempts.size()));
+        }
         QuizAttempt saved = attemptRepository.save(attempt);
         if (leaderboardService != null) {
             leaderboardService.broadcastUpdate();
@@ -285,10 +301,8 @@ public class QuizService {
             }
             Student student = studentRepository.findByUserId(resolvedUserId)
                     .orElseThrow(() -> new IllegalArgumentException("Профиль студента не найден"));
-            boolean hasInProgress = attemptRepository.findByQuizIdAndStudentIdAndStatus(
-                    testId, student.getId(), QuizAttemptStatus.IN_PROGRESS).isPresent()
-                    || attemptRepository.findAllByQuizIdAndStudentId(testId, student.getId()).stream()
-                            .anyMatch(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS);
+            boolean hasInProgress = attemptRepository.findAllByQuizIdAndStudentId(testId, student.getId()).stream()
+                    .anyMatch(a -> a.getStatus() == QuizAttemptStatus.IN_PROGRESS);
             if (!hasInProgress) {
                 throw new IllegalStateException("Для просмотра вопросов необходимо начать попытку прохождения теста");
             }

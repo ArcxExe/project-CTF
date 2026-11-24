@@ -3,6 +3,7 @@ package com.arcx.ctfplatform.tests.service;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
+import com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
 import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
 import com.arcx.ctfplatform.tests.entity.QuizOption;
@@ -105,7 +106,7 @@ class QuizServiceTest {
                 .isCorrect(true)
                 .build();
 
-        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
         when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
         when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of());
         when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> {
@@ -119,8 +120,8 @@ class QuizServiceTest {
         assertThat(started.getQuizId()).isEqualTo(quizId);
         assertThat(started.getStudentId()).isEqualTo(studentId);
 
-        when(attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, studentId, QuizAttemptStatus.IN_PROGRESS))
-                .thenReturn(Optional.of(started));
+        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(started));
         when(questionRepository.findAllByTestIdOrderByOrderingAsc(quizId)).thenReturn(List.of(question));
         when(optionRepository.findAllByQuestionIdIn(List.of(questionId))).thenReturn(List.of(option));
 
@@ -140,7 +141,7 @@ class QuizServiceTest {
                 .score(0)
                 .build();
 
-        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
         when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
         when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(existing));
 
@@ -162,7 +163,7 @@ class QuizServiceTest {
                 .score(0)
                 .build();
 
-        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
         when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
         when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(expired));
         when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -176,7 +177,7 @@ class QuizServiceTest {
     @DisplayName("BUG-001 & BUG-011: Pending or blocked student gets clear Russian message")
     void pendingOrBlockedStudentGetsClearRussianMessage() {
         student.setStatus(StudentStatus.PENDING_BINDING_VERIFICATION);
-        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
 
         assertThatThrownBy(() -> quizService.startQuiz(quizId, userId))
                 .isInstanceOf(IllegalStateException.class)
@@ -193,8 +194,6 @@ class QuizServiceTest {
     void getQuestionsWithoutAttemptThrowsRussianError() {
         when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
         when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
-        when(attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, studentId, QuizAttemptStatus.IN_PROGRESS))
-                .thenReturn(Optional.empty());
         when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> quizService.getQuestionsForCaller(quizId, studentUser))
@@ -205,7 +204,7 @@ class QuizServiceTest {
     @org.junit.jupiter.api.Test
     @DisplayName("Issue #20: startQuiz populates serverNow and remainingSeconds for timed and untimed tests")
     void startQuizPopulatesServerTimingMetadata() {
-        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
         when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
         when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of());
         when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> {
@@ -306,9 +305,9 @@ class QuizServiceTest {
                 .status(QuizAttemptStatus.IN_PROGRESS)
                 .build();
 
-        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
-        when(attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, studentId, QuizAttemptStatus.IN_PROGRESS))
-                .thenReturn(Optional.of(slightlyLateAttempt));
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId))
+                .thenReturn(List.of(slightlyLateAttempt));
         when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
         when(questionRepository.findAllByTestIdOrderByOrderingAsc(quizId)).thenReturn(List.of(question));
         when(optionRepository.findAllByQuestionIdIn(List.of(qId))).thenReturn(List.of(correctOpt));
@@ -317,7 +316,7 @@ class QuizServiceTest {
         QuizAttempt graded = quizService.submitAnswers(
                 quizId,
                 userId,
-                List.of(new com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO(qId, List.of(optId.toString())))
+                List.of(new QuestionAnswerDTO(qId, List.of(optId.toString())))
         );
         assertThat(graded.getStatus()).isEqualTo(QuizAttemptStatus.COMPLETED);
         assertThat(graded.getScore()).isEqualTo(10.0);
@@ -331,16 +330,187 @@ class QuizServiceTest {
                 .startedAt(Instant.now().minus(45, ChronoUnit.MINUTES))
                 .status(QuizAttemptStatus.IN_PROGRESS)
                 .build();
-        when(attemptRepository.findByQuizIdAndStudentIdAndStatus(quizId, studentId, QuizAttemptStatus.IN_PROGRESS))
-                .thenReturn(Optional.of(veryLateAttempt));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId))
+                .thenReturn(List.of(veryLateAttempt));
 
         QuizAttempt closedExpired = quizService.submitAnswers(
                 quizId,
                 userId,
-                List.of(new com.arcx.ctfplatform.tests.dto.QuestionAnswerDTO(qId, List.of(optId.toString())))
+                List.of(new QuestionAnswerDTO(qId, List.of(optId.toString())))
         );
         assertThat(closedExpired.getStatus()).isEqualTo(QuizAttemptStatus.COMPLETED);
         assertThat(closedExpired.getScore()).isEqualTo(0.0);
         assertThat(closedExpired.getCompletedAt()).isNotNull();
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #19: startQuiz acquires pessimistic lock on student")
+    void startQuizAcquiresPessimisticLockOnStudent() {
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of());
+        when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        quizService.startQuiz(quizId, userId);
+
+        verify(studentRepository).findByUserIdWithLock(userId);
+        verify(studentRepository, never()).findByUserId(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #19: startQuiz deduplicates multiple IN_PROGRESS attempts and returns earliest")
+    void startQuizWithDuplicateInProgressReturnsEarliestAndDeletesDuplicate() {
+        QuizAttempt later = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(1, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .score(0)
+                .build();
+        QuizAttempt earliest = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(5, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .score(0)
+                .build();
+
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(later, earliest));
+
+        QuizAttempt resumed = quizService.startQuiz(quizId, userId);
+
+        assertThat(resumed.getId()).isEqualTo(earliest.getId());
+        verify(attemptRepository).deleteAll(List.of(later));
+        verify(attemptRepository, never()).save(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #19: startQuiz rejects if a COMPLETED attempt exists alongside stray IN_PROGRESS")
+    void startQuizWithCompletedAndStrayInProgressThrowsAlreadyCompleted() {
+        QuizAttempt inProgress = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(5, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .score(0)
+                .build();
+        QuizAttempt completed = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(10, ChronoUnit.MINUTES))
+                .completedAt(Instant.now().minus(2, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.COMPLETED)
+                .score(10)
+                .build();
+
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(inProgress, completed));
+
+        assertThatThrownBy(() -> quizService.startQuiz(quizId, userId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Вы уже прошли этот тест");
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #19: getQuestionsForCaller handles duplicate IN_PROGRESS attempts without NonUniqueResult")
+    void getQuestionsForCallerHandlesDuplicateInProgressAttemptsWithoutError() {
+        QuizAttempt attempt1 = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(5, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .build();
+        QuizAttempt attempt2 = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(4, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .build();
+        UUID questionId = UUID.randomUUID();
+        QuizQuestion question = QuizQuestion.builder()
+                .id(questionId)
+                .testId(quizId)
+                .type("RADIO")
+                .text("Вопрос 1")
+                .points(5)
+                .ordering(1)
+                .build();
+
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(attempt1, attempt2));
+        when(questionRepository.findAllByTestIdOrderByOrderingAsc(quizId)).thenReturn(List.of(question));
+        when(optionRepository.findAllByQuestionIdIn(List.of(questionId))).thenReturn(List.of());
+
+        List<Map<String, Object>> result = quizService.getQuestionsForCaller(quizId, studentUser);
+
+        assertThat(result).hasSize(1);
+        verify(attemptRepository, never()).findByQuizIdAndStudentIdAndStatus(any(), any(), any());
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #19: submitAnswers locks student and deduplicates multiple IN_PROGRESS attempts")
+    void submitAnswersLocksStudentAndHandlesDuplicateInProgressAttempts() {
+        QuizAttempt later = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(1, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .score(0)
+                .build();
+        QuizAttempt earliest = QuizAttempt.builder()
+                .id(UUID.randomUUID())
+                .quizId(quizId)
+                .studentId(studentId)
+                .startedAt(Instant.now().minus(5, ChronoUnit.MINUTES))
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .score(0)
+                .build();
+        UUID questionId = UUID.randomUUID();
+        UUID correctOptionId = UUID.randomUUID();
+        QuizQuestion question = QuizQuestion.builder()
+                .id(questionId)
+                .testId(quizId)
+                .type("RADIO")
+                .text("Вопрос 1")
+                .points(10)
+                .ordering(1)
+                .build();
+        QuizOption correctOption = QuizOption.builder()
+                .id(correctOptionId)
+                .questionId(questionId)
+                .optionText("Верно")
+                .isCorrect(true)
+                .build();
+
+        when(studentRepository.findByUserIdWithLock(userId)).thenReturn(Optional.of(student));
+        when(attemptRepository.findAllByQuizIdAndStudentId(quizId, studentId)).thenReturn(List.of(later, earliest));
+        when(testRepository.findById(quizId)).thenReturn(Optional.of(publishedTest));
+        when(questionRepository.findAllByTestIdOrderByOrderingAsc(quizId)).thenReturn(List.of(question));
+        when(optionRepository.findAllByQuestionIdIn(List.of(questionId))).thenReturn(List.of(correctOption));
+        when(attemptRepository.save(any(QuizAttempt.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        QuizAttempt submitted = quizService.submitAnswers(
+                quizId,
+                userId,
+                List.of(new QuestionAnswerDTO(questionId, List.of(correctOptionId.toString())))
+        );
+
+        assertThat(submitted.getId()).isEqualTo(earliest.getId());
+        assertThat(submitted.getStatus()).isEqualTo(QuizAttemptStatus.COMPLETED);
+        assertThat(submitted.getScore()).isEqualTo(10.0);
+        verify(studentRepository).findByUserIdWithLock(userId);
+        verify(attemptRepository).deleteAll(List.of(later));
+        verify(attemptRepository, never()).findByQuizIdAndStudentIdAndStatus(any(), any(), any());
     }
 }

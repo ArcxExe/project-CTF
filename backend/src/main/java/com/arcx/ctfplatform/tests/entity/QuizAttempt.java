@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -19,7 +20,13 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "quiz_attempts")
+@Table(
+        name = "quiz_attempts",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_quiz_attempts_quiz_student",
+                columnNames = {"quiz_id", "student_id"}
+        )
+)
 @Getter
 @Setter
 @NoArgsConstructor
