@@ -42,11 +42,10 @@ public class LabScoreController {
             if (myStudentId == null) {
                 return ResponseEntity.ok(List.of());
             }
-            List<LabScoreResponse> scores = labScoreService.getAllLabScores(scopeType, scopeId);
             return ResponseEntity.ok(
-                    scores.stream()
-                            .filter(s -> myStudentId.equals(s.studentId()))
-                            .toList()
+                    labScoreService.getLabScoreForStudent(myStudentId, scopeType, scopeId)
+                            .map(List::of)
+                            .orElseGet(List::of)
             );
         }
         throw new AccessDeniedException("Access Denied");

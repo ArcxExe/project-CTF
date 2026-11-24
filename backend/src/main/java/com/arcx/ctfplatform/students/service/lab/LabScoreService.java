@@ -6,6 +6,9 @@ import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -117,23 +120,75 @@ public class LabScoreService {
     /**
      * Returns total score for student's 8 laboratory works, accounting for late penalties.
      */
+    public record StudentLabSummary(double finalScore, boolean isEligible) {
+    }
+
     @Transactional(readOnly = true)
     public double getFinalLabScore(UUID studentId) {
         List<StudentLab> labs = studentLabRepository.findAllByStudentId(studentId);
-        Optional<LabScore> labScoreOpt = labScoreRepository.findByStudentId(studentId);
-        if (!labs.isEmpty()) {
+        LabScore labScore = labScoreRepository.findByStudentId(studentId).orElse(null);
+        return computeFinalLabScore(labs, labScore);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, StudentLabSummary> getLabSummariesForStudents(Collection<UUID> studentIds) {
+        if (studentIds == null || studentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<StudentLab> allLabs = studentLabRepository.findAllByStudentIdIn(studentIds);
+        List<LabScore> allLabScores = labScoreRepository.findAllByStudentIdIn(studentIds);
+
+        Map<UUID, List<StudentLab>> labsByStudent = new HashMap<>();
+        if (allLabs != null) {
+            for (StudentLab lab : allLabs) {
+                if (lab != null && lab.getStudent() != null && lab.getStudent().getId() != null) {
+                    labsByStudent.computeIfAbsent(lab.getStudent().getId(), k -> new ArrayList<>()).add(lab);
+                }
+            }
+        }
+
+        Map<UUID, LabScore> labScoreByStudent = new HashMap<>();
+        if (allLabScores != null) {
+            for (LabScore ls : allLabScores) {
+                if (ls != null && ls.getStudent() != null && ls.getStudent().getId() != null) {
+                    labScoreByStudent.putIfAbsent(ls.getStudent().getId(), ls);
+                }
+            }
+        }
+
+        Map<UUID, StudentLabSummary> result = new HashMap<>(studentIds.size());
+        for (UUID sid : studentIds) {
+            if (sid == null) {
+                continue;
+            }
+            List<StudentLab> labs = labsByStudent.getOrDefault(sid, Collections.emptyList());
+            LabScore ls = labScoreByStudent.get(sid);
+            result.put(sid, new StudentLabSummary(computeFinalLabScore(labs, ls), computeEligibility(labs, ls)));
+        }
+        return result;
+    }
+
+    private double computeFinalLabScore(List<StudentLab> labs, LabScore labScore) {
+        if (labs != null && !labs.isEmpty()) {
             double sum = roundToTwoDecimals(labs.stream().mapToDouble(StudentLab::getScore).sum());
-            if (labScoreOpt.isPresent()) {
-                int summaryScore = labScoreOpt.get().getScore();
+            if (labScore != null) {
+                int summaryScore = labScore.getScore();
                 if (summaryScore != (int) Math.round(sum)) {
                     return roundToTwoDecimals((double) summaryScore);
                 }
             }
             return sum;
         }
-        return labScoreOpt
-                .map(s -> roundToTwoDecimals((double) s.getScore()))
-                .orElse(0.0);
+        return labScore != null
+                ? roundToTwoDecimals((double) labScore.getScore())
+                : 0.0;
+    }
+
+    private boolean computeEligibility(List<StudentLab> labs, LabScore labScore) {
+        if (labs != null && !labs.isEmpty()) {
+            return areAllEightLabsAccepted(labs);
+        }
+        return labScore != null && labScore.isEligible();
     }
 
     private boolean areAllEightLabsAccepted(List<StudentLab> labs) {
@@ -171,17 +226,8 @@ public class LabScoreService {
     @Transactional(readOnly = true)
     public boolean isEligible(UUID studentId) {
         List<StudentLab> labs = studentLabRepository.findAllByStudentId(studentId);
-        if (!labs.isEmpty()) {
-            Set<Integer> acceptedLabNumbers = labs.stream()
-                    .filter(StudentLab::isAccepted)
-                    .map(StudentLab::getLabNumber)
-                    .collect(Collectors.toSet());
-            for (int i = 1; i <= 8; i++) {
-                if (!acceptedLabNumbers.contains(i)) {
-                    return false;
-                }
-            }
-            return true;
+        if (labs != null && !labs.isEmpty()) {
+            return areAllEightLabsAccepted(labs);
         }
 
         Optional<LabScore> labScoreOpt = labScoreRepository.findByStudentId(studentId);
@@ -462,6 +508,29 @@ public class LabScoreService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<LabScoreResponse> getLabScoreForStudent(UUID studentId, String scopeType, UUID scopeId) {
+        if (studentId == null) {
+            return Optional.empty();
+        }
+        Optional<Student> studentOpt = studentRepository.findById(studentId);
+        if (studentOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        Student student = studentOpt.get();
+        if (scopeType != null && scopeId != null) {
+            if ("GROUP".equalsIgnoreCase(scopeType) && !scopeId.equals(student.getGroupId())) {
+                return Optional.empty();
+            }
+            if ("FLOW".equalsIgnoreCase(scopeType)
+                    && (student.getAcademicGroup() == null || !scopeId.equals(student.getAcademicGroup().getStreamId()))) {
+                return Optional.empty();
+            }
+        }
+        double exactScore = getFinalLabScore(student.getId());
+        return Optional.of(toLabScoreResponse(student, exactScore));
+    }
+
+    @Transactional(readOnly = true)
     public List<LabScoreResponse> getAllLabScores(String scopeType, UUID scopeId) {
         List<Student> allStudents = studentRepository.findAll();
         if (!allStudents.isEmpty()) {
@@ -476,28 +545,13 @@ public class LabScoreService {
                             .toList();
                 }
             }
+            List<UUID> studentIds = allStudents.stream().map(Student::getId).toList();
+            Map<UUID, StudentLabSummary> summaries = getLabSummariesForStudents(studentIds);
             return allStudents.stream()
                     .map(student -> {
-                        double exactScore = getFinalLabScore(student.getId());
-                        int roundedScore = (int) Math.round(exactScore);
-                        double v1 = roundToTwoDecimals(Math.min(Math.max(exactScore / 143.0, 0.0), 1.0));
-                        String studentName = student.getFullName();
-                        if (studentName == null || studentName.isBlank()) {
-                            studentName = (student.getFirstName() != null ? student.getFirstName() : "") + " "
-                                    + (student.getLastName() != null ? student.getLastName() : "");
-                        }
-                        String groupName = student.getAcademicGroup() != null ? student.getAcademicGroup().getName() : "";
-                        String statusStr = student.getStatus() != null ? student.getStatus().name().toLowerCase() : "";
-
-                        return LabScoreResponse.builder()
-                                .studentId(student.getId())
-                                .studentCode(student.getStudentCode())
-                                .studentName(studentName.trim())
-                                .groupName(groupName)
-                                .status(statusStr)
-                                .score(roundedScore)
-                                .v1Coefficient(v1)
-                                .build();
+                        StudentLabSummary summary = summaries.get(student.getId());
+                        double exactScore = summary != null ? summary.finalScore() : getFinalLabScore(student.getId());
+                        return toLabScoreResponse(student, exactScore);
                     })
                     .collect(Collectors.toList());
         }
@@ -524,5 +578,27 @@ public class LabScoreService {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+    private LabScoreResponse toLabScoreResponse(Student student, double exactScore) {
+        int roundedScore = (int) Math.round(exactScore);
+        double v1 = roundToTwoDecimals(Math.min(Math.max(exactScore / 143.0, 0.0), 1.0));
+        String studentName = student.getFullName();
+        if (studentName == null || studentName.isBlank()) {
+            studentName = (student.getFirstName() != null ? student.getFirstName() : "") + " "
+                    + (student.getLastName() != null ? student.getLastName() : "");
+        }
+        String groupName = student.getAcademicGroup() != null ? student.getAcademicGroup().getName() : "";
+        String statusStr = student.getStatus() != null ? student.getStatus().name().toLowerCase() : "";
+
+        return LabScoreResponse.builder()
+                .studentId(student.getId())
+                .studentCode(student.getStudentCode())
+                .studentName(studentName.trim())
+                .groupName(groupName)
+                .status(statusStr)
+                .score(roundedScore)
+                .v1Coefficient(v1)
+                .build();
     }
 }

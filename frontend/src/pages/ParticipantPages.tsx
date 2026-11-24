@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
 import { useAuthStore } from "@/features/auth/model/authStore";
-import { apiRequest, authTokenStorage } from "@/shared/api/client";
+import { apiRequest, buildSseUrl } from "@/shared/api/client";
 import { attemptsApi } from "@/shared/api/services/attempts";
 import type { AttemptHistoryEntry } from "@/shared/api/services/attempts";
 import { challengesApi } from "@/shared/api/services/challenges";
@@ -526,12 +526,8 @@ export const ParticipantTaskPage = () => {
       })
       .finally(() => setIsLoading(false));
 
-    // Listen for FIRST_BLOOD
-    const token = authTokenStorage.get();
-    const sseUrl = token
-      ? `/api/leaderboard/live?token=${encodeURIComponent(token)}`
-      : "/api/leaderboard/live";
-    const eventSource = new EventSource(sseUrl);
+    // Listen for FIRST_BLOOD on lightweight events-only SSE channel
+    const eventSource = new EventSource(buildSseUrl("/api/leaderboard/events"));
     eventSource.addEventListener("FIRST_BLOOD", (event) => {
       try {
         const data = JSON.parse((event as MessageEvent).data);
@@ -756,33 +752,40 @@ export const ParticipantRatingPage = () => {
   const [adjustments, setAdjustments] = useState<ScoreAdjustmentResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [leaderboardHidden, setLeaderboardHidden] = useState(false);
+  const [competitionChecked, setCompetitionChecked] = useState(false);
 
   useEffect(() => {
-    // Check if leaderboard is hidden
     void competitionsApi.getAll()
       .then((comps) => {
         const now = new Date();
         const active = comps.find((comp) => getCompetitionWindowState(comp, now).isWindowOpen) || comps[0];
-        
+
         if (active?.leaderboardHidden) {
           setLeaderboardHidden(true);
-          setIsLoading(false);
         }
       })
       .catch((err) => {
         console.error("Failed to load competitions", err);
+      })
+      .finally(() => {
+        setCompetitionChecked(true);
       });
 
     void scoreAdjustmentsApi.getAll()
       .then(setAdjustments)
       .catch((err) => console.error("Failed to load score adjustments", err));
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "ctf" || !competitionChecked || leaderboardHidden) {
+      if (leaderboardHidden) {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     setIsLoading(true);
-    const token = authTokenStorage.get();
-    const sseUrl = token
-      ? `/api/leaderboard/live?token=${encodeURIComponent(token)}`
-      : "/api/leaderboard/live";
-    const eventSource = new EventSource(sseUrl);
+    const eventSource = new EventSource(buildSseUrl("/api/leaderboard/live"));
 
     const parseAndSetRows = (data: string) => {
       try {
@@ -838,7 +841,7 @@ export const ParticipantRatingPage = () => {
     return () => {
       eventSource.close();
     };
-  }, [push]);
+  }, [activeTab, competitionChecked, leaderboardHidden, push]);
 
   return (
     <div className="page-stack">

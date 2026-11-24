@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useToastStore } from "@/entities/notification/model/toastStore";
-import { authTokenStorage } from "@/shared/api/client";
+import { buildSseUrl } from "@/shared/api/client";
 import { adminChallengesApi } from "@/shared/api/services/challenges";
 import type { Challenge, TaskImportResultDto } from "@/shared/api/services/challenges";
 import { adminCompetitionsApi } from "@/shared/api/services/competitions";
@@ -2138,11 +2138,7 @@ export const AdminRatingPage = () => {
     void loadAdjustments();
 
     setIsLoading(true);
-    const token = authTokenStorage.get();
-    const sseUrl = token
-      ? `/api/leaderboard/live?token=${encodeURIComponent(token)}`
-      : "/api/leaderboard/live";
-    const eventSource = new EventSource(sseUrl);
+    const eventSource = new EventSource(buildSseUrl("/api/leaderboard/live"));
 
     const parseAndSetRows = (data: string) => {
       try {

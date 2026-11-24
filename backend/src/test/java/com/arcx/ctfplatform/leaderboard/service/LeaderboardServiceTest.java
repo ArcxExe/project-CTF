@@ -664,4 +664,79 @@ class LeaderboardServiceTest {
         // (100 task + 50 quiz) * 2 (default DOUBLE_COEFF) = 300
         assertThat(leaderboard.get(0).ctfScore()).isEqualTo(300);
     }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #24: Unlinked imported student displays fullName/studentCode instead of Unknown")
+    void unlinkedStudentDisplaysFullNameOrCode() {
+        UUID s1Id = UUID.randomUUID();
+        UUID s2Id = UUID.randomUUID();
+        Student s1 = Student.builder().id(s1Id).userId(null).firstName("Иван").lastName("Иванов").studentCode("STU-1").build();
+        Student s2 = Student.builder().id(s2Id).userId(null).firstName("").lastName("").studentCode("STU-2").build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(s1, s2));
+        when(userRepository.findAll()).thenReturn(Collections.emptyList());
+        when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
+        when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
+        when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
+        when(testRepository.findAll()).thenReturn(Collections.emptyList());
+        when(labScoreService.getFinalLabScore(any())).thenReturn(0.0);
+        when(labScoreService.isEligible(any())).thenReturn(false);
+
+        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(null, null);
+
+        assertThat(leaderboard).extracting(LeaderboardService.LeaderboardEntry::username)
+                .containsExactlyInAnyOrder("Иванов Иван", "STU-2");
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #24: Batch lab summaries and preloaded scales avoid per-student N+1 calls")
+    void batchLabSummariesAndScalesAvoidPerStudentQueries() {
+        UUID s1Id = UUID.randomUUID();
+        UUID u1Id = UUID.randomUUID();
+        Student s1 = Student.builder().id(s1Id).userId(u1Id).studentCode("S1").build();
+        User u1 = User.builder().id(u1Id).username("user1").build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(s1));
+        when(userRepository.findAll()).thenReturn(List.of(u1));
+        when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
+        when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
+        when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
+        when(testRepository.findAll()).thenReturn(Collections.emptyList());
+        when(labScoreService.getLabSummariesForStudents(List.of(s1Id)))
+                .thenReturn(Map.of(s1Id, new LabScoreService.StudentLabSummary(110.0, true)));
+        when(gradingService.loadPreloadedScales()).thenReturn(Optional.of(Collections.emptyList()));
+        when(gradingService.calculateGrade(anyDouble(), anyDouble(), anyDouble(), isNull(), anyList())).thenReturn(4);
+
+        List<LeaderboardService.LeaderboardEntry> leaderboard = leaderboardService.getLeaderboardSnapshot(null, null);
+
+        assertThat(leaderboard).hasSize(1);
+        assertThat(leaderboard.get(0).lPercent()).isEqualTo(76.92);
+        assertThat(leaderboard.get(0).recommendedGrade()).isEqualTo(4);
+        verify(labScoreService, never()).getFinalLabScore(any());
+        verify(labScoreService, never()).isEligible(any());
+        verify(gradingService, never()).calculateGrade(anyDouble(), anyDouble(), anyDouble());
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("Issue #24: subscribeEvents does zero DB queries and broadcast computes snapshot once for multiple subscribers")
+    void subscribeEventsZeroQueriesAndBroadcastComputesOnce() {
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter eventsEmitter = leaderboardService.subscribeEvents();
+        assertThat(eventsEmitter).isNotNull();
+        verifyNoInteractions(studentRepository, attemptRepository, quizAttemptRepository, testRepository);
+
+        when(studentRepository.findAll()).thenReturn(Collections.emptyList());
+        when(userRepository.findAll()).thenReturn(Collections.emptyList());
+        when(academicGroupRepository.findAll()).thenReturn(Collections.emptyList());
+        when(attemptRepository.findAll()).thenReturn(Collections.emptyList());
+        when(quizAttemptRepository.findAll()).thenReturn(Collections.emptyList());
+        when(testRepository.findAll()).thenReturn(Collections.emptyList());
+
+        leaderboardService.subscribe(null, null);
+        leaderboardService.subscribe(null, null);
+        clearInvocations(studentRepository);
+
+        leaderboardService.executeBroadcastSync();
+
+        verify(studentRepository, times(1)).findAll();
+    }
 }

@@ -1,6 +1,7 @@
 package com.arcx.ctfplatform.academic.gradebook;
 
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.entity.GradingScale;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
@@ -35,7 +36,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -121,6 +124,28 @@ public class GradebookService {
         Map<UUID, List<ScoreAdjustment>> adjustmentsByStudent = scoreAdjustmentRepository.findAll().stream()
                 .collect(Collectors.groupingBy(ScoreAdjustment::getStudentId));
 
+        List<UUID> studentIds = students.stream()
+                .map(Student::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        List<StudentLab> batchLabs = studentIds.isEmpty()
+                ? Collections.emptyList()
+                : studentLabRepository.findAllByStudentIdIn(studentIds);
+        Map<UUID, List<StudentLab>> labsByStudent = (batchLabs == null ? Collections.<StudentLab>emptyList() : batchLabs)
+                .stream()
+                .filter(sl -> sl.getStudent() != null && sl.getStudent().getId() != null)
+                .collect(Collectors.groupingBy(sl -> sl.getStudent().getId()));
+
+        Map<UUID, LabScoreService.StudentLabSummary> labSummaries =
+                labScoreService.getLabSummariesForStudents(studentIds);
+        if (labSummaries == null) {
+            labSummaries = Collections.emptyMap();
+        }
+        Optional<List<GradingScale>> preloadedScales = gradingService.loadPreloadedScales();
+        if (preloadedScales == null) {
+            preloadedScales = Optional.empty();
+        }
+
         List<GradebookRowDto> rows = new ArrayList<>(students.size());
         int rowIndex = 1;
         for (Student student : students) {
@@ -132,7 +157,10 @@ public class GradebookService {
                     quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     testMap,
                     claimsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
-                    adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList())
+                    adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
+                    labsByStudent.get(student.getId()),
+                    labSummaries.get(student.getId()),
+                    preloadedScales
             ));
         }
         return rows;
@@ -149,12 +177,7 @@ public class GradebookService {
             return Optional.empty();
         }
         Optional<Student> studentOpt = studentRepository.findByUserId(userOpt.get().getId());
-        if (studentOpt.isEmpty()) {
-            return Optional.empty();
-        }
-        Student student = studentOpt.get();
-        List<GradebookRowDto> rows = getGradebook(student.getGroupId(), null);
-        return rows.stream().filter(r -> r.studentId().equals(student.getId())).findFirst();
+        return studentOpt.map(this::buildSingleStudentRow);
     }
 
     @Transactional
@@ -254,14 +277,7 @@ public class GradebookService {
 
         leaderboardService.broadcastUpdate();
 
-        List<GradebookRowDto> groupRows = getGradebook(student.getGroupId(), null);
-        return groupRows.stream()
-                .filter(r -> r.studentId().equals(studentId))
-                .findFirst()
-                .orElseGet(() -> getGradebook(null, null).stream()
-                        .filter(r -> r.studentId().equals(studentId))
-                        .findFirst()
-                        .orElseThrow());
+        return buildSingleStudentRow(student);
     }
 
     @Transactional
@@ -283,10 +299,7 @@ public class GradebookService {
                 leaderboardService.broadcastUpdate();
             }
         }
-        return getGradebook(student.getGroupId(), null).stream()
-                .filter(r -> r.studentId().equals(req.studentId()))
-                .findFirst()
-                .orElseThrow();
+        return buildSingleStudentRow(student);
     }
 
     @Transactional(readOnly = true)
@@ -404,6 +417,48 @@ public class GradebookService {
         return SimpleXlsxUtil.writeSheet("Рейтинг", EXPORT_HEADERS, sheetRows);
     }
 
+    private GradebookRowDto buildSingleStudentRow(Student student) {
+        Map<UUID, AcademicGroup> groupMap = new HashMap<>();
+        if (student.getGroupId() != null) {
+            academicGroupRepository.findById(student.getGroupId())
+                    .ifPresent(group -> groupMap.put(group.getId(), group));
+        }
+        List<Attempt> attempts = attemptRepository.findAllByStudentId(student.getId());
+        List<QuizAttempt> quizzes = quizAttemptRepository.findAllByStudentId(student.getId());
+        Set<UUID> quizIds = quizzes.stream()
+                .map(QuizAttempt::getQuizId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, Test> testMap = quizIds.isEmpty()
+                ? Collections.emptyMap()
+                : testRepository.findAllById(quizIds).stream()
+                        .collect(Collectors.toMap(Test::getId, t -> t, (a, b) -> a));
+        List<PromoCodeClaim> claims = promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId());
+        List<ScoreAdjustment> adjustments = scoreAdjustmentRepository.findAllByStudentId(student.getId());
+        List<StudentLab> studentLabs = studentLabRepository.findAllByStudentId(student.getId());
+        LabScoreService.StudentLabSummary labSummary = new LabScoreService.StudentLabSummary(
+                labScoreService.getFinalLabScore(student.getId()),
+                labScoreService.isEligible(student.getId())
+        );
+        Optional<List<GradingScale>> preloadedScales = gradingService.loadPreloadedScales();
+        if (preloadedScales == null) {
+            preloadedScales = Optional.empty();
+        }
+        return buildRowForStudent(
+                student,
+                1,
+                groupMap,
+                attempts,
+                quizzes,
+                testMap,
+                claims,
+                adjustments,
+                studentLabs,
+                labSummary,
+                preloadedScales
+        );
+    }
+
     private GradebookRowDto buildRowForStudent(
             Student student,
             int rowNumber,
@@ -412,9 +467,14 @@ public class GradebookService {
             List<QuizAttempt> quizzes,
             Map<UUID, Test> testMap,
             List<PromoCodeClaim> claims,
-            List<ScoreAdjustment> adjustments
+            List<ScoreAdjustment> adjustments,
+            List<StudentLab> preloadedLabs,
+            LabScoreService.StudentLabSummary preloadedLabSummary,
+            Optional<List<GradingScale>> preloadedScales
     ) {
-        List<StudentLab> studentLabs = studentLabRepository.findAllByStudentId(student.getId());
+        List<StudentLab> studentLabs = preloadedLabs != null
+                ? preloadedLabs
+                : studentLabRepository.findAllByStudentId(student.getId());
         Map<Integer, StudentLab> labByNum = studentLabs.stream()
                 .collect(Collectors.toMap(StudentLab::getLabNumber, l -> l, (a, b) -> b));
 
@@ -444,8 +504,13 @@ public class GradebookService {
             ));
         }
 
-        double totalLab = roundToTwoDecimals(Math.min(labScoreService.getFinalLabScore(student.getId()), 143.0));
-        boolean isEligible = labScoreService.isEligible(student.getId());
+        double rawLabScore = preloadedLabSummary != null
+                ? preloadedLabSummary.finalScore()
+                : labScoreService.getFinalLabScore(student.getId());
+        double totalLab = roundToTwoDecimals(Math.min(rawLabScore, 143.0));
+        boolean isEligible = preloadedLabSummary != null
+                ? preloadedLabSummary.isEligible()
+                : labScoreService.isEligible(student.getId());
         double lPercent = roundToTwoDecimals(Math.max(0.0, Math.min((totalLab / 143.0) * 100.0, 100.0)));
 
         // KT 1..4
@@ -512,9 +577,15 @@ public class GradebookService {
 
         Integer recommendedGrade = null;
         if (isEligible) {
-            recommendedGrade = gradingService.calculateFinalGradeWithExam(
-                    sScore, lPercent, kPercent, true, student.getExamScore(), studentFlowId
-            );
+            if (preloadedScales != null && preloadedScales.isPresent()) {
+                recommendedGrade = gradingService.calculateFinalGradeWithExam(
+                        sScore, lPercent, kPercent, true, student.getExamScore(), studentFlowId, preloadedScales.get()
+                );
+            } else {
+                recommendedGrade = gradingService.calculateFinalGradeWithExam(
+                        sScore, lPercent, kPercent, true, student.getExamScore(), studentFlowId
+                );
+            }
         }
         int numericGrade = (recommendedGrade != null) ? recommendedGrade : 2;
 

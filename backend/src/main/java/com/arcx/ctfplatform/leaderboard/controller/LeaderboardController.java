@@ -31,4 +31,9 @@ public class LeaderboardController {
             @RequestParam(required = false) java.util.UUID scopeId) {
         return leaderboardService.subscribe(scopeType, scopeId);
     }
+
+    @GetMapping("/events")
+    public SseEmitter streamEvents() {
+        return leaderboardService.subscribeEvents();
+    }
 }

@@ -12,6 +12,7 @@ import com.arcx.ctfplatform.students.entity.lab.StudentLab;
 @Repository
 public interface StudentLabRepository extends JpaRepository<StudentLab, UUID> {
     List<StudentLab> findAllByStudentId(UUID studentId);
+    List<StudentLab> findAllByStudentIdIn(java.util.Collection<UUID> studentIds);
     Optional<StudentLab> findByStudentIdAndLabNumber(UUID studentId, int labNumber);
     void deleteAllByStudentId(UUID studentId);
 

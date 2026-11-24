@@ -17,6 +17,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,10 +64,9 @@ class LabScoreControllerTest {
     }
 
     @Test
-    @DisplayName("getAllScores filters scores to own studentId for ROLE_STUDENT")
+    @DisplayName("getAllScores loads only own score via getLabScoreForStudent for ROLE_STUDENT")
     void testGetAllScoresFiltersForStudent() {
         UUID myId = UUID.randomUUID();
-        UUID otherId = UUID.randomUUID();
         Authentication auth = new UsernamePasswordAuthenticationToken(
                 "student1",
                 null,
@@ -75,15 +75,15 @@ class LabScoreControllerTest {
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         LabScoreResponse mine = new LabScoreResponse(myId, "STU-1", "Student One", "G1", "ACTIVE", 50, 1.0);
-        LabScoreResponse other = new LabScoreResponse(otherId, "STU-2", "Student Two", "G1", "ACTIVE", 80, 1.0);
 
         when(labScoreService.resolveStudentIdForAuth(auth)).thenReturn(myId);
-        when(labScoreService.getAllLabScores("GLOBAL", null)).thenReturn(List.of(mine, other));
+        when(labScoreService.getLabScoreForStudent(myId, "GLOBAL", null)).thenReturn(Optional.of(mine));
 
         ResponseEntity<List<LabScoreResponse>> response = controller.getAllScores("GLOBAL", null);
 
         assertEquals(1, response.getBody().size());
         assertEquals(myId, response.getBody().get(0).studentId());
+        verify(labScoreService, never()).getAllLabScores("GLOBAL", null);
     }
 
     @Test

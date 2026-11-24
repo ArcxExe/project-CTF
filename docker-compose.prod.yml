@@ -8,7 +8,7 @@ services:
       -c work_mem=4MB
       -c maintenance_work_mem=32MB
       -c effective_cache_size=192MB
-      -c max_connections=25
+      -c max_connections=50
     environment:
       POSTGRES_DB: ${DB_NAME:-ctf_platform}
       POSTGRES_USER: ${DB_USER:-ctf_user}
@@ -39,8 +39,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-ctf_platform}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-ctf_user}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-ctf_password}
-      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
-      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 15
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 5
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 10000
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-ctf_platform}

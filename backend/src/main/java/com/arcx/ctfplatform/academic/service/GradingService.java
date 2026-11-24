@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -42,7 +43,11 @@ public class GradingService {
     }
 
     public Integer calculateGrade(double s, double l, double k, UUID flowId) {
-        List<GradingScale> applicable = resolveApplicableScales(flowId);
+        return calculateGrade(s, l, k, flowId, loadAllValidScales());
+    }
+
+    public Integer calculateGrade(double s, double l, double k, UUID flowId, List<GradingScale> preloadedScales) {
+        List<GradingScale> applicable = resolveApplicableScales(flowId, preloadedScales);
         if (!applicable.isEmpty()) {
             boolean isFractionalScale = applicable.stream()
                     .allMatch(sc -> sc.getMaxCoefficient().doubleValue() <= 1.0
@@ -90,7 +95,7 @@ public class GradingService {
         return calculateDefaultGrade(s, l, k);
     }
 
-    private List<GradingScale> resolveApplicableScales(UUID flowId) {
+    public List<GradingScale> loadAllValidScales() {
         if (gradingScaleRepository == null) {
             return List.of();
         }
@@ -98,13 +103,20 @@ public class GradingService {
         if (all == null || all.isEmpty()) {
             return List.of();
         }
-        List<GradingScale> valid = all.stream()
+        return all.stream()
                 .filter(sc -> sc != null
                         && sc.getMinCoefficient() != null
                         && sc.getMaxCoefficient() != null
                         && sc.getGrade() != null)
                 .toList();
-        if (valid.isEmpty()) {
+    }
+
+    public Optional<List<GradingScale>> loadPreloadedScales() {
+        return Optional.of(loadAllValidScales());
+    }
+
+    private List<GradingScale> resolveApplicableScales(UUID flowId, List<GradingScale> valid) {
+        if (valid == null || valid.isEmpty()) {
             return List.of();
         }
         if (flowId != null) {
@@ -177,10 +189,22 @@ public class GradingService {
             Integer examScore,
             UUID flowId
     ) {
+        return calculateFinalGradeWithExam(s, l, k, isEligible, examScore, flowId, loadAllValidScales());
+    }
+
+    public Integer calculateFinalGradeWithExam(
+            double s,
+            double l,
+            double k,
+            boolean isEligible,
+            Integer examScore,
+            UUID flowId,
+            List<GradingScale> preloadedScales
+    ) {
         if (!isEligible) {
             return null;
         }
-        int courseGrade = calculateGrade(s, l, k, flowId);
+        int courseGrade = calculateGrade(s, l, k, flowId, preloadedScales);
         if (examScore != null) {
             int examGrade = mapExamScoreToGrade(examScore);
             return Math.max(courseGrade, examGrade);

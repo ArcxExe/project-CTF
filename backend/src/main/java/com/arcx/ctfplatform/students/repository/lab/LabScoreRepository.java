@@ -14,6 +14,7 @@ import com.arcx.ctfplatform.students.entity.lab.LabScore;
 @Repository
 public interface LabScoreRepository extends JpaRepository<LabScore, UUID> {
     Optional<LabScore> findByStudentId(UUID studentId);
+    List<LabScore> findAllByStudentIdIn(java.util.Collection<UUID> studentIds);
 
     @Query("SELECT MAX(ls.score) FROM LabScore ls JOIN ls.student s WHERE s.academicGroup.id = :groupId AND s.status = com.arcx.ctfplatform.academic.entity.StudentStatus.ACTIVE")
     Optional<Integer> findMaxScoreByGroupId(@Param("groupId") UUID groupId);

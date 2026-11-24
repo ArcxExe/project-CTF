@@ -299,6 +299,9 @@ public class AttendanceService {
     }
 
     private StudentAttendanceRowDto buildStudentRow(Student student) {
+        if (student.getGroupId() == null) {
+            return toRow(student, 1, attendanceRepository.findByStudentId(student.getId()));
+        }
         List<Student> cohort = loadStudents(student.getGroupId());
         sortByFullName(cohort);
 

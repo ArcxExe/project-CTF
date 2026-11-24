@@ -248,18 +248,7 @@ public class AdminAnalyticsService {
 
     @Transactional(readOnly = true)
     public AnalyticsSummary getGroupAnalytics(UUID groupId, UUID flowId) {
-        List<Student> students = studentRepository.findAll();
-
-        if (groupId != null) {
-            students = students.stream().filter(s -> groupId.equals(s.getGroupId())).toList();
-        } else if (flowId != null) {
-            students = students.stream()
-                    .filter(s -> s.getGroupId() != null)
-                    .filter(s -> {
-                        AcademicGroup g = academicGroupRepository.findById(s.getGroupId()).orElse(null);
-                        return g != null && flowId.equals(g.getStreamId());
-                    }).toList();
-        }
+        List<Student> students = filterStudents(studentRepository.findAll(), groupId, flowId);
 
         String scopeType = "GLOBAL";
         UUID scopeId = null;
@@ -304,15 +293,46 @@ public class AdminAnalyticsService {
         int grade3 = 0;
         int grade2 = 0;
 
+        List<UUID> studentIds = students.stream()
+                .map(Student::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        List<LabScore> batchLabScores = studentIds.isEmpty()
+                ? Collections.emptyList()
+                : labScoreRepository.findAllByStudentIdIn(studentIds);
+        Map<UUID, LabScore> labScoreByStudent = new HashMap<>();
+        if (batchLabScores != null) {
+            for (LabScore ls : batchLabScores) {
+                if (ls != null && ls.getStudent() != null && ls.getStudent().getId() != null) {
+                    labScoreByStudent.putIfAbsent(ls.getStudent().getId(), ls);
+                }
+            }
+        }
+        List<StudentLab> batchStudentLabs = (studentLabRepository != null && !studentIds.isEmpty())
+                ? studentLabRepository.findAllByStudentIdIn(studentIds)
+                : Collections.emptyList();
+        Map<UUID, List<StudentLab>> studentLabsByStudent = new HashMap<>();
+        if (batchStudentLabs != null) {
+            for (StudentLab sl : batchStudentLabs) {
+                if (sl != null && sl.getStudent() != null && sl.getStudent().getId() != null) {
+                    studentLabsByStudent.computeIfAbsent(sl.getStudent().getId(), k -> new ArrayList<>()).add(sl);
+                }
+            }
+        }
+
         List<StudentAnalytics> studentAnalyticsList = new ArrayList<>();
 
         for (Student s : students) {
             LeaderboardEntry entry = leadMap.get(s.getId());
-            Optional<LabScore> labScoreOpt = labScoreRepository.findByStudentId(s.getId());
+            Optional<LabScore> labScoreOpt = labScoreByStudent.containsKey(s.getId())
+                    ? Optional.of(labScoreByStudent.get(s.getId()))
+                    : (labScoreByStudent.isEmpty() ? labScoreRepository.findByStudentId(s.getId()) : Optional.empty());
 
-            List<StudentLab> sLabs = (studentLabRepository != null)
-                    ? studentLabRepository.findAllByStudentId(s.getId())
-                    : Collections.emptyList();
+            List<StudentLab> sLabs = studentLabsByStudent.containsKey(s.getId())
+                    ? studentLabsByStudent.get(s.getId())
+                    : ((studentLabRepository != null && studentLabsByStudent.isEmpty())
+                            ? studentLabRepository.findAllByStudentId(s.getId())
+                            : Collections.emptyList());
 
             double exactLabScore;
             int acceptedLabsCount = 0;
@@ -459,19 +479,11 @@ public class AdminAnalyticsService {
 
     @Transactional(readOnly = true)
     public List<TaskAnalytics> getTaskAnalytics(UUID groupId, UUID flowId) {
-        List<Student> students = studentRepository.findAll();
-        if (groupId != null) {
-            students = students.stream().filter(s -> groupId.equals(s.getGroupId())).toList();
-        } else if (flowId != null) {
-            students = students.stream()
-                    .filter(s -> s.getGroupId() != null)
-                    .filter(s -> {
-                        AcademicGroup g = academicGroupRepository.findById(s.getGroupId()).orElse(null);
-                        return g != null && flowId.equals(g.getStreamId());
-                    }).toList();
-        }
+        List<Student> students = filterStudents(studentRepository.findAll(), groupId, flowId);
 
-        Set<UUID> studentIds = students.stream().map(Student::getId).collect(Collectors.toSet());
+        Map<UUID, Student> studentMap = students.stream()
+                .collect(Collectors.toMap(Student::getId, s -> s, (a, b) -> a));
+        Set<UUID> studentIds = studentMap.keySet();
 
         List<CtfTask> tasks = ctfTaskRepository.findAll();
         List<Attempt> allAttempts = attemptRepository.findAll();
@@ -503,9 +515,9 @@ public class AdminAnalyticsService {
             String fbTime = "-";
             if (!correctAttempts.isEmpty()) {
                 Attempt fb = correctAttempts.get(0);
-                Optional<Student> sOpt = studentRepository.findById(fb.getStudentId());
-                if (sOpt.isPresent()) {
-                    fbStudent = sOpt.get().getFullName();
+                Student fbStudentEntity = studentMap.get(fb.getStudentId());
+                if (fbStudentEntity != null) {
+                    fbStudent = fbStudentEntity.getFullName();
                     fbTime = fb.getSubmittedAt().toString();
                 }
             }
@@ -527,17 +539,7 @@ public class AdminAnalyticsService {
 
     @Transactional(readOnly = true)
     public List<StudentTestAnalytics> getStudentTestAnalytics(UUID groupId, UUID flowId) {
-        List<Student> students = studentRepository.findAll();
-        if (groupId != null) {
-            students = students.stream().filter(s -> groupId.equals(s.getGroupId())).toList();
-        } else if (flowId != null) {
-            students = students.stream()
-                    .filter(s -> s.getGroupId() != null)
-                    .filter(s -> {
-                        AcademicGroup g = academicGroupRepository.findById(s.getGroupId()).orElse(null);
-                        return g != null && flowId.equals(g.getStreamId());
-                    }).toList();
-        }
+        List<Student> students = filterStudents(studentRepository.findAll(), groupId, flowId);
 
         List<Test> tests = testRepository.findAll();
         List<Test> publishedTests = tests.stream()
@@ -595,17 +597,7 @@ public class AdminAnalyticsService {
 
     @Transactional(readOnly = true)
     public List<StudentChallengeAnalytics> getStudentChallengeAnalytics(UUID groupId, UUID flowId) {
-        List<Student> students = studentRepository.findAll();
-        if (groupId != null) {
-            students = students.stream().filter(s -> groupId.equals(s.getGroupId())).toList();
-        } else if (flowId != null) {
-            students = students.stream()
-                    .filter(s -> s.getGroupId() != null)
-                    .filter(s -> {
-                        AcademicGroup g = academicGroupRepository.findById(s.getGroupId()).orElse(null);
-                        return g != null && flowId.equals(g.getStreamId());
-                    }).toList();
-        }
+        List<Student> students = filterStudents(studentRepository.findAll(), groupId, flowId);
 
         List<CtfTask> tasks = ctfTaskRepository.findAll();
         List<Attempt> allAttempts = attemptRepository.findAll();
@@ -668,6 +660,24 @@ public class AdminAnalyticsService {
         }
 
         return result;
+    }
+
+    private List<Student> filterStudents(List<Student> students, UUID groupId, UUID flowId) {
+        if (groupId != null) {
+            return students.stream().filter(s -> groupId.equals(s.getGroupId())).toList();
+        }
+        if (flowId != null) {
+            Map<UUID, AcademicGroup> groupMap = academicGroupRepository.findAll().stream()
+                    .collect(Collectors.toMap(AcademicGroup::getId, g -> g, (a, b) -> a));
+            return students.stream()
+                    .filter(s -> s.getGroupId() != null)
+                    .filter(s -> {
+                        AcademicGroup g = groupMap.get(s.getGroupId());
+                        return g != null && flowId.equals(g.getStreamId());
+                    })
+                    .toList();
+        }
+        return students;
     }
 
     private static double roundStatic(double value) {

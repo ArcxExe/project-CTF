@@ -1,6 +1,7 @@
 package com.arcx.ctfplatform.leaderboard.service;
 
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.entity.GradingScale;
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
@@ -26,6 +27,7 @@ import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.Role;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
@@ -43,6 +45,9 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -71,11 +76,41 @@ public class LeaderboardService {
             UUID scopeId,
             boolean isAdmin,
             UUID studentId,
-            String username
+            String username,
+            boolean eventsOnly
+    ) {
+    }
+
+    private record ComputedRow(
+            UUID studentId,
+            UUID groupId,
+            UUID streamId,
+            StudentStatus status,
+            boolean individuallyHidden,
+            String studentUsername,
+            LeaderboardEntry entry
+    ) {
+    }
+
+    private record ProjectionContext(
+            boolean leaderboardHiddenGlobally,
+            List<ComputedRow> rows
     ) {
     }
 
     private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
+    private final ExecutorService sseExecutor = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "leaderboard-sse");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final AtomicBoolean broadcastRunning = new AtomicBoolean(false);
+    private final AtomicBoolean broadcastPending = new AtomicBoolean(false);
+
+    @PreDestroy
+    public void shutdownSseExecutor() {
+        sseExecutor.shutdownNow();
+    }
 
     public LeaderboardService(
             StudentRepository studentRepository,
@@ -161,14 +196,14 @@ public class LeaderboardService {
         String username = resolveUsername(auth);
         UUID studentId = runInTransaction(() -> resolveStudentId(auth, username));
 
-        Subscriber subscriber = new Subscriber(emitter, scopeType, scopeId, isAdmin, studentId, username);
+        Subscriber subscriber = new Subscriber(emitter, scopeType, scopeId, isAdmin, studentId, username, false);
         subscribers.add(subscriber);
 
         emitter.onCompletion(() -> subscribers.remove(subscriber));
         emitter.onTimeout(() -> subscribers.remove(subscriber));
         emitter.onError((e) -> subscribers.remove(subscriber));
 
-        // Send initial state within transaction
+        // Send initial state within transaction, then release DB connection before network send
         try {
             List<LeaderboardEntry> initialSnapshot = runInTransaction(() ->
                     getLeaderboardSnapshotForViewer(scopeType, scopeId, isAdmin, studentId, username));
@@ -180,46 +215,102 @@ public class LeaderboardService {
         return emitter;
     }
 
+    public SseEmitter subscribeEvents() {
+        SseEmitter emitter = new SseEmitter(60 * 60 * 1000L);
+        Subscriber subscriber = new Subscriber(emitter, null, null, false, null, null, true);
+        subscribers.add(subscriber);
+
+        emitter.onCompletion(() -> subscribers.remove(subscriber));
+        emitter.onTimeout(() -> subscribers.remove(subscriber));
+        emitter.onError((e) -> subscribers.remove(subscriber));
+
+        return emitter;
+    }
+
     public void broadcastUpdate() {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        executeBroadcast();
+                        scheduleBroadcast();
                     }
                 }
             );
         } else {
-            executeBroadcast();
+            scheduleBroadcast();
         }
     }
 
-    private void executeBroadcast() {
-        if (subscribers.isEmpty()) {
+    private void scheduleBroadcast() {
+        if (subscribers.stream().allMatch(Subscriber::eventsOnly)) {
             return;
         }
+        broadcastPending.set(true);
+        if (broadcastRunning.compareAndSet(false, true)) {
+            sseExecutor.execute(this::drainBroadcasts);
+        }
+    }
+
+    private void drainBroadcasts() {
+        try {
+            while (broadcastPending.getAndSet(false)) {
+                executeBroadcastSync();
+            }
+        } finally {
+            broadcastRunning.set(false);
+            if (broadcastPending.get() && broadcastRunning.compareAndSet(false, true)) {
+                sseExecutor.execute(this::drainBroadcasts);
+            }
+        }
+    }
+
+    void executeBroadcastSync() {
+        List<Subscriber> leaderboardSubscribers = subscribers.stream()
+                .filter(sub -> !sub.eventsOnly())
+                .toList();
+        if (leaderboardSubscribers.isEmpty()) {
+            return;
+        }
+
+        ProjectionContext context = runInTransaction(this::buildProjectionContext);
+        Map<String, List<LeaderboardEntry>> sharedCache = new HashMap<>();
         List<Subscriber> deadSubscribers = new ArrayList<>();
 
-        runInTransaction(() -> {
-            for (Subscriber sub : subscribers) {
-                try {
-                    List<LeaderboardEntry> snapshot = getLeaderboardSnapshotForViewer(
+        for (Subscriber sub : leaderboardSubscribers) {
+            try {
+                List<LeaderboardEntry> snapshot;
+                if (!context.leaderboardHiddenGlobally()) {
+                    String cacheKey = (sub.scopeType() == null ? "GLOBAL" : sub.scopeType().toUpperCase(Locale.ROOT))
+                            + "|" + (sub.scopeId() == null ? "ALL" : sub.scopeId())
+                            + "|" + sub.isAdmin();
+                    snapshot = sharedCache.computeIfAbsent(cacheKey, k -> projectForViewer(
+                            context,
+                            sub.scopeType(),
+                            sub.scopeId(),
+                            sub.isAdmin(),
+                            sub.studentId(),
+                            sub.username()
+                    ));
+                } else {
+                    snapshot = projectForViewer(
+                            context,
                             sub.scopeType(),
                             sub.scopeId(),
                             sub.isAdmin(),
                             sub.studentId(),
                             sub.username()
                     );
-                    sub.emitter().send(SseEmitter.event().name("UPDATE").data(snapshot));
-                } catch (Exception e) {
-                    deadSubscribers.add(sub);
                 }
+                sub.emitter().send(SseEmitter.event().name("UPDATE").data(snapshot));
+            } catch (Exception e) {
+                deadSubscribers.add(sub);
             }
-            return null;
-        });
+        }
 
-        subscribers.removeAll(deadSubscribers);
+        if (!deadSubscribers.isEmpty()) {
+            subscribers.removeAll(deadSubscribers);
+        }
     }
 
     public void broadcastFirstBlood(String username, String challengeTitle) {
@@ -227,15 +318,20 @@ public class LeaderboardService {
             return;
         }
         Map<String, String> data = Map.of("username", username, "challengeTitle", challengeTitle);
-        List<Subscriber> deadSubscribers = new ArrayList<>();
-        subscribers.forEach(sub -> {
-            try {
-                sub.emitter().send(SseEmitter.event().name("FIRST_BLOOD").data(data));
-            } catch (Exception e) {
-                deadSubscribers.add(sub);
+        List<Subscriber> snapshotSubscribers = List.copyOf(subscribers);
+        sseExecutor.execute(() -> {
+            List<Subscriber> deadSubscribers = new ArrayList<>();
+            for (Subscriber sub : snapshotSubscribers) {
+                try {
+                    sub.emitter().send(SseEmitter.event().name("FIRST_BLOOD").data(data));
+                } catch (Exception e) {
+                    deadSubscribers.add(sub);
+                }
+            }
+            if (!deadSubscribers.isEmpty()) {
+                subscribers.removeAll(deadSubscribers);
             }
         });
-        subscribers.removeAll(deadSubscribers);
     }
 
     @Transactional(readOnly = true)
@@ -254,6 +350,47 @@ public class LeaderboardService {
             UUID viewerStudentId,
             String viewerUsername
     ) {
+        ProjectionContext context = buildProjectionContext();
+        return projectForViewer(context, scopeType, scopeId, isAdmin, viewerStudentId, viewerUsername);
+    }
+
+    private List<LeaderboardEntry> projectForViewer(
+            ProjectionContext context,
+            String scopeType,
+            UUID scopeId,
+            boolean isAdmin,
+            UUID viewerStudentId,
+            String viewerUsername
+    ) {
+        boolean filterGroup = scopeType != null && scopeId != null && "GROUP".equalsIgnoreCase(scopeType);
+        boolean filterFlow = scopeType != null && scopeId != null && "FLOW".equalsIgnoreCase(scopeType);
+
+        List<LeaderboardEntry> result = new ArrayList<>(context.rows().size());
+        for (ComputedRow row : context.rows()) {
+            if (filterGroup && !scopeId.equals(row.groupId())) {
+                continue;
+            }
+            if (filterFlow && !scopeId.equals(row.streamId())) {
+                continue;
+            }
+            if (row.status() == StudentStatus.OUT_OF_RATING && !isAdmin) {
+                continue;
+            }
+            if (row.individuallyHidden() && !isAdmin) {
+                continue;
+            }
+            boolean isCurrentUser = (viewerStudentId != null && viewerStudentId.equals(row.studentId()))
+                    || (row.studentUsername() != null && viewerUsername != null
+                    && row.studentUsername().equalsIgnoreCase(viewerUsername));
+            if (context.leaderboardHiddenGlobally() && !isAdmin && !isCurrentUser) {
+                continue;
+            }
+            result.add(row.entry());
+        }
+        return result;
+    }
+
+    private ProjectionContext buildProjectionContext() {
         List<Student> allStudents = studentRepository.findAll();
         List<QuizAttempt> allQuizzes = quizAttemptRepository.findAll();
         List<Test> allTests = testRepository.findAll();
@@ -266,19 +403,6 @@ public class LeaderboardService {
         Map<UUID, String> groupIdToGroupName = allGroups.stream()
                 .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName, (a, b) -> a));
 
-        if (scopeType != null && scopeId != null) {
-            if ("GROUP".equalsIgnoreCase(scopeType)) {
-                allStudents = allStudents.stream().filter(s -> scopeId.equals(s.getGroupId())).toList();
-            } else if ("FLOW".equalsIgnoreCase(scopeType)) {
-                allStudents = allStudents.stream()
-                        .filter(s -> s.getGroupId() != null)
-                        .filter(s -> {
-                            AcademicGroup group = groupMap.get(s.getGroupId());
-                            return group != null && scopeId.equals(group.getStreamId());
-                        }).toList();
-            }
-        }
-
         List<User> allUsers = userRepository.findAll();
         Map<UUID, String> userIdToUsername = allUsers.stream()
                 .collect(Collectors.toMap(
@@ -287,11 +411,9 @@ public class LeaderboardService {
                         (a, b) -> a
                 ));
 
-        // Determine active competition (prefer CompetitionStatus.ACTIVE)
         List<Competition> competitions = competitionRepository.findAll();
         Instant now = Instant.now();
         Competition activeComp = selectActiveCompetition(competitions, now);
-
         boolean leaderboardHiddenGlobally = activeComp != null && activeComp.isLeaderboardHidden();
 
         List<Attempt> allAttempts = attemptRepository.findAll();
@@ -309,57 +431,63 @@ public class LeaderboardService {
         Map<UUID, List<ScoreAdjustment>> adjustmentsByStudent = allAdjustments.stream()
                 .collect(Collectors.groupingBy(ScoreAdjustment::getStudentId));
 
+        List<UUID> allStudentIds = allStudents.stream()
+                .map(Student::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<UUID, LabScoreService.StudentLabSummary> labSummaries =
+                labScoreService.getLabSummariesForStudents(allStudentIds);
+        if (labSummaries == null) {
+            labSummaries = Collections.emptyMap();
+        }
+        Optional<List<GradingScale>> preloadedScales = gradingService.loadPreloadedScales();
+        if (preloadedScales == null) {
+            preloadedScales = Optional.empty();
+        }
+
         Map<UUID, Instant> studentLastTxTime = new HashMap<>();
         Map<UUID, Long> studentWrongAttempts = new HashMap<>();
-        List<LeaderboardEntry> entries = new ArrayList<>();
+        List<ComputedRow> computedRows = new ArrayList<>(allStudents.size());
 
         for (Student student : allStudents) {
-            // Exclude OUT_OF_RATING students from non-admin leaderboards
-            if (student.getStatus() == StudentStatus.OUT_OF_RATING && !isAdmin) {
-                continue;
-            }
-
-            // Check if student is individually hidden
             boolean isIndividuallyHidden = activeComp != null
                     && activeComp.getHiddenStudentIds() != null
                     && activeComp.getHiddenStudentIds().contains(student.getId());
-            if (isIndividuallyHidden && !isAdmin) {
-                continue;
-            }
 
-            String studentUsername = userIdToUsername.get(student.getUserId());
-            boolean isCurrentUser = (viewerStudentId != null && viewerStudentId.equals(student.getId()))
-                    || (studentUsername != null && viewerUsername != null && studentUsername.equalsIgnoreCase(viewerUsername));
+            String studentUsername = student.getUserId() != null ? userIdToUsername.get(student.getUserId()) : null;
+            String displayName = resolveStudentDisplayName(student, studentUsername);
 
-            // If leaderboard is hidden globally, students can only see their own entry
-            if (leaderboardHiddenGlobally && !isAdmin && !isCurrentUser) {
-                continue;
-            }
-
-            String username = userIdToUsername.getOrDefault(student.getUserId(), "Unknown");
+            AcademicGroup studentGroup = student.getGroupId() != null ? groupMap.get(student.getGroupId()) : null;
+            UUID studentFlowId = studentGroup != null ? studentGroup.getStreamId() : null;
             String groupName = student.getGroupId() != null
                     ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы")
                     : "Без группы";
 
-            // Zero out scores/grade=2 for DISQUALIFIED students
             if (student.getStatus() == StudentStatus.DISQUALIFIED) {
-                entries.add(new LeaderboardEntry(
+                computedRows.add(new ComputedRow(
                         student.getId(),
-                        username,
-                        groupName,
-                        0,
-                        0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        2,
-                        false
+                        student.getGroupId(),
+                        studentFlowId,
+                        student.getStatus(),
+                        isIndividuallyHidden,
+                        studentUsername,
+                        new LeaderboardEntry(
+                                student.getId(),
+                                displayName,
+                                groupName,
+                                0,
+                                0,
+                                0.0,
+                                0.0,
+                                0.0,
+                                0.0,
+                                2,
+                                false
+                        )
                 ));
                 continue;
             }
 
-            // --- 1. CTF SCORE CALCULATION ---
             List<Attempt> studentAttempts = attemptsByStudent.getOrDefault(student.getId(), Collections.emptyList());
             long wrongAttemptsCount = studentAttempts.stream().filter(a -> !a.isCorrect()).count();
             studentWrongAttempts.put(student.getId(), wrongAttemptsCount);
@@ -383,7 +511,6 @@ public class LeaderboardService {
                 }
             }
 
-            // Promo codes (batch-fetched with JOIN FETCH promoCode)
             List<PromoCodeClaim> claims = claimsByStudent.getOrDefault(student.getId(), Collections.emptyList());
             int additions = 0;
             int subtractions = 0;
@@ -406,14 +533,12 @@ public class LeaderboardService {
                 ctfScore = 0;
             }
 
-            // Score adjustments (batch-fetched)
             List<ScoreAdjustment> adjustments = adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList());
             ctfScore += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
             if (ctfScore < 0) {
                 ctfScore = 0;
             }
 
-            // Record latest successful CTF transaction time for tie-breaking
             Instant lastTx = null;
             for (Attempt a : correctAttempts) {
                 if (a.getSubmittedAt() != null && (lastTx == null || a.getSubmittedAt().isAfter(lastTx))) {
@@ -435,11 +560,8 @@ public class LeaderboardService {
             }
 
             int solvedCount = correctAttempts.size();
-
-            // Component C: normative 800 raw points, capped at 100%
             double cPercent = roundToTwoDecimals(Math.max(0.0, Math.min((ctfScore / 800.0) * 100.0, 100.0)));
 
-            // --- 2. CONTROL POINTS (K) ---
             double[] slotKt = new double[] {
                 Math.max(0.0, Math.min(student.getKt1(), 25.0)),
                 Math.max(0.0, Math.min(student.getKt2(), 25.0)),
@@ -467,24 +589,23 @@ public class LeaderboardService {
             bKt = roundToTwoDecimals(Math.min(bKt, 100.0));
             double kPercent = roundToTwoDecimals(Math.max(0.0, Math.min((bKt / 100.0) * 100.0, 100.0)));
 
-            // --- 3. LABS (L) ---
-            double bLab = labScoreService.getFinalLabScore(student.getId());
+            LabScoreService.StudentLabSummary labSummary = labSummaries.get(student.getId());
+            double bLab = labSummary != null ? labSummary.finalScore() : labScoreService.getFinalLabScore(student.getId());
             double lPercent = roundToTwoDecimals(Math.max(0.0, Math.min((bLab / 143.0) * 100.0, 100.0)));
+            boolean isEligible = labSummary != null ? labSummary.isEligible() : labScoreService.isEligible(student.getId());
 
-            // --- 4. ACADEMIC ADMISSION ELIGIBILITY ---
-            boolean isEligible = labScoreService.isEligible(student.getId());
-
-            // --- 5. OVERALL COURSE SCORE (S) ---
             double sScore = roundToTwoDecimals(0.50 * lPercent + 0.25 * kPercent + 0.25 * cPercent);
 
-            // --- 6. RECOMMENDED ACADEMIC GRADE ---
-            AcademicGroup studentGroup = student.getGroupId() != null ? groupMap.get(student.getGroupId()) : null;
-            UUID studentFlowId = studentGroup != null ? studentGroup.getStreamId() : null;
             Integer recommendedGrade = null;
             if (isEligible) {
-                Integer baseGrade = studentFlowId != null
-                        ? gradingService.calculateGrade(sScore, lPercent, kPercent, studentFlowId)
-                        : gradingService.calculateGrade(sScore, lPercent, kPercent);
+                Integer baseGrade;
+                if (preloadedScales.isPresent()) {
+                    baseGrade = gradingService.calculateGrade(sScore, lPercent, kPercent, studentFlowId, preloadedScales.get());
+                } else {
+                    baseGrade = studentFlowId != null
+                            ? gradingService.calculateGrade(sScore, lPercent, kPercent, studentFlowId)
+                            : gradingService.calculateGrade(sScore, lPercent, kPercent);
+                }
                 if (student.getExamScore() != null && baseGrade != null) {
                     Integer mappedExam = gradingService.mapExamScoreToGrade(student.getExamScore());
                     int examGrade = (mappedExam != null && mappedExam >= 2)
@@ -496,25 +617,32 @@ public class LeaderboardService {
                 }
             }
 
-            entries.add(new LeaderboardEntry(
+            computedRows.add(new ComputedRow(
                     student.getId(),
-                    username,
-                    groupName,
-                    ctfScore,
-                    solvedCount,
-                    lPercent,
-                    kPercent,
-                    cPercent,
-                    sScore,
-                    recommendedGrade,
-                    isEligible
+                    student.getGroupId(),
+                    studentFlowId,
+                    student.getStatus(),
+                    isIndividuallyHidden,
+                    studentUsername,
+                    new LeaderboardEntry(
+                            student.getId(),
+                            displayName,
+                            groupName,
+                            ctfScore,
+                            solvedCount,
+                            lPercent,
+                            kPercent,
+                            cPercent,
+                            sScore,
+                            recommendedGrade,
+                            isEligible
+                    )
             ));
         }
 
-        // --- 7. SORTING ---
-        // Leaderboard sorted by descending CTF score, tie-broken by earliest last successful transaction time,
-        // then by fewer wrong attempts, then by username
-        entries.sort((e1, e2) -> {
+        computedRows.sort((r1, r2) -> {
+            LeaderboardEntry e1 = r1.entry();
+            LeaderboardEntry e2 = r2.entry();
             int scoreCompare = Integer.compare(e2.ctfScore(), e1.ctfScore());
             if (scoreCompare != 0) {
                 return scoreCompare;
@@ -542,7 +670,26 @@ public class LeaderboardService {
             return e1.username().compareToIgnoreCase(e2.username());
         });
 
-        return entries;
+        return new ProjectionContext(leaderboardHiddenGlobally, computedRows);
+    }
+
+    private String resolveStudentDisplayName(Student student, String username) {
+        if (username != null && !username.isBlank()) {
+            return username;
+        }
+        String fullName = student.getFullName();
+        if (fullName != null && !fullName.isBlank()
+                && !"Студент".equals(fullName)
+                && !"Student New".equals(fullName)) {
+            return fullName;
+        }
+        if (student.getStudentCode() != null && !student.getStudentCode().isBlank()) {
+            return student.getStudentCode();
+        }
+        if (fullName != null && !fullName.isBlank()) {
+            return fullName;
+        }
+        return "Unknown";
     }
 
     private Competition selectActiveCompetition(List<Competition> competitions, Instant now) {

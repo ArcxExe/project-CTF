@@ -2,6 +2,7 @@ package com.arcx.ctfplatform.academic.gradebook;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -140,7 +141,7 @@ class GradebookServiceTest {
 
         when(studentRepository.findAll()).thenReturn(List.of(student));
         when(academicGroupRepository.findAll()).thenReturn(List.of(group));
-        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(labs);
+        when(studentLabRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(labs);
         when(attemptRepository.findAll()).thenReturn(List.of(ctfAttempt));
         when(quizAttemptRepository.findAll()).thenReturn(List.of());
         when(testRepository.findAll()).thenReturn(List.of());
@@ -193,7 +194,7 @@ class GradebookServiceTest {
 
         when(studentRepository.findAll()).thenReturn(List.of(student));
         when(academicGroupRepository.findAll()).thenReturn(List.of(group));
-        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(labs);
+        when(studentLabRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(labs);
         when(attemptRepository.findAll()).thenReturn(List.of());
         when(quizAttemptRepository.findAll()).thenReturn(List.of());
         when(testRepository.findAll()).thenReturn(List.of());
@@ -214,7 +215,7 @@ class GradebookServiceTest {
     void testExportCsvAndXlsx() throws Exception {
         when(studentRepository.findAll()).thenReturn(List.of(student));
         when(academicGroupRepository.findAll()).thenReturn(List.of(group));
-        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(studentLabRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(List.of());
         when(attemptRepository.findAll()).thenReturn(List.of());
         when(quizAttemptRepository.findAll()).thenReturn(List.of());
         when(testRepository.findAll()).thenReturn(List.of());
@@ -242,15 +243,13 @@ class GradebookServiceTest {
     @DisplayName("updateStudentGradebook updates pair, KT1..4, token, examScore, and lab scores")
     void testUpdateStudentGradebook() {
         when(studentRepository.findById(student.getId())).thenReturn(Optional.of(student));
-        when(studentRepository.findAll()).thenReturn(List.of(student));
-        when(academicGroupRepository.findAll()).thenReturn(List.of(group));
+        when(academicGroupRepository.findById(groupId)).thenReturn(Optional.of(group));
         when(studentLabRepository.findByStudentIdAndLabNumber(student.getId(), 1)).thenReturn(Optional.empty());
         when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
-        when(attemptRepository.findAll()).thenReturn(List.of());
-        when(quizAttemptRepository.findAll()).thenReturn(List.of());
-        when(testRepository.findAll()).thenReturn(List.of());
-        when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(List.of());
-        when(scoreAdjustmentRepository.findAll()).thenReturn(List.of());
+        when(attemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(quizAttemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId())).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
 
         GradebookUpdateRequest req = new GradebookUpdateRequest(
                 2,
@@ -297,8 +296,8 @@ class GradebookServiceTest {
 
         when(studentRepository.findAll()).thenReturn(List.of(student));
         when(academicGroupRepository.findAll()).thenReturn(List.of(group));
-        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of(lab1));
-        when(labScoreRepository.findByStudentId(student.getId())).thenReturn(Optional.of(summaryScore));
+        when(studentLabRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(List.of(lab1));
+        when(labScoreRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(List.of(summaryScore));
         when(attemptRepository.findAll()).thenReturn(List.of());
         when(quizAttemptRepository.findAll()).thenReturn(List.of());
         when(testRepository.findAll()).thenReturn(List.of());
@@ -316,5 +315,34 @@ class GradebookServiceTest {
         assertThat(row.acceptedLabsCount()).isEqualTo(1);
         assertThat(row.isEligible()).isFalse();
         assertThat(row.grade()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Issue #24: getMyGradebookRow loads only single student data without findAll table scans")
+    void getMyGradebookRowUsesSingleStudentQueriesWithoutFullScans() {
+        UUID userId = UUID.randomUUID();
+        student.setUserId(userId);
+        com.arcx.ctfplatform.users.entity.User user = com.arcx.ctfplatform.users.entity.User.builder()
+                .id(userId)
+                .username("damir")
+                .build();
+
+        when(userRepository.findByUsername("damir")).thenReturn(Optional.of(user));
+        when(studentRepository.findByUserId(userId)).thenReturn(Optional.of(student));
+        when(academicGroupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(attemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(quizAttemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId())).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+
+        Optional<GradebookRowDto> rowOpt = gradebookService.getMyGradebookRow("damir");
+
+        assertThat(rowOpt).isPresent();
+        assertThat(rowOpt.get().studentId()).isEqualTo(student.getId());
+        verify(studentRepository, never()).findAll();
+        verify(attemptRepository, never()).findAll();
+        verify(quizAttemptRepository, never()).findAll();
+        verify(academicGroupRepository, never()).findAll();
     }
 }
