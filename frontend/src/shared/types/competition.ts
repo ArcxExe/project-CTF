@@ -6,8 +6,8 @@ export interface Competition {
   title: string;
   description: string;
   status: "draft" | "published" | "archived" | "active" | "completed";
-  startsAt: ISODateTime;
-  endsAt: ISODateTime;
+  startsAt: ISODateTime | null;
+  endsAt: ISODateTime | null;
   ratingVisible: boolean;
   promoCodesEnabled: boolean;
   testId?: Identifier;

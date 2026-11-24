@@ -13,7 +13,7 @@ import type { LeaderboardRow } from "@/shared/api/services/leaderboard";
 import { promoCodesApi } from "@/shared/api/services/promoCodes";
 import { testsApi } from "@/shared/api/services/tests";
 import type { CtfTest, QuizAttempt } from "@/shared/api/services/tests";
-import { competitionsApi } from "@/shared/api/services/competitions";
+import { competitionsApi, getCompetitionWindowState } from "@/shared/api/services/competitions";
 import type { Competition } from "@/shared/types/competition";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
 import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
@@ -177,13 +177,14 @@ export const ParticipantCompetitionPage = () => {
           {competitions.map((competition) => {
             const linkedTest = tests.find(t => t.competitionId === competition.id);
             const testUrl = linkedTest ? `/participant/test/${linkedTest.id}` : "/participant/test";
-            const isActive = competition.status === "active" || competition.status === "published";
-            const now = new Date();
-            const startDate = new Date(competition.startsAt);
-            const endDate = new Date(competition.endsAt);
-            const isNotStarted = !isNaN(startDate.getTime()) && startDate > now;
-            const isEnded = !isNaN(endDate.getTime()) && endDate < now;
-            const isWindowOpen = isActive && !isNotStarted && !isEnded;
+            const {
+              isActiveStatus: isActive,
+              startDate,
+              endDate,
+              isNotStarted,
+              isEnded,
+              isWindowOpen,
+            } = getCompetitionWindowState(competition);
 
             let windowStateLabel = "Открыто (приём решений идёт)";
             let windowStateColor = "var(--success)";
@@ -208,9 +209,9 @@ export const ParticipantCompetitionPage = () => {
                     </div>
                     <div className="info-grid">
                       <span>Старт</span>
-                      <strong>{startDate.toLocaleString("ru-RU")}</strong>
+                      <strong>{startDate ? startDate.toLocaleString("ru-RU") : "Не указан (открыто сразу)"}</strong>
                       <span>Финиш</span>
-                      <strong>{endDate.toLocaleString("ru-RU")}</strong>
+                      <strong>{endDate ? endDate.toLocaleString("ru-RU") : "Без ограничения по времени"}</strong>
                       <span>Адм. статус</span>
                       <strong>{isActive ? "Активно (опубликовано)" : "Завершено"}</strong>
                       <span>Окно сдачи</span>
@@ -227,7 +228,7 @@ export const ParticipantCompetitionPage = () => {
 
                 <Card>
                   <div className="page-stack">
-                    {isActive && isEnded && (
+                    {isActive && isEnded && endDate && (
                       <div className="muted" style={{ fontSize: "0.85rem", color: "#eab308" }}>
                         Календарное окно сдачи этого соревнования завершилось ({endDate.toLocaleDateString("ru-RU")}). Задачи закрыты для отправки на странице CTF.
                       </div>
@@ -451,11 +452,7 @@ export const ParticipantCtfPage = () => {
   }
 
   const now = new Date();
-  const activeCompetitions = competitions.filter(comp => {
-    const start = new Date(comp.startsAt);
-    const end = new Date(comp.endsAt);
-    return (comp.status === "active" || comp.status === "published") && start <= now && now <= end;
-  });
+  const activeCompetitions = competitions.filter((comp) => getCompetitionWindowState(comp, now).isWindowOpen);
 
   const hasAnyActiveTasks = activeCompetitions.some(c => (c.tasks || []).length > 0);
 
@@ -765,11 +762,7 @@ export const ParticipantRatingPage = () => {
     void competitionsApi.getAll()
       .then((comps) => {
         const now = new Date();
-        const active = comps.find(comp => {
-          const start = new Date(comp.startsAt);
-          const end = new Date(comp.endsAt);
-          return start <= now && now <= end;
-        }) || comps[0];
+        const active = comps.find((comp) => getCompetitionWindowState(comp, now).isWindowOpen) || comps[0];
         
         if (active?.leaderboardHidden) {
           setLeaderboardHidden(true);
