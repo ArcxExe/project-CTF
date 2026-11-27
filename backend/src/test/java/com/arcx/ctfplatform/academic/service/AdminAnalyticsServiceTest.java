@@ -247,4 +247,68 @@ class AdminAnalyticsServiceTest {
         assertThat(rows.get(0).status()).isEqualTo("COMPLETED");
         assertThat(rows.get(0).score()).isEqualTo(45);
     }
+
+    @Test
+    @DisplayName("Issue #28: DISQUALIFIED student has zeroed lab/KT/CTF metrics and does not inflate group averages or maxLab")
+    void testDisqualifiedStudentZeroedInGroupAnalytics() {
+        UUID disqId = UUID.randomUUID();
+        Student disqStudent = Student.builder()
+                .id(disqId)
+                .firstName("Дисквал")
+                .lastName("Студент")
+                .status(StudentStatus.DISQUALIFIED)
+                .kt1(25.0)
+                .kt2(25.0)
+                .build();
+
+        com.arcx.ctfplatform.students.entity.lab.LabScore oldLabScore =
+                com.arcx.ctfplatform.students.entity.lab.LabScore.builder()
+                        .student(disqStudent)
+                        .score(130)
+                        .isEligible(true)
+                        .build();
+
+        LeaderboardService.LeaderboardEntry disqEntry = new LeaderboardService.LeaderboardEntry(
+                disqId,
+                "disq_user",
+                "Группа 1",
+                0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                2,
+                false
+        );
+
+        when(studentRepository.findAll()).thenReturn(List.of(disqStudent));
+        when(leaderboardService.getLeaderboardSnapshot("GLOBAL", null)).thenReturn(List.of(disqEntry));
+        when(labScoreRepository.findAllByStudentIdIn(List.of(disqId))).thenReturn(List.of(oldLabScore));
+
+        AdminAnalyticsService.AnalyticsSummary summary = adminAnalyticsService.getGroupAnalytics(null, null);
+
+        assertThat(summary.students()).hasSize(1);
+        AdminAnalyticsService.StudentAnalytics sa = summary.students().get(0);
+        assertThat(sa.labScore()).isZero();
+        assertThat(sa.exactLabScore()).isZero();
+        assertThat(sa.acceptedLabsCount()).isZero();
+        assertThat(sa.isEligible()).isFalse();
+        assertThat(sa.lPercent()).isZero();
+        assertThat(sa.ktScore()).isZero();
+        assertThat(sa.kPercent()).isZero();
+        assertThat(sa.totalPoints()).isZero();
+        assertThat(sa.ctfScore()).isZero();
+        assertThat(sa.cPercent()).isZero();
+        assertThat(sa.sScore()).isZero();
+        assertThat(sa.recommendedGrade()).isEqualTo("2");
+        assertThat(sa.numericGrade()).isEqualTo(2);
+
+        assertThat(summary.metrics().maxLabScore()).isZero();
+        assertThat(summary.metrics().avgLabScore()).isZero();
+        assertThat(summary.metrics().avgKtScore()).isZero();
+        assertThat(summary.metrics().avgKtPercent()).isZero();
+        assertThat(summary.metrics().blockedOrDisqualifiedCount()).isEqualTo(1);
+        assertThat(summary.metrics().grade2Count()).isEqualTo(1);
+    }
 }

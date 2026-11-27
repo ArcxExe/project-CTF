@@ -111,24 +111,28 @@ export const GradebookView = ({
     }
   };
 
+  const buildRowDraft = (r: GradebookRowDto): RowDraft => {
+    const labMap: Record<number, string> = {};
+    for (let i = 1; i <= 8; i++) {
+      const cell: LabCellDto | undefined = r.labs?.[i];
+      labMap[i] = cell ? String(cell.score) : "0";
+    }
+    return {
+      pairNumber: r.pairNumber != null ? String(r.pairNumber) : "",
+      labs: labMap,
+      kt1: String(r.kt1 ?? 0),
+      kt2: String(r.kt2 ?? 0),
+      kt3: String(r.kt3 ?? 0),
+      kt4: String(r.kt4 ?? 0),
+      token: r.token ?? "",
+      examScore: r.examScore != null ? String(r.examScore) : "",
+    };
+  };
+
   const initDrafts = (loadedRows: GradebookRowDto[]) => {
     const nextDrafts: Record<string, RowDraft> = {};
     for (const r of loadedRows) {
-      const labMap: Record<number, string> = {};
-      for (let i = 1; i <= 8; i++) {
-        const cell: LabCellDto | undefined = r.labs?.[i];
-        labMap[i] = cell ? String(cell.score) : "0";
-      }
-      nextDrafts[r.studentId] = {
-        pairNumber: r.pairNumber != null ? String(r.pairNumber) : "",
-        labs: labMap,
-        kt1: String(r.kt1 ?? 0),
-        kt2: String(r.kt2 ?? 0),
-        kt3: String(r.kt3 ?? 0),
-        kt4: String(r.kt4 ?? 0),
-        token: r.token ?? "",
-        examScore: r.examScore != null ? String(r.examScore) : "",
-      };
+      nextDrafts[r.studentId] = buildRowDraft(r);
     }
     setDrafts(nextDrafts);
     setDirtyRows({});
@@ -174,9 +178,41 @@ export const GradebookView = ({
     return Number.isFinite(n) ? n : 0;
   };
 
+  const parsePenaltyCoefficient = (str: string): number => {
+    const trimmed = str.trim();
+    if (!trimmed) return 1.0;
+    const parsed = Number(trimmed.replace(",", "."));
+    if (!Number.isFinite(parsed)) return 1.0;
+    return Math.max(0, Math.min(1, parsed));
+  };
+
   const handleSaveRow = async (studentId: string) => {
     const d = drafts[studentId];
     if (!d) return;
+
+    if (d.token.trim().length > 64) {
+      push({
+        title: "Токен не должен превышать 64 символа",
+        variant: "error",
+      });
+      return;
+    }
+
+    const trimmedExam = d.examScore.trim();
+    const clearExamScore = trimmedExam === "";
+    let examScorePayload: number | null = null;
+    if (!clearExamScore) {
+      const parsedExam = Number(trimmedExam);
+      if (!Number.isInteger(parsedExam) || parsedExam < 0 || parsedExam > 100) {
+        push({
+          title: "Балл за экзамен должен быть целым числом от 0 до 100",
+          variant: "error",
+        });
+        return;
+      }
+      examScorePayload = parsedExam;
+    }
+
     setSavingStudentId(studentId);
     try {
       const labScores: Record<number, number> = {};
@@ -184,7 +220,6 @@ export const GradebookView = ({
         labScores[i] = parseNum(d.labs[i]);
       }
       const pairInt = d.pairNumber.trim() ? parseInt(d.pairNumber.trim(), 10) : null;
-      const examInt = d.examScore.trim() ? parseInt(d.examScore.trim(), 10) : null;
 
       const updated = await gradebookApi.updateStudentRow(studentId, {
         pairNumber: pairInt && pairInt > 0 ? pairInt : 0,
@@ -194,12 +229,17 @@ export const GradebookView = ({
         kt3: parseNum(d.kt3),
         kt4: parseNum(d.kt4),
         token: d.token,
-        examScore: examInt != null && Number.isFinite(examInt) && examInt >= 0 && examInt <= 100 ? examInt : null,
+        examScore: examScorePayload,
+        clearExamScore,
       });
 
       setRows((curr) =>
-        curr.map((r) => (r.studentId === studentId ? updated : r))
+        curr.map((r) => (r.studentId === studentId ? { ...updated, rowNumber: r.rowNumber } : r))
       );
+      setDrafts((curr) => ({
+        ...curr,
+        [studentId]: buildRowDraft(updated),
+      }));
       setDirtyRows((curr) => ({ ...curr, [studentId]: false }));
       push({
         title: `Строка ведомости сохранена (${updated.fullName})`,
@@ -238,10 +278,10 @@ export const GradebookView = ({
         labNumber: labModal.labNumber,
         rawScore: parseNum(labModal.rawScore),
         defenseScore: parseNum(labModal.defenseScore),
-        penaltyCoefficient: parseNum(labModal.penaltyCoefficient) || 1.0,
+        penaltyCoefficient: parsePenaltyCoefficient(labModal.penaltyCoefficient),
       });
       setRows((curr) =>
-        curr.map((r) => (r.studentId === labModal.studentId ? updated : r))
+        curr.map((r) => (r.studentId === labModal.studentId ? { ...updated, rowNumber: r.rowNumber } : r))
       );
       setDrafts((curr) => {
         const existing = curr[labModal.studentId];
@@ -675,7 +715,14 @@ export const GradebookView = ({
                         </td>
 
                         <td style={{ ...cellStyle, textAlign: "left", fontWeight: 500 }}>
-                          <div>{row.fullName}</div>
+                          <div>
+                            {row.fullName}
+                            {row.status === "disqualified" && (
+                              <span style={{ marginLeft: 6, color: "#f87171", fontSize: "0.75rem" }}>
+                                (Дисквалифицирован)
+                              </span>
+                            )}
+                          </div>
                           <div className="muted" style={{ fontSize: "0.74rem" }}>
                             {row.groupName} • Допуск ЛР: {row.acceptedLabsCount}/8{" "}
                             {row.isEligible
@@ -835,6 +882,7 @@ export const GradebookView = ({
                           {editable && draft ? (
                             <input
                               type="text"
+                              maxLength={64}
                               style={{ ...compactInputStyle, width: 76 }}
                               value={draft.token}
                               placeholder="Токен"
@@ -878,7 +926,7 @@ export const GradebookView = ({
                               }
                             />
                           ) : (
-                            row.examScore != null && row.examScore > 0 ? row.examScore : "—"
+                            row.examScore != null ? row.examScore : "—"
                           )}
                         </td>
 
@@ -1028,6 +1076,7 @@ export const GradebookView = ({
                 <option value="1">1.00 — Сдано в срок (без штрафа)</option>
                 <option value="0.85">0.85 — Опоздание до 7 дней (−15%)</option>
                 <option value="0.7">0.70 — Опоздание более 7 дней (−30%)</option>
+                <option value="0">0.00 — Работа аннулирована (0%)</option>
               </select>
             </div>
 

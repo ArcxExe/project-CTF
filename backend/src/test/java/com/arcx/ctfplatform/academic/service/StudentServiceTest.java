@@ -250,4 +250,35 @@ class StudentServiceTest {
 
         verify(userRepository, never()).deleteById(demoUserId);
     }
+
+    @Test
+    @DisplayName("Issue #30: createStudent and updateStudent reject case-insensitive duplicate studentCode")
+    void testCaseInsensitiveStudentCodeUniqueness() {
+        Student existing = Student.builder()
+                .id(UUID.randomUUID())
+                .studentCode("STU-01")
+                .build();
+
+        when(studentRepository.findByStudentCode("stu-01")).thenReturn(Optional.empty());
+        when(studentRepository.findByStudentCodeIgnoreCase("stu-01")).thenReturn(Optional.of(existing));
+
+        com.arcx.ctfplatform.academic.dto.StudentCreateRequest createReq =
+                new com.arcx.ctfplatform.academic.dto.StudentCreateRequest("Иван", "Иванов", null, " stu-01 ", null, null);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> studentService.createStudent(createReq, null)
+        );
+        verify(studentRepository, never()).save(any());
+
+        UUID otherId = UUID.randomUUID();
+        Student other = Student.builder().id(otherId).studentCode("STU-02").build();
+        when(studentRepository.findById(otherId)).thenReturn(Optional.of(other));
+        com.arcx.ctfplatform.academic.dto.StudentUpdateRequest updateReq =
+                new com.arcx.ctfplatform.academic.dto.StudentUpdateRequest("Петр", "Петров", null, "stu-01", null, null);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> studentService.updateStudent(otherId, updateReq, null)
+        );
+        verify(studentRepository, never()).save(any());
+    }
 }

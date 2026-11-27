@@ -33,11 +33,13 @@ public class AcademicFlowService {
 
     @Transactional
     public AcademicFlowResponseDTO createFlow(AcademicFlowRequestDTO request) {
-        if (flowRepository.findByName(request.name().trim()).isPresent()) {
+        String trimmedName = request.name().trim();
+        if (flowRepository.findByName(trimmedName).isPresent()
+                || flowRepository.findByNameIgnoreCase(trimmedName).isPresent()) {
             throw new IllegalArgumentException("Flow with this name already exists");
         }
         AcademicFlow flow = AcademicFlow.builder()
-                .name(request.name().trim())
+                .name(trimmedName)
                 .academicYear("2025/2026")
                 .build();
         AcademicFlow saved = flowRepository.save(flow);

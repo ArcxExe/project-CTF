@@ -286,6 +286,23 @@ class AuthServiceTest {
         verify(studentRepository, never()).save(any(Student.class));
     }
 
+    @Test
+    void registerShouldRejectAmbiguousDuplicateTokenInfo() {
+        Student s1 = Student.builder().id(UUID.randomUUID()).studentCode("STU-1").tokenInfo("SHARED-TOK").status(StudentStatus.ACTIVE).build();
+        Student s2 = Student.builder().id(UUID.randomUUID()).studentCode("STU-2").tokenInfo("SHARED-TOK").status(StudentStatus.ACTIVE).build();
+        RegisterRequest request = new RegisterRequest("dup@ctf.local", "password123", "shared-tok", "dupuser");
+
+        when(userRepository.existsByEmail("dup@ctf.local")).thenReturn(false);
+        when(userRepository.existsByUsername("dupuser")).thenReturn(false);
+        when(studentRepository.findByStudentCode("shared-tok")).thenReturn(Optional.empty());
+        when(studentRepository.findByStudentCodeIgnoreCase("shared-tok")).thenReturn(Optional.empty());
+        when(studentRepository.findUnlinkedByTokenInfoIgnoreCase("shared-tok")).thenReturn(List.of(s1, s2));
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Ambiguous registration token");
+    }
+
     private User activeUser() {
         return User.builder()
                 .id(UUID.fromString("11111111-1111-1111-1111-111111111111"))

@@ -376,7 +376,8 @@ public class StudentImportService {
             UUID groupId
     ) {
         if (studentCode != null && !studentCode.isEmpty()) {
-            Optional<Student> byCode = studentRepository.findByStudentCode(studentCode);
+            Optional<Student> byCode = studentRepository.findByStudentCode(studentCode)
+                    .or(() -> studentRepository.findByStudentCodeIgnoreCase(studentCode));
             if (byCode.isPresent()) {
                 return byCode;
             }
@@ -408,6 +409,7 @@ public class StudentImportService {
         if (groupName != null && !groupName.isEmpty()) {
             String effectiveFlowName = (flowName != null && !flowName.isEmpty()) ? flowName : "Основной поток";
             AcademicFlow flow = flowRepository.findByName(effectiveFlowName)
+                    .or(() -> flowRepository.findByNameIgnoreCase(effectiveFlowName))
                     .orElseGet(() -> flowRepository.save(
                             AcademicFlow.builder()
                                     .name(effectiveFlowName)
@@ -426,6 +428,7 @@ public class StudentImportService {
             return defaultGroup;
         }
         AcademicFlow fallbackFlow = flowRepository.findByName("Основной поток")
+                .or(() -> flowRepository.findByNameIgnoreCase("Основной поток"))
                 .orElseGet(() -> flowRepository.save(
                         AcademicFlow.builder()
                                 .name("Основной поток")
@@ -460,7 +463,9 @@ public class StudentImportService {
             String boundedPrefix = prefix.length() > maxPrefixLen ? prefix.substring(0, maxPrefixLen) : prefix;
             String candidate = boundedPrefix + suffix;
             String key = candidate.toUpperCase(Locale.ROOT);
-            if (!usedCodesInBatch.contains(key) && studentRepository.findByStudentCode(candidate).isEmpty()) {
+            if (!usedCodesInBatch.contains(key)
+                    && studentRepository.findByStudentCode(candidate).isEmpty()
+                    && studentRepository.findByStudentCodeIgnoreCase(candidate).isEmpty()) {
                 return candidate;
             }
         }

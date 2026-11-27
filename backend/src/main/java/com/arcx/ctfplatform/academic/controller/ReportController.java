@@ -130,7 +130,9 @@ public class ReportController {
                 .map(r -> {
                     AcademicGroup grp = r.groupId() != null ? groupMap.get(r.groupId()) : null;
                     String flowName = (grp != null && grp.getAcademicFlow() != null) ? grp.getAcademicFlow().getName() : "";
-                    int adj = adjustmentsByStudent.getOrDefault(r.studentId(), 0);
+                    int adj = "disqualified".equalsIgnoreCase(r.status())
+                            ? 0
+                            : adjustmentsByStudent.getOrDefault(r.studentId(), 0);
                     return new FinalStudentReportRow(
                             r.studentId(),
                             r.fullName(),

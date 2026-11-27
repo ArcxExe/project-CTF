@@ -233,6 +233,8 @@ public class GlobalExceptionHandler {
             case "Email is invalid" -> "Некорректный формат email";
             case "Student code not registered", "Invalid student code" ->
                     "Шифр / токен студента не найден в списке курса";
+            case "Ambiguous registration token" ->
+                    "Токен совпадает у нескольких студентов — используйте шифр студента для регистрации";
             case "This student code is already linked", "Student code already claimed" ->
                     "Этот шифр студента уже привязан к другой учётной записи";
             case "Student code already exists" -> "Студент с таким шифром уже существует";
@@ -288,6 +290,10 @@ public class GlobalExceptionHandler {
             case "Invalid CSV row: expected studentCode and score" ->
                     "Некорректная строка CSV: ожидаются шифр студента и баллы";
             case "Cycle number must be between" -> "Номер занятия вне допустимого диапазона";
+            case "Token must not exceed 64 characters" -> "Токен не должен превышать 64 символа";
+            case "Exam score must be between 0 and 100" -> "Балл за экзамен должен быть в диапазоне от 0 до 100";
+            case "Penalty coefficient must be between 0.0 and 1.0" ->
+                    "Штрафной коэффициент должен быть в диапазоне от 0.0 до 1.0";
             case "No value present" -> "Ресурс не найден";
             case "Access Denied", "Access is denied" -> "Недостаточно прав для выполнения операции";
             default -> {

@@ -7,12 +7,11 @@ import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.academic.service.GradingService;
+import com.arcx.ctfplatform.academic.service.StudentScoreCalculator;
 import com.arcx.ctfplatform.attempts.entity.Attempt;
 import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.competitions.entity.Competition;
-import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
-import com.arcx.ctfplatform.modifiers.entity.PromoCode;
 import com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim;
 import com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
@@ -20,7 +19,6 @@ import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
 import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
 import com.arcx.ctfplatform.students.service.lab.LabScoreService;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
-import com.arcx.ctfplatform.tests.entity.QuizAttemptStatus;
 import com.arcx.ctfplatform.tests.entity.QuizQuestion;
 import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
@@ -43,8 +41,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -433,7 +429,7 @@ public class LeaderboardService {
 
         List<Competition> competitions = competitionRepository.findAll();
         Instant now = Instant.now();
-        Competition activeComp = selectActiveCompetition(competitions, now);
+        Competition activeComp = StudentScoreCalculator.selectActiveCompetition(competitions, now);
         boolean leaderboardHiddenGlobally = activeComp != null && activeComp.isLeaderboardHidden();
 
         List<Attempt> allAttempts = attemptRepository.findAll();
@@ -483,137 +479,67 @@ public class LeaderboardService {
                     ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы")
                     : "Без группы";
 
-            if (student.getStatus() == StudentStatus.DISQUALIFIED) {
-                computedRows.add(new ComputedRow(
-                        student.getId(),
-                        student.getGroupId(),
-                        studentFlowId,
-                        student.getStatus(),
-                        isIndividuallyHidden,
-                        studentUsername,
-                        new LeaderboardEntry(
-                                student.getId(),
-                                displayName,
-                                groupName,
-                                0,
-                                0,
-                                0.0,
-                                0.0,
-                                0.0,
-                                0.0,
-                                2,
-                                false
-                        )
-                ));
-                continue;
-            }
+            boolean isDisqualified = student.getStatus() == StudentStatus.DISQUALIFIED;
+            List<Attempt> studentAttempts = isDisqualified
+                    ? Collections.emptyList()
+                    : attemptsByStudent.getOrDefault(student.getId(), Collections.emptyList());
+            List<QuizAttempt> studentQuizzes = isDisqualified
+                    ? Collections.emptyList()
+                    : quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList());
+            List<PromoCodeClaim> claims = isDisqualified
+                    ? Collections.emptyList()
+                    : claimsByStudent.getOrDefault(student.getId(), Collections.emptyList());
+            List<ScoreAdjustment> adjustments = isDisqualified
+                    ? Collections.emptyList()
+                    : adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList());
 
-            List<Attempt> studentAttempts = attemptsByStudent.getOrDefault(student.getId(), Collections.emptyList());
-            long wrongAttemptsCount = studentAttempts.stream().filter(a -> !a.isCorrect()).count();
-            studentWrongAttempts.put(student.getId(), wrongAttemptsCount);
-            List<Attempt> correctAttempts = studentAttempts.stream().filter(Attempt::isCorrect).toList();
-            int rawCtfScore = correctAttempts.stream()
-                    .mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded())
-                    .sum();
+            double bLab = 0.0;
+            boolean labEligible = false;
+            if (!isDisqualified) {
+                long wrongAttemptsCount = studentAttempts.stream().filter(a -> !a.isCorrect()).count();
+                studentWrongAttempts.put(student.getId(), wrongAttemptsCount);
 
-            List<QuizAttempt> studentQuizzes = quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList());
-            if (activeComp != null && activeComp.isSumTestPoints()) {
-                for (QuizAttempt qa : studentQuizzes) {
-                    if (qa.getStatus() == QuizAttemptStatus.COMPLETED && qa.getScore() != null) {
-                        Test t = testMap.get(qa.getQuizId());
-                        boolean includeQuiz = (t == null)
-                                || (activeComp.getId() != null && activeComp.getId().equals(t.getCompetitionId()))
-                                || (t.getCompetitionId() == null && !t.isControlPoint());
-                        if (includeQuiz) {
-                            rawCtfScore += Math.max(0, (int) Math.round(qa.getScore().doubleValue()));
-                        }
+                Instant lastTx = null;
+                for (Attempt a : studentAttempts) {
+                    if (a.isCorrect() && a.getSubmittedAt() != null
+                            && (lastTx == null || a.getSubmittedAt().isAfter(lastTx))) {
+                        lastTx = a.getSubmittedAt();
                     }
                 }
-            }
-
-            List<PromoCodeClaim> claims = claimsByStudent.getOrDefault(student.getId(), Collections.emptyList());
-            int additions = 0;
-            int subtractions = 0;
-            double multiplier = 1.0;
-            for (PromoCodeClaim claim : claims) {
-                PromoCode promo = claim.getPromoCode();
-                if (promo != null && promo.getModifierType() != null) {
-                    switch (promo.getModifierType()) {
-                        case FIXED_ADD -> additions += promo.getValue();
-                        case FIXED_SUB -> subtractions += promo.getValue();
-                        case DOUBLE_COEFF, TEMP_MULTIPLIER -> {
-                            int coeff = promo.getValue() <= 0 ? 2 : promo.getValue();
-                            multiplier *= coeff;
-                        }
+                for (PromoCodeClaim claim : claims) {
+                    if (claim.getClaimedAt() != null && (lastTx == null || claim.getClaimedAt().isAfter(lastTx))) {
+                        lastTx = claim.getClaimedAt();
                     }
                 }
-            }
-            int ctfScore = (int) Math.round((rawCtfScore + additions) * multiplier) - subtractions;
-            if (ctfScore < 0) {
-                ctfScore = 0;
-            }
-
-            List<ScoreAdjustment> adjustments = adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList());
-            ctfScore += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
-            if (ctfScore < 0) {
-                ctfScore = 0;
-            }
-
-            Instant lastTx = null;
-            for (Attempt a : correctAttempts) {
-                if (a.getSubmittedAt() != null && (lastTx == null || a.getSubmittedAt().isAfter(lastTx))) {
-                    lastTx = a.getSubmittedAt();
+                for (ScoreAdjustment adj : adjustments) {
+                    if (adj.getCreatedAt() != null && (lastTx == null || adj.getCreatedAt().isAfter(lastTx))) {
+                        lastTx = adj.getCreatedAt();
+                    }
                 }
-            }
-            for (PromoCodeClaim claim : claims) {
-                if (claim.getClaimedAt() != null && (lastTx == null || claim.getClaimedAt().isAfter(lastTx))) {
-                    lastTx = claim.getClaimedAt();
+                if (lastTx != null) {
+                    studentLastTxTime.put(student.getId(), lastTx);
                 }
-            }
-            for (ScoreAdjustment adj : adjustments) {
-                if (adj.getCreatedAt() != null && (lastTx == null || adj.getCreatedAt().isAfter(lastTx))) {
-                    lastTx = adj.getCreatedAt();
-                }
-            }
-            if (lastTx != null) {
-                studentLastTxTime.put(student.getId(), lastTx);
+
+                LabScoreService.StudentLabSummary labSummary = labSummaries.get(student.getId());
+                bLab = labSummary != null ? labSummary.finalScore() : labScoreService.getFinalLabScore(student.getId());
+                labEligible = labSummary != null ? labSummary.isEligible() : labScoreService.isEligible(student.getId());
             }
 
-            int solvedCount = correctAttempts.size();
-            double cPercent = roundToTwoDecimals(Math.max(0.0, Math.min((ctfScore / 800.0) * 100.0, 100.0)));
-
-            KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
-                    student, studentQuizzes, testMap, ktMaxProfile
+            StudentScoreCalculator.StudentMetrics metrics = StudentScoreCalculator.calculateMetrics(
+                    student,
+                    bLab,
+                    labEligible,
+                    studentAttempts,
+                    studentQuizzes,
+                    testMap,
+                    ktMaxProfile,
+                    activeComp,
+                    claims,
+                    adjustments,
+                    studentFlowId,
+                    gradingService,
+                    preloadedScales
             );
-            double kPercent = ktResult.kPercent();
-
-            LabScoreService.StudentLabSummary labSummary = labSummaries.get(student.getId());
-            double bLab = labSummary != null ? labSummary.finalScore() : labScoreService.getFinalLabScore(student.getId());
-            double lPercent = roundToTwoDecimals(Math.max(0.0, Math.min((bLab / 143.0) * 100.0, 100.0)));
-            boolean isEligible = labSummary != null ? labSummary.isEligible() : labScoreService.isEligible(student.getId());
-
-            double sScore = roundToTwoDecimals(0.50 * lPercent + 0.25 * kPercent + 0.25 * cPercent);
-
-            Integer recommendedGrade = null;
-            if (isEligible) {
-                Integer baseGrade;
-                if (preloadedScales.isPresent()) {
-                    baseGrade = gradingService.calculateGrade(sScore, lPercent, kPercent, studentFlowId, preloadedScales.get());
-                } else {
-                    baseGrade = studentFlowId != null
-                            ? gradingService.calculateGrade(sScore, lPercent, kPercent, studentFlowId)
-                            : gradingService.calculateGrade(sScore, lPercent, kPercent);
-                }
-                if (student.getExamScore() != null && baseGrade != null) {
-                    Integer mappedExam = gradingService.mapExamScoreToGrade(student.getExamScore());
-                    int examGrade = (mappedExam != null && mappedExam >= 2)
-                            ? mappedExam
-                            : mapExamScoreFallback(student.getExamScore());
-                    recommendedGrade = Math.max(baseGrade, examGrade);
-                } else {
-                    recommendedGrade = baseGrade;
-                }
-            }
 
             computedRows.add(new ComputedRow(
                     student.getId(),
@@ -626,14 +552,14 @@ public class LeaderboardService {
                             student.getId(),
                             displayName,
                             groupName,
-                            ctfScore,
-                            solvedCount,
-                            lPercent,
-                            kPercent,
-                            cPercent,
-                            sScore,
-                            recommendedGrade,
-                            isEligible
+                            metrics.ctfScore(),
+                            metrics.solvedCount(),
+                            metrics.lPercent(),
+                            metrics.ktResult().kPercent(),
+                            metrics.cPercent(),
+                            metrics.sScore(),
+                            metrics.recommendedGrade(),
+                            metrics.isEligible()
                     )
             ));
         }
@@ -690,26 +616,6 @@ public class LeaderboardService {
         return "Unknown";
     }
 
-    private Competition selectActiveCompetition(List<Competition> competitions, Instant now) {
-        if (competitions == null || competitions.isEmpty()) {
-            return null;
-        }
-        return competitions.stream()
-                .filter(c -> c.getStatus() == CompetitionStatus.ACTIVE)
-                .filter(c -> (c.getStartDate() == null || !now.isBefore(c.getStartDate()))
-                        && (c.getEndDate() == null || !now.isAfter(c.getEndDate())))
-                .findFirst()
-                .or(() -> competitions.stream()
-                        .filter(c -> c.getStatus() == CompetitionStatus.ACTIVE)
-                        .findFirst())
-                .or(() -> competitions.stream()
-                        .filter(c -> c.getStatus() == null)
-                        .filter(c -> (c.getStartDate() == null || !now.isBefore(c.getStartDate()))
-                                && (c.getEndDate() == null || !now.isAfter(c.getEndDate())))
-                        .findFirst())
-                .orElse(null);
-    }
-
     private boolean resolveIsAdmin(Authentication auth) {
         if (auth == null) {
             return false;
@@ -756,23 +662,5 @@ public class LeaderboardService {
             return transactionTemplate.execute(status -> supplier.get());
         }
         return supplier.get();
-    }
-
-    private int mapExamScoreFallback(int examScore) {
-        if (examScore < 50) {
-            return 2;
-        } else if (examScore < 70) {
-            return 3;
-        } else if (examScore < 85) {
-            return 4;
-        }
-        return 5;
-    }
-
-    private double roundToTwoDecimals(double value) {
-        if (Double.isNaN(value) || Double.isInfinite(value)) {
-            return 0.0;
-        }
-        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 }

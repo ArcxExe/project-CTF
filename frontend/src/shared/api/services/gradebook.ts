@@ -59,6 +59,7 @@ export interface GradebookUpdateRequest {
   kt4?: number;
   token?: string;
   examScore?: number | null;
+  clearExamScore?: boolean;
 }
 
 export interface LabDetailUpdateRequest {

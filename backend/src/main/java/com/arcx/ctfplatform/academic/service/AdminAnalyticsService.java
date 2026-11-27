@@ -363,43 +363,7 @@ public class AdminAnalyticsService {
 
         for (Student s : students) {
             LeaderboardEntry entry = leadMap.get(s.getId());
-            Optional<LabScore> labScoreOpt = labScoreByStudent.containsKey(s.getId())
-                    ? Optional.of(labScoreByStudent.get(s.getId()))
-                    : (labScoreByStudent.isEmpty() ? labScoreRepository.findByStudentId(s.getId()) : Optional.empty());
-
-            List<StudentLab> sLabs = studentLabsByStudent.containsKey(s.getId())
-                    ? studentLabsByStudent.get(s.getId())
-                    : ((studentLabRepository != null && studentLabsByStudent.isEmpty())
-                            ? studentLabRepository.findAllByStudentId(s.getId())
-                            : Collections.emptyList());
-
-            double exactLabScore;
-            int acceptedLabsCount = 0;
-            if (sLabs != null && !sLabs.isEmpty()) {
-                double sum = roundStatic(Math.min(sLabs.stream().mapToDouble(StudentLab::getScore).sum(), 143.0));
-                if (labScoreOpt.isPresent() && labScoreOpt.get().getScore() != (int) Math.round(sum)) {
-                    exactLabScore = roundStatic(Math.min(labScoreOpt.get().getScore(), 143.0));
-                } else {
-                    exactLabScore = sum;
-                }
-                acceptedLabsCount = (int) sLabs.stream().filter(StudentLab::isAccepted).count();
-            } else if (labScoreOpt.isPresent()) {
-                exactLabScore = labScoreOpt.get().getScore();
-                acceptedLabsCount = (studentLabRepository == null && labScoreOpt.get().isEligible()) ? 8 : 0;
-            } else if (entry != null && entry.lPercent() > 0) {
-                exactLabScore = roundStatic((entry.lPercent() / 100.0) * 143.0);
-                acceptedLabsCount = (studentLabRepository == null && entry.isEligible()) ? 8 : 0;
-            } else {
-                exactLabScore = 0.0;
-            }
-
-            int labScore = labScoreOpt.map(LabScore::getScore).orElse((int) Math.round(exactLabScore));
-            int ctfScore = entry != null ? entry.ctfScore() : 0;
-
-            if (labScore > maxLab) maxLab = labScore;
-            if (ctfScore > maxCtf) maxCtf = ctfScore;
-            sumLab += exactLabScore;
-            sumCtf += ctfScore;
+            boolean isDisqualified = s.getStatus() == StudentStatus.DISQUALIFIED;
 
             if (s.getStatus() == StudentStatus.ACTIVE) {
                 activeCount++;
@@ -409,43 +373,110 @@ public class AdminAnalyticsService {
                 blockedCount++;
             }
 
-            double lPercent = entry != null ? entry.lPercent() : roundStatic(Math.min((exactLabScore / 143.0) * 100.0, 100.0));
-            KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
-                    s,
-                    quizzesByStudent.getOrDefault(s.getId(), Collections.emptyList()),
-                    testMap,
-                    ktMaxProfile
-            );
+            double exactLabScore;
+            int labScore;
+            int acceptedLabsCount;
+            int ctfScore;
+            double lPercent;
             double kPercent;
             double ktScore;
-            if (ktResult.totalKt() > 0 || hasRealKtData) {
-                ktScore = ktResult.totalKt();
-                kPercent = entry != null && !hasRealKtData ? entry.kPercent() : ktResult.kPercent();
-            } else if (entry != null && entry.kPercent() > 0) {
-                kPercent = entry.kPercent();
-                ktScore = roundStatic((kPercent / 100.0) * maxKtScore);
-            } else {
-                ktScore = 0.0;
+            double cPercent;
+            double ctfCoeff;
+            double sCoeff;
+            double totalPoints;
+            boolean isEligible;
+            String recGrade;
+            int numericGrade;
+
+            if (isDisqualified) {
+                exactLabScore = 0.0;
+                labScore = 0;
+                acceptedLabsCount = 0;
+                ctfScore = 0;
+                lPercent = 0.0;
                 kPercent = 0.0;
-            }
-            double cPercent = entry != null ? entry.cPercent() : 0.0;
-            double ctfCoeff = roundStatic(Math.min(ctfScore / 800.0, 1.0));
-            double sCoeff = entry != null ? entry.sScore() : 0.0;
-            double totalPoints = roundStatic(exactLabScore + ktScore);
-            boolean isEligible = entry != null && entry.isEligible();
-            if (studentLabRepository == null && isEligible && acceptedLabsCount == 0) {
-                acceptedLabsCount = 8;
-            }
-            if (isEligible) {
-                eligibleLabsCount++;
+                ktScore = 0.0;
+                cPercent = 0.0;
+                ctfCoeff = 0.0;
+                sCoeff = 0.0;
+                totalPoints = 0.0;
+                isEligible = false;
+                recGrade = "2";
+                numericGrade = 2;
+            } else {
+                Optional<LabScore> labScoreOpt = labScoreByStudent.containsKey(s.getId())
+                        ? Optional.of(labScoreByStudent.get(s.getId()))
+                        : (labScoreByStudent.isEmpty() ? labScoreRepository.findByStudentId(s.getId()) : Optional.empty());
+
+                List<StudentLab> sLabs = studentLabsByStudent.containsKey(s.getId())
+                        ? studentLabsByStudent.get(s.getId())
+                        : ((studentLabRepository != null && studentLabsByStudent.isEmpty())
+                                ? studentLabRepository.findAllByStudentId(s.getId())
+                                : Collections.emptyList());
+
+                acceptedLabsCount = 0;
+                if (sLabs != null && !sLabs.isEmpty()) {
+                    double sum = roundStatic(Math.min(sLabs.stream().mapToDouble(StudentLab::getScore).sum(), 143.0));
+                    if (labScoreOpt.isPresent() && labScoreOpt.get().getScore() != (int) Math.round(sum)) {
+                        exactLabScore = roundStatic(Math.min(labScoreOpt.get().getScore(), 143.0));
+                    } else {
+                        exactLabScore = sum;
+                    }
+                    acceptedLabsCount = (int) sLabs.stream().filter(StudentLab::isAccepted).count();
+                } else if (labScoreOpt.isPresent()) {
+                    exactLabScore = labScoreOpt.get().getScore();
+                    acceptedLabsCount = (studentLabRepository == null && labScoreOpt.get().isEligible()) ? 8 : 0;
+                } else if (entry != null && entry.lPercent() > 0) {
+                    exactLabScore = roundStatic((entry.lPercent() / 100.0) * 143.0);
+                    acceptedLabsCount = (studentLabRepository == null && entry.isEligible()) ? 8 : 0;
+                } else {
+                    exactLabScore = 0.0;
+                }
+
+                labScore = labScoreOpt.map(LabScore::getScore).orElse((int) Math.round(exactLabScore));
+                ctfScore = entry != null ? entry.ctfScore() : 0;
+
+                lPercent = entry != null ? entry.lPercent() : roundStatic(Math.min((exactLabScore / 143.0) * 100.0, 100.0));
+                KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
+                        s,
+                        quizzesByStudent.getOrDefault(s.getId(), Collections.emptyList()),
+                        testMap,
+                        ktMaxProfile
+                );
+                if (ktResult.totalKt() > 0 || hasRealKtData) {
+                    ktScore = ktResult.totalKt();
+                    kPercent = entry != null && !hasRealKtData ? entry.kPercent() : ktResult.kPercent();
+                } else if (entry != null && entry.kPercent() > 0) {
+                    kPercent = entry.kPercent();
+                    ktScore = roundStatic((kPercent / 100.0) * maxKtScore);
+                } else {
+                    ktScore = 0.0;
+                    kPercent = 0.0;
+                }
+                cPercent = entry != null ? entry.cPercent() : 0.0;
+                ctfCoeff = roundStatic(Math.min(ctfScore / 800.0, 1.0));
+                sCoeff = entry != null ? entry.sScore() : 0.0;
+                totalPoints = roundStatic(exactLabScore + ktScore);
+                isEligible = entry != null && entry.isEligible();
+                if (studentLabRepository == null && isEligible && acceptedLabsCount == 0) {
+                    acceptedLabsCount = 8;
+                }
+                if (isEligible) {
+                    eligibleLabsCount++;
+                }
+
+                recGrade = entry != null && entry.recommendedGrade() != null
+                        ? String.valueOf(entry.recommendedGrade())
+                        : "Н/Д";
+                numericGrade = (entry != null && entry.isEligible() && entry.recommendedGrade() != null)
+                        ? entry.recommendedGrade()
+                        : 2;
             }
 
-            String recGrade = entry != null && entry.recommendedGrade() != null
-                    ? String.valueOf(entry.recommendedGrade())
-                    : "Н/Д";
-            int numericGrade = (entry != null && entry.isEligible() && entry.recommendedGrade() != null)
-                    ? entry.recommendedGrade()
-                    : 2;
+            if (labScore > maxLab) maxLab = labScore;
+            if (ctfScore > maxCtf) maxCtf = ctfScore;
+            sumLab += exactLabScore;
+            sumCtf += ctfScore;
 
             switch (numericGrade) {
                 case 5 -> grade5++;
