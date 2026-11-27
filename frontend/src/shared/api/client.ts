@@ -199,3 +199,54 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 
   return body as T;
 }
+
+export async function downloadApiFile(
+  path: string,
+  fallbackFilename: string,
+  errorPrefix = "Ошибка выгрузки файла"
+): Promise<void> {
+  const headers = new Headers();
+  const token = authTokenStorage.get();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(buildUrl(path), { headers });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      notifyUnauthorized();
+    }
+
+    const contentType = response.headers.get("Content-Type") ?? "";
+    let body: unknown = null;
+    try {
+      body = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+    } catch {
+      body = null;
+    }
+
+    const fallback = `HTTP ${response.status}`;
+    const resolvedMessage =
+      typeof body === "string" && body.trim().length > 0
+        ? localizeMessage(body)
+        : getErrorMessage(body, fallback);
+
+    throw new Error(
+      resolvedMessage && resolvedMessage !== fallback
+        ? resolvedMessage
+        : `${errorPrefix} (${response.status})`
+    );
+  }
+
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = window.URL.createObjectURL(blob);
+  link.download = fallbackFilename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(link.href);
+}

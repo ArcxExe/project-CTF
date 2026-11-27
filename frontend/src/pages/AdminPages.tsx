@@ -12,7 +12,7 @@ import { adminTestsApi } from "@/shared/api/services/tests";
 import type { CtfTest, QuizQuestion, QuizOption } from "@/shared/api/services/tests";
 import type { Competition } from "@/shared/types/competition";
 import { studentsApi } from "@/shared/api/services/students";
-import type { Student, Group } from "@/shared/types/education";
+import type { Student } from "@/shared/types/education";
 import { scoreAdjustmentsApi } from "@/shared/api/services/scoreAdjustments";
 import type { ScoreAdjustmentResponse } from "@/shared/api/services/scoreAdjustments";
 import { labScoresApi } from "@/shared/api/services/labScores";
@@ -2430,7 +2430,6 @@ const AdminLabsManagerPage = () => {
   const [scores, setScores] = useState<LabScore[]>([]);
   const [gradebookRows, setGradebookRows] = useState<GradebookRowDto[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -2447,15 +2446,13 @@ const AdminLabsManagerPage = () => {
 
   const loadData = async () => {
     try {
-      const [scoresData, studentsData, groupsData, gbData] = await Promise.all([
+      const [scoresData, studentsData, gbData] = await Promise.all([
         labScoresApi.getAllScores().catch(() => [] as LabScore[]),
         studentsApi.getAll().catch(() => [] as Student[]),
-        groupsApi.getAll().catch(() => [] as Group[]),
         gradebookApi.getGradebook().catch(() => [] as GradebookRowDto[]),
       ]);
       setScores(scoresData);
       setStudents(studentsData);
-      setGroups(groupsData);
       setGradebookRows(gbData);
       if (studentsData.length > 0) {
         setForm((current) => ({
@@ -2530,14 +2527,6 @@ const AdminLabsManagerPage = () => {
       }
     }
   }, [filteredStudents, isEditing]);
-
-  const currentMaxLabs = useMemo(() => {
-    if (!form.studentId) return 0;
-    const student = students.find((s) => s.id === form.studentId);
-    if (!student) return 0;
-    const group = groups.find((g) => g.name === student.group);
-    return group?.maxLabs ?? 0;
-  }, [form.studentId, students, groups]);
 
   const gradebookByStudentId = useMemo(
     () => new Map(gradebookRows.map((r) => [r.studentId, r])),
@@ -2666,14 +2655,10 @@ const AdminLabsManagerPage = () => {
             columns={[
               { key: "studentName", title: "Участник" },
               { key: "groupName", title: "Группа" },
-              { 
-                key: "score", 
+              {
+                key: "score",
                 title: "Баллы за лаб",
-                render: (row) => {
-                  const group = groups.find((g) => g.name === row.groupName);
-                  const maxLabs = group?.maxLabs ?? 143;
-                  return `${row.score} / ${maxLabs}`;
-                }
+                render: (row) => `${row.score} / 143`,
               },
               { 
                 key: "v1Coefficient", 
@@ -2805,7 +2790,7 @@ const AdminLabsManagerPage = () => {
               )}
 
               <Input
-                label={currentMaxLabs > 0 ? `Баллы (Макс. баллов ЛР: ${currentMaxLabs})` : "Баллы (макс. 143)"}
+                label="Баллы (макс. 143)"
                 type="number"
                 min={0}
                 max={143}

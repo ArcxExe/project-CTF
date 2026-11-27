@@ -1,4 +1,4 @@
-import { apiRequest, authTokenStorage } from "@/shared/api/client";
+import { apiRequest, downloadApiFile } from "@/shared/api/client";
 
 /**
  * Frontend CTF Task model (formerly Challenge).
@@ -12,6 +12,8 @@ export interface CtfTask {
   baseScore: number;
   maxScore?: number;
   isFirstBloodOnly?: boolean;
+  solvedCount?: number;
+  firstBloodTaken?: boolean;
   points: number;
   createdAt: string;
   taskType?: "FLAG" | "FILE_UPLOAD" | string;
@@ -55,6 +57,8 @@ export interface BackendChallengeResponse {
   baseScore: number;
   maxScore?: number;
   isFirstBloodOnly?: boolean;
+  solvedCount?: number;
+  firstBloodTaken?: boolean;
   createdAt: string;
   taskType?: "FLAG" | "FILE_UPLOAD" | string;
   attachments?: string[];
@@ -85,24 +89,29 @@ export interface SubmitFlagResponse {
   pointsAdded: number;
 }
 
-export const toChallenge = (response: BackendChallengeResponse): Challenge => ({
-  id: response.id,
-  title: response.title,
-  description: response.description ?? "",
-  category: response.category ?? undefined,
-  difficulty: response.difficulty ?? undefined,
-  baseScore: response.baseScore,
-  maxScore: response.maxScore ?? response.baseScore,
-  isFirstBloodOnly: Boolean(response.isFirstBloodOnly),
-  points: response.baseScore,
-  createdAt: response.createdAt,
-  taskType: response.taskType ?? "FLAG",
-  attachments: response.attachments ?? [],
-  taskCode: response.taskCode ?? undefined,
-  bankId: response.bankId ?? "GLOBAL",
-  pool: response.pool ?? "MAIN",
-  wave: response.wave ?? undefined,
-});
+export const toChallenge = (response: BackendChallengeResponse): Challenge => {
+  const solvedCount = Number(response.solvedCount ?? 0);
+  return {
+    id: response.id,
+    title: response.title,
+    description: response.description ?? "",
+    category: response.category ?? undefined,
+    difficulty: response.difficulty ?? undefined,
+    baseScore: response.baseScore,
+    maxScore: response.maxScore ?? response.baseScore,
+    isFirstBloodOnly: Boolean(response.isFirstBloodOnly),
+    solvedCount,
+    firstBloodTaken: Boolean(response.firstBloodTaken || solvedCount > 0),
+    points: response.baseScore,
+    createdAt: response.createdAt,
+    taskType: response.taskType ?? "FLAG",
+    attachments: response.attachments ?? [],
+    taskCode: response.taskCode ?? undefined,
+    bankId: response.bankId ?? "GLOBAL",
+    pool: response.pool ?? "MAIN",
+    wave: response.wave ?? undefined,
+  };
+};
 
 const toBackendPayload = (payload: ChallengePayload) => ({
   title: payload.title,
@@ -121,28 +130,6 @@ const toBackendPayload = (payload: ChallengePayload) => ({
   wave: payload.wave,
   solutionInternal: payload.solutionInternal,
 });
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
-
-async function downloadChallengeFile(url: string, fallbackFilename: string): Promise<void> {
-  const token = authTokenStorage.get();
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const response = await fetch(`${API_BASE_URL}${url}`, { headers });
-  if (!response.ok) {
-    throw new Error(`Ошибка выгрузки файла: ${response.statusText}`);
-  }
-  const blob = await response.blob();
-  const link = document.createElement("a");
-  link.href = window.URL.createObjectURL(blob);
-  link.download = fallbackFilename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(link.href);
-}
 
 /**
  * Public Challenges API — GET endpoints available to all authenticated users.
@@ -241,11 +228,11 @@ export const adminChallengesApi = {
   },
 
   async downloadTemplate(): Promise<void> {
-    await downloadChallengeFile("/api/challenges/import-template", "ctf_tasks_template.xlsx");
+    await downloadApiFile("/api/challenges/import-template", "ctf_tasks_template.xlsx", "Ошибка выгрузки шаблона");
   },
 
   async exportTasks(): Promise<void> {
-    await downloadChallengeFile("/api/challenges/export", "ctf_tasks_bank.xlsx");
+    await downloadApiFile("/api/challenges/export", "ctf_tasks_bank.xlsx", "Ошибка экспорта заданий");
   },
 
   async delete(id: string): Promise<void> {

@@ -18,6 +18,13 @@ public interface AttemptRepository extends JpaRepository<Attempt, UUID> {
     long countByTaskIdAndIsCorrectTrueAndSubmittedAtBefore(UUID taskId, java.time.Instant submittedAt);
     long countByTaskIdAndStudentIdAndIsCorrectFalseAndSubmittedAtAfter(UUID taskId, UUID studentId, java.time.Instant submittedAt);
 
+    @org.springframework.data.jpa.repository.Query(
+        "SELECT a.taskId, COUNT(a) FROM Attempt a WHERE a.isCorrect = true AND a.taskId IN :taskIds GROUP BY a.taskId"
+    )
+    java.util.List<Object[]> countCorrectAttemptsByTaskIdIn(
+        @org.springframework.data.repository.query.Param("taskIds") java.util.Collection<UUID> taskIds
+    );
+
     java.util.List<Attempt> findAllByFilePathIsNotNullAndIsCorrectFalse();
 
     @org.springframework.data.jpa.repository.Query(

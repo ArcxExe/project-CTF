@@ -112,4 +112,48 @@ class CompetitionServiceTest {
         assertEquals(1, resp.tasks().size());
         assertEquals(mainTask.getId(), resp.tasks().get(0).id());
     }
+
+    @Test
+    @DisplayName("Issue #32: CompetitionService enriches tasks with solvedCount and firstBloodTaken via batch query")
+    void testTasksIncludeSolvedCountAndFirstBloodTaken() {
+        com.arcx.ctfplatform.attempts.repository.AttemptRepository attemptRepository =
+                org.mockito.Mockito.mock(com.arcx.ctfplatform.attempts.repository.AttemptRepository.class);
+        competitionService.setAttemptRepository(attemptRepository);
+
+        UUID compId = UUID.randomUUID();
+        CtfTask takenTask = new CtfTask();
+        takenTask.setId(UUID.randomUUID());
+        takenTask.setTitle("FB Taken");
+        takenTask.setFirstBloodOnly(true);
+        takenTask.setPool("MAIN");
+
+        CtfTask openTask = new CtfTask();
+        openTask.setId(UUID.randomUUID());
+        openTask.setTitle("FB Open");
+        openTask.setFirstBloodOnly(true);
+        openTask.setPool("MAIN");
+
+        Competition live = Competition.builder()
+                .id(compId)
+                .title("Live CTF")
+                .status(CompetitionStatus.ACTIVE)
+                .startDate(Instant.now().minus(1, ChronoUnit.HOURS))
+                .endDate(Instant.now().plus(2, ChronoUnit.HOURS))
+                .tasks(new LinkedHashSet<>(List.of(takenTask, openTask)))
+                .build();
+
+        User student = User.builder().id(UUID.randomUUID()).role(Role.STUDENT).build();
+        when(competitionRepository.findAllByStatus(CompetitionStatus.ACTIVE)).thenReturn(List.of(live));
+        when(attemptRepository.countCorrectAttemptsByTaskIdIn(List.of(takenTask.getId(), openTask.getId())))
+                .thenReturn(List.<Object[]>of(new Object[] { takenTask.getId(), 1L }));
+
+        List<CompetitionResponse> comps = competitionService.getCompetitionsForUser(student);
+        assertEquals(1, comps.size());
+        var tasks = comps.get(0).tasks();
+        assertEquals(2, tasks.size());
+        assertEquals(1L, tasks.get(0).solvedCount());
+        assertTrue(tasks.get(0).firstBloodTaken());
+        assertEquals(0L, tasks.get(1).solvedCount());
+        org.junit.jupiter.api.Assertions.assertFalse(tasks.get(1).firstBloodTaken());
+    }
 }

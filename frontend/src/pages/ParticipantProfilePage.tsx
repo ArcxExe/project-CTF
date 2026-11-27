@@ -17,6 +17,44 @@ const ATTENDANCE_LABELS: Record<AttendanceStatus, { text: string; color: string 
   EXCUSED: { text: "У", color: "#facc15" },
 };
 
+const STUDENT_STATUS_META: Record<
+  string,
+  { label: string; color: string; bannerBg?: string; bannerBorder?: string; bannerText?: string }
+> = {
+  active: {
+    label: "Активна",
+    color: "#4ade80",
+  },
+  pending_binding_verification: {
+    label: "Ожидает подтверждения привязки",
+    color: "#facc15",
+    bannerBg: "rgba(234, 179, 8, 0.14)",
+    bannerBorder: "rgba(234, 179, 8, 0.45)",
+    bannerText:
+      "Ваша учётная запись ожидает подтверждения привязки к шифру студента преподавателем или администратором. До подтверждения запуск тестов и отправка флагов CTF временно недоступны.",
+  },
+  blocked: {
+    label: "Заблокирована",
+    color: "#f87171",
+    bannerBg: "rgba(239, 68, 68, 0.14)",
+    bannerBorder: "rgba(239, 68, 68, 0.45)",
+    bannerText:
+      "Учётная запись заблокирована. Обратитесь к преподавателю или администратору курса.",
+  },
+  disqualified: {
+    label: "Дисквалифицирована",
+    color: "#f87171",
+    bannerBg: "rgba(239, 68, 68, 0.14)",
+    bannerBorder: "rgba(239, 68, 68, 0.45)",
+    bannerText:
+      "Учётная запись дисквалифицирована. Итоговые баллы обнулены до решения преподавателя.",
+  },
+  out_of_rating: {
+    label: "Вне рейтинга",
+    color: "#94a3b8",
+  },
+};
+
 export const ParticipantProfilePage = () => {
   const { currentUser } = useAuthStore();
   const { push } = useToastStore();
@@ -78,6 +116,11 @@ export const ParticipantProfilePage = () => {
   const grade =
     myGradebook?.grade ??
     (isEligible && myLbEntry?.recommendedGrade ? myLbEntry.recommendedGrade : 2);
+  const rawStatus = (myGradebook?.status ?? "").toLowerCase();
+  const statusMeta = STUDENT_STATUS_META[rawStatus] ?? {
+    label: myGradebook?.status ? myGradebook.status : "—",
+    color: "inherit",
+  };
 
   const markedLecturesCount = Object.values(myAttendance?.lectures ?? {}).filter(Boolean).length;
   const markedPracticesCount = Object.values(myAttendance?.practices ?? {}).filter(Boolean).length;
@@ -92,6 +135,22 @@ export const ParticipantProfilePage = () => {
         subtitle="Сводка баллов по регламенту курса: Лабораторные (143 б.), Контрольные точки (КТ 1–4), CTF (800 б.), Успеваемость S% и Посещаемость."
       />
 
+      {statusMeta.bannerText && (
+        <div
+          role="alert"
+          style={{
+            padding: "0.9rem 1.1rem",
+            borderRadius: "var(--radius-md, 10px)",
+            background: statusMeta.bannerBg,
+            border: `1px solid ${statusMeta.bannerBorder}`,
+            color: statusMeta.color,
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>Статус учётной записи: {statusMeta.label}.</strong> {statusMeta.bannerText}
+        </div>
+      )}
+
       <div className="grid grid-2">
         <Card>
           <div className="page-stack">
@@ -99,6 +158,8 @@ export const ParticipantProfilePage = () => {
             <div className="info-grid">
               <span>ФИО / Ник:</span>
               <strong>{myGradebook?.fullName || currentUser?.fullName || currentUser?.email}</strong>
+              <span>Статус учётной записи:</span>
+              <strong style={{ color: statusMeta.color }}>{statusMeta.label}</strong>
               <span>Учебная группа:</span>
               <strong>{myGradebook?.groupName || myLbEntry?.group || "—"}</strong>
               <span>Пара (подгруппа):</span>

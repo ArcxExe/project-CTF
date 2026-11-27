@@ -1,31 +1,9 @@
-import { apiRequest, authTokenStorage } from "@/shared/api/client";
+import { apiRequest, downloadApiFile } from "@/shared/api/client";
 import type {
   AttendanceBulkMarkPayload,
   AttendanceCellUpdatePayload,
   StudentAttendanceRow,
 } from "@/shared/types/attendance";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
-
-async function downloadAttendanceFile(url: string, filename: string): Promise<void> {
-  const token = authTokenStorage.get();
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const response = await fetch(`${API_BASE_URL}${url}`, { headers });
-  if (!response.ok) {
-    throw new Error(`Ошибка выгрузки журнала посещаемости: ${response.statusText}`);
-  }
-  const blob = await response.blob();
-  const link = document.createElement("a");
-  link.href = window.URL.createObjectURL(blob);
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(link.href);
-}
 
 /**
  * Attendance API — /api/academic/attendance
@@ -70,9 +48,10 @@ export const attendanceApi = {
     if (groupId) params.set("groupId", groupId);
     if (streamId) params.set("streamId", streamId);
     const qs = params.toString();
-    await downloadAttendanceFile(
+    await downloadApiFile(
       `/api/academic/attendance/export/csv${qs ? `?${qs}` : ""}`,
-      "Журнал_посещаемости.csv"
+      "Журнал_посещаемости.csv",
+      "Ошибка выгрузки журнала посещаемости"
     );
   },
 
@@ -81,9 +60,10 @@ export const attendanceApi = {
     if (groupId) params.set("groupId", groupId);
     if (streamId) params.set("streamId", streamId);
     const qs = params.toString();
-    await downloadAttendanceFile(
+    await downloadApiFile(
       `/api/academic/attendance/export/xlsx${qs ? `?${qs}` : ""}`,
-      "Журнал_посещаемости.xlsx"
+      "Журнал_посещаемости.xlsx",
+      "Ошибка выгрузки журнала посещаемости"
     );
   },
 };
