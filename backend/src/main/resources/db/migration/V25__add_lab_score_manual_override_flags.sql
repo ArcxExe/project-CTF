@@ -1,0 +1,3 @@
+ALTER TABLE lab_scores
+    ADD COLUMN IF NOT EXISTS manual_score_override BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS manual_eligibility_override BOOLEAN NOT NULL DEFAULT FALSE;

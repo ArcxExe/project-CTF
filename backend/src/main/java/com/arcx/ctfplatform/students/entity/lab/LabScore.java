@@ -47,6 +47,14 @@ public class LabScore {
     @Builder.Default
     private boolean isEligible = false;
 
+    @Column(name = "manual_score_override", nullable = false)
+    @Builder.Default
+    private boolean manualScoreOverride = false;
+
+    @Column(name = "manual_eligibility_override", nullable = false)
+    @Builder.Default
+    private boolean manualEligibilityOverride = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

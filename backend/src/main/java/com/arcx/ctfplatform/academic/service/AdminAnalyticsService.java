@@ -618,7 +618,11 @@ public class AdminAnalyticsService {
         for (Student s : students) {
             List<QuizAttempt> studentAttempts = attemptsByStudent.getOrDefault(s.getId(), Collections.emptyList());
             Map<UUID, QuizAttempt> attemptByQuiz = studentAttempts.stream()
-                    .collect(Collectors.toMap(QuizAttempt::getQuizId, qa -> qa, (qa1, qa2) -> qa1));
+                    .collect(Collectors.toMap(
+                            QuizAttempt::getQuizId,
+                            qa -> qa,
+                            AdminAnalyticsService::selectPreferredAttempt
+                    ));
 
             String studentName = s.getFullName();
             if (studentName.isBlank()) {
@@ -748,6 +752,41 @@ public class AdminAnalyticsService {
                     .toList();
         }
         return students;
+    }
+
+    private static QuizAttempt selectPreferredAttempt(QuizAttempt first, QuizAttempt second) {
+        if (first == null) {
+            return second;
+        }
+        if (second == null) {
+            return first;
+        }
+        boolean firstCompleted = first.getStatus() == com.arcx.ctfplatform.tests.entity.QuizAttemptStatus.COMPLETED;
+        boolean secondCompleted = second.getStatus() == com.arcx.ctfplatform.tests.entity.QuizAttemptStatus.COMPLETED;
+        if (firstCompleted != secondCompleted) {
+            return firstCompleted ? first : second;
+        }
+        double firstScore = first.getScore() != null ? first.getScore() : -1.0;
+        double secondScore = second.getScore() != null ? second.getScore() : -1.0;
+        int scoreCmp = Double.compare(firstScore, secondScore);
+        if (scoreCmp != 0) {
+            return scoreCmp > 0 ? first : second;
+        }
+        Instant firstTime = first.getCompletedAt() != null ? first.getCompletedAt() : first.getStartedAt();
+        Instant secondTime = second.getCompletedAt() != null ? second.getCompletedAt() : second.getStartedAt();
+        if (firstTime == null && secondTime != null) {
+            return second;
+        }
+        if (firstTime != null && secondTime == null) {
+            return first;
+        }
+        if (firstTime != null) {
+            int timeCmp = firstTime.compareTo(secondTime);
+            if (timeCmp != 0) {
+                return timeCmp > 0 ? first : second;
+            }
+        }
+        return first;
     }
 
     private static double roundStatic(double value) {

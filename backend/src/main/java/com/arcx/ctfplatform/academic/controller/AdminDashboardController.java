@@ -6,15 +6,21 @@ import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.audit.controller.AuditLogController.AuditLogDto;
 import com.arcx.ctfplatform.audit.entity.AuditLog;
 import com.arcx.ctfplatform.audit.repository.AuditLogRepository;
+import com.arcx.ctfplatform.challenges.entity.CtfTask;
 import com.arcx.ctfplatform.challenges.repository.CtfTaskRepository;
+import com.arcx.ctfplatform.competitions.entity.Competition;
 import com.arcx.ctfplatform.competitions.entity.CompetitionStatus;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
+import com.arcx.ctfplatform.tests.entity.Test;
 import com.arcx.ctfplatform.tests.entity.TestStatus;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.repository.UserRepository;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -55,7 +61,28 @@ public class AdminDashboardController {
     @Transactional(readOnly = true)
     public ResponseEntity<DashboardResponse> getDashboard() {
         long registeredStudents = studentRepository.count();
-        long publishedChallenges = ctfTaskRepository.count();
+        List<Competition> activeCompetitions = competitionRepository.findAllByStatus(CompetitionStatus.ACTIVE);
+        List<Test> publishedTests = testRepository.findAllByStatus(TestStatus.PUBLISHED);
+        Set<UUID> publishedChallengeIds = new HashSet<>();
+        for (Competition comp : activeCompetitions) {
+            if (comp.getTasks() != null) {
+                for (CtfTask task : comp.getTasks()) {
+                    if (task != null && task.getId() != null && !"RESERVE".equalsIgnoreCase(task.getPool())) {
+                        publishedChallengeIds.add(task.getId());
+                    }
+                }
+            }
+        }
+        for (Test test : publishedTests) {
+            if (test.getTasks() != null) {
+                for (CtfTask task : test.getTasks()) {
+                    if (task != null && task.getId() != null && !"RESERVE".equalsIgnoreCase(task.getPool())) {
+                        publishedChallengeIds.add(task.getId());
+                    }
+                }
+            }
+        }
+        long publishedChallenges = publishedChallengeIds.size();
         List<Attempt> allAttempts = attemptRepository.findAll();
         long attemptsCount = allAttempts.size();
         long solvedChallenges = allAttempts.stream()
@@ -63,8 +90,8 @@ public class AdminDashboardController {
                 .map(Attempt::getTaskId)
                 .distinct()
                 .count();
-        long activeCompetitionsCount = competitionRepository.findAllByStatus(CompetitionStatus.ACTIVE).size();
-        long publishedTestsCount = testRepository.findAllByStatus(TestStatus.PUBLISHED).size();
+        long activeCompetitionsCount = activeCompetitions.size();
+        long publishedTestsCount = publishedTests.size();
         long activePromoCodesCount = promoCodeRepository.findAll().stream()
                 .filter(p -> p.getUsedCount() < p.getMaxUses())
                 .count();

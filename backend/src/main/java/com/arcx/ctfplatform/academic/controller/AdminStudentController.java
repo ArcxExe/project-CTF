@@ -118,7 +118,7 @@ public class AdminStudentController {
     public ResponseEntity<Void> deleteStudent(
             @PathVariable UUID id,
             @AuthenticationPrincipal User user) {
-        studentService.deleteStudent(id);
+        studentService.deleteStudent(id, user);
         return ResponseEntity.ok().build();
     }
 }

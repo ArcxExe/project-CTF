@@ -66,8 +66,54 @@ class StudentServiceTest {
         verify(studentRepository).deleteManualSubmissionsByStudentId(studentId);
         verify(studentRepository).deleteQuizAttemptsByStudentId(studentId);
         verify(studentRepository).deleteScoreAdjustmentsByStudentId(studentId);
+        verify(studentRepository).deleteHiddenStudentsByStudentIdIn(java.util.List.of(studentId));
         verify(studentRepository).delete(student);
         verify(userRepository).deleteById(userId);
+    }
+
+    @Test
+    @DisplayName("Issue #34: deleteStudent writes audit log and broadcasts leaderboard update")
+    void testDeleteStudentAuditsAndBroadcasts() {
+        com.arcx.ctfplatform.audit.service.AuditService auditService =
+                mock(com.arcx.ctfplatform.audit.service.AuditService.class);
+        com.arcx.ctfplatform.leaderboard.service.LeaderboardService leaderboardService =
+                mock(com.arcx.ctfplatform.leaderboard.service.LeaderboardService.class);
+
+        StudentService fullService = new StudentService(
+                studentRepository,
+                groupRepository,
+                userRepository,
+                studentMapper,
+                null,
+                null,
+                auditService,
+                leaderboardService
+        );
+
+        UUID studentId = UUID.randomUUID();
+        Student student = Student.builder().id(studentId).studentCode("STU-DEL").build();
+        User instructor = User.builder()
+                .id(UUID.randomUUID())
+                .username("instructor1")
+                .role(Role.INSTRUCTOR)
+                .build();
+
+        when(studentRepository.findById(studentId)).thenReturn(Optional.of(student));
+
+        fullService.deleteStudent(studentId, instructor);
+
+        verify(studentRepository).deleteHiddenStudentsByStudentIdIn(java.util.List.of(studentId));
+        verify(auditService).logEvent(
+                eq(instructor.getId()),
+                eq("instructor1"),
+                eq("INSTRUCTOR"),
+                eq("STUDENT_DELETED"),
+                eq(studentId.toString()),
+                eq("STU-DEL"),
+                eq("Deleted student STU-DEL"),
+                isNull()
+        );
+        verify(leaderboardService).broadcastUpdate();
     }
 
     @Test

@@ -190,4 +190,61 @@ class AdminAnalyticsServiceTest {
         assertThat(row.maxScore()).isEqualTo(40);
         assertThat(row.percentage()).isEqualTo(100.0);
     }
+
+    @Test
+    @DisplayName("Issue #34: getStudentTestAnalytics deterministically prefers COMPLETED attempt with highest score")
+    void testDeterministicQuizAttemptSelection() {
+        adminAnalyticsService.setQuizQuestionRepository(quizQuestionRepository);
+
+        UUID sId = UUID.randomUUID();
+        Student student = Student.builder()
+                .id(sId)
+                .firstName("Анна")
+                .lastName("Смирнова")
+                .status(StudentStatus.ACTIVE)
+                .build();
+
+        UUID testId = UUID.randomUUID();
+        var kt1 = com.arcx.ctfplatform.tests.entity.Test.builder()
+                .id(testId)
+                .title("КТ 1")
+                .type(TestType.CONTROL_POINT)
+                .ktNumber(1)
+                .status(TestStatus.PUBLISHED)
+                .build();
+
+        QuizQuestion q1 = QuizQuestion.builder().id(UUID.randomUUID()).testId(testId).points(50).ordering(1).build();
+        QuizAttempt inProgress = QuizAttempt.builder()
+                .studentId(sId)
+                .quizId(testId)
+                .status(QuizAttemptStatus.IN_PROGRESS)
+                .score(50.0)
+                .startedAt(java.time.Instant.parse("2026-11-01T12:00:00Z"))
+                .build();
+        QuizAttempt lowerCompleted = QuizAttempt.builder()
+                .studentId(sId)
+                .quizId(testId)
+                .status(QuizAttemptStatus.COMPLETED)
+                .score(30.0)
+                .completedAt(java.time.Instant.parse("2026-11-01T10:00:00Z"))
+                .build();
+        QuizAttempt bestCompleted = QuizAttempt.builder()
+                .studentId(sId)
+                .quizId(testId)
+                .status(QuizAttemptStatus.COMPLETED)
+                .score(45.0)
+                .completedAt(java.time.Instant.parse("2026-11-01T11:00:00Z"))
+                .build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(student));
+        when(testRepository.findAll()).thenReturn(List.of(kt1));
+        when(quizQuestionRepository.findAll()).thenReturn(List.of(q1));
+        when(quizAttemptRepository.findAll()).thenReturn(List.of(inProgress, lowerCompleted, bestCompleted));
+
+        List<AdminAnalyticsService.StudentTestAnalytics> rows = adminAnalyticsService.getStudentTestAnalytics(null, null);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).status()).isEqualTo("COMPLETED");
+        assertThat(rows.get(0).score()).isEqualTo(45);
+    }
 }

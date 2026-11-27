@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.audit.service.AuditService;
 import com.arcx.ctfplatform.common.config.IMapping;
+import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeRepository;
 
@@ -39,6 +41,7 @@ public class StudentService {
     private PromoCodeRepository promoCodeRepository;
     private PromoCodeClaimRepository promoCodeClaimRepository;
     private AuditService auditService;
+    private LeaderboardService leaderboardService;
 
     public StudentService(
             StudentRepository studentRepository,
@@ -46,7 +49,20 @@ public class StudentService {
             UserRepository userRepository,
             IMapping<Student, StudentResponse> studentMapper
     ) {
-        this(studentRepository, groupRepository, userRepository, studentMapper, null, null, null);
+        this(studentRepository, groupRepository, userRepository, studentMapper, null, null, null, null);
+    }
+
+    public StudentService(
+            StudentRepository studentRepository,
+            AcademicGroupRepository groupRepository,
+            UserRepository userRepository,
+            IMapping<Student, StudentResponse> studentMapper,
+            PromoCodeRepository promoCodeRepository,
+            PromoCodeClaimRepository promoCodeClaimRepository,
+            AuditService auditService
+    ) {
+        this(studentRepository, groupRepository, userRepository, studentMapper,
+                promoCodeRepository, promoCodeClaimRepository, auditService, null);
     }
 
     @Autowired
@@ -57,7 +73,8 @@ public class StudentService {
             IMapping<Student, StudentResponse> studentMapper,
             @Autowired(required = false) PromoCodeRepository promoCodeRepository,
             @Autowired(required = false) PromoCodeClaimRepository promoCodeClaimRepository,
-            @Autowired(required = false) AuditService auditService
+            @Autowired(required = false) AuditService auditService,
+            @Autowired(required = false) @Lazy LeaderboardService leaderboardService
     ) {
         this.studentRepository = studentRepository;
         this.groupRepository = groupRepository;
@@ -66,6 +83,7 @@ public class StudentService {
         this.promoCodeRepository = promoCodeRepository;
         this.promoCodeClaimRepository = promoCodeClaimRepository;
         this.auditService = auditService;
+        this.leaderboardService = leaderboardService;
     }
 
     @Transactional
@@ -222,6 +240,11 @@ public class StudentService {
 
     @Transactional
     public void deleteStudent(UUID id) {
+        deleteStudent(id, null);
+    }
+
+    @Transactional
+    public void deleteStudent(UUID id, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
         
@@ -235,6 +258,7 @@ public class StudentService {
         studentRepository.deleteManualSubmissionsByStudentId(studentId);
         studentRepository.deleteQuizAttemptsByStudentId(studentId);
         studentRepository.deleteScoreAdjustmentsByStudentId(studentId);
+        studentRepository.deleteHiddenStudentsByStudentIdIn(List.of(studentId));
         if (promoCodeClaimRepository != null) {
             promoCodeClaimRepository.deleteByStudentIdIn(List.of(studentId));
         }
@@ -249,6 +273,22 @@ public class StudentService {
         // Delete user if exists (preserve demo/privileged accounts)
         if (userId != null && !isProtectedUserId(userId)) {
             userRepository.deleteById(userId);
+        }
+
+        if (auditService != null && currentUser != null) {
+            auditService.logEvent(
+                    currentUser.getId(),
+                    currentUser.getUsername(),
+                    currentUser.getRole() != null ? currentUser.getRole().name() : null,
+                    "STUDENT_DELETED",
+                    studentId.toString(),
+                    student.getStudentCode(),
+                    "Deleted student " + student.getStudentCode(),
+                    null
+            );
+        }
+        if (leaderboardService != null) {
+            leaderboardService.broadcastUpdate();
         }
     }
 

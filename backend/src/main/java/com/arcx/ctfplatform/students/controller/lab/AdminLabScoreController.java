@@ -44,11 +44,10 @@ public class AdminLabScoreController {
     }
 
     @PostMapping("/import")
-    public ResponseEntity<Void> importScores(
+    public ResponseEntity<LabScoreService.LabScoreImportReport> importScores(
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal User user) throws IOException {
-        labScoreService.importLabScores(file.getInputStream(), user.getId());
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(labScoreService.importLabScores(file.getInputStream(), user.getId()));
     }
 
     @GetMapping

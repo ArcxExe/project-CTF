@@ -2,21 +2,29 @@ package com.arcx.ctfplatform.students.service.lab;
 
 import com.arcx.ctfplatform.academic.entity.Student;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
+import com.arcx.ctfplatform.audit.service.AuditService;
 import com.arcx.ctfplatform.students.entity.lab.LabScore;
 import com.arcx.ctfplatform.students.entity.lab.StudentLab;
 import com.arcx.ctfplatform.students.repository.lab.LabScoreHistoryRepository;
 import com.arcx.ctfplatform.students.repository.lab.LabScoreRepository;
 import com.arcx.ctfplatform.students.repository.lab.StudentLabRepository;
+import com.arcx.ctfplatform.users.entity.Role;
+import com.arcx.ctfplatform.users.entity.User;
+import com.arcx.ctfplatform.users.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -257,5 +265,131 @@ class LabScoreServiceTest {
 
         // LabScore must be saved with score=20 and isEligible=false (since only 1/8 labs accepted)
         verify(labScoreRepository).save(argThat(ls -> ls.getScore() == 20 && !ls.isEligible()));
+    }
+
+    @Test
+    @DisplayName("Issue #34: Manual isEligible override is respected even with partial or full StudentLab records")
+    void manualEligibilityOverrideIsRespected() {
+        StudentLab lab1 = StudentLab.builder().student(student).labNumber(1).score(10.0).isAccepted(true).build();
+        LabScore manualTrue = LabScore.builder()
+                .student(student)
+                .score(10)
+                .isEligible(true)
+                .manualEligibilityOverride(true)
+                .build();
+
+        when(studentLabRepository.findAllByStudentId(studentId)).thenReturn(List.of(lab1));
+        when(labScoreRepository.findByStudentId(studentId)).thenReturn(Optional.of(manualTrue));
+        assertThat(labScoreService.isEligible(studentId)).isTrue();
+
+        List<StudentLab> all8 = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            all8.add(StudentLab.builder().student(student).labNumber(i).score(10.0).isAccepted(true).build());
+        }
+        LabScore manualFalse = LabScore.builder()
+                .student(student)
+                .score(80)
+                .isEligible(false)
+                .manualEligibilityOverride(true)
+                .build();
+        when(studentLabRepository.findAllByStudentId(studentId)).thenReturn(all8);
+        when(labScoreRepository.findByStudentId(studentId)).thenReturn(Optional.of(manualFalse));
+        assertThat(labScoreService.isEligible(studentId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Issue #34: setScore without explicit isEligible preserves existing manual isEligible and overrides rounded sum")
+    void setScorePreservesManualEligibilityAndOverridesRoundedSum() {
+        StudentLab lab1 = StudentLab.builder().student(student).labNumber(1).score(100.4).isAccepted(true).build();
+        LabScore existing = LabScore.builder()
+                .student(student)
+                .score(100)
+                .isEligible(true)
+                .manualEligibilityOverride(true)
+                .manualScoreOverride(true)
+                .build();
+
+        when(studentRepository.findById(studentId)).thenReturn(Optional.of(student));
+        when(labScoreRepository.findByStudentId(studentId)).thenReturn(Optional.of(existing));
+
+        labScoreService.setScore(studentId, 100, "Manual override", UUID.randomUUID());
+
+        verify(labScoreRepository).save(argThat(ls ->
+                ls.getScore() == 100 && ls.isEligible() && ls.isManualEligibilityOverride() && ls.isManualScoreOverride()));
+
+        when(studentLabRepository.findAllByStudentId(studentId)).thenReturn(List.of(lab1));
+        assertThat(labScoreService.getFinalLabScore(studentId)).isEqualTo(100.0);
+    }
+
+    @Test
+    @DisplayName("Issue #34: recordLab rejects labNumber outside 1..8")
+    void recordLabRejectsInvalidLabNumber() {
+        assertThatThrownBy(() -> labScoreService.recordLab(studentId, 0, 5.0, 8.0, 1.0, 2.0, 1.0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid lab number");
+        assertThatThrownBy(() -> labScoreService.recordLab(studentId, 9, 5.0, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid lab number");
+    }
+
+    @Test
+    @DisplayName("Issue #34: importLabScores skips text header, reports line 1 fractional/negative/unknown rows, and updates valid ones")
+    void importLabScoresReturnsDetailedReport() {
+        String csv = "studentCode,score\n"
+                + "STU-100,12.5\n"
+                + "STU-100,-5\n"
+                + "UNKNOWN-1,50\n"
+                + "STU-100,75\n";
+
+        when(studentRepository.findByStudentCode("STU-100")).thenReturn(Optional.of(student));
+        when(studentRepository.findByStudentCode("UNKNOWN-1")).thenReturn(Optional.empty());
+        when(studentRepository.findById(studentId)).thenReturn(Optional.of(student));
+        when(labScoreRepository.findByStudentId(studentId)).thenReturn(Optional.empty());
+
+        LabScoreService.LabScoreImportReport report = labScoreService.importLabScores(
+                new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)), UUID.randomUUID());
+
+        assertThat(report.updatedCount()).isEqualTo(1);
+        assertThat(report.skippedCount()).isEqualTo(3);
+        assertThat(report.errors()).hasSize(3);
+        assertThat(report.errors().get(0)).contains("12.5");
+        assertThat(report.errors().get(1)).contains("-5");
+        assertThat(report.errors().get(2)).contains("UNKNOWN-1");
+
+        String line1FractionCsv = "STU-100,12.5\n";
+        LabScoreService.LabScoreImportReport firstLineReport = labScoreService.importLabScores(
+                new ByteArrayInputStream(line1FractionCsv.getBytes(StandardCharsets.UTF_8)), UUID.randomUUID());
+        assertThat(firstLineReport.updatedCount()).isZero();
+        assertThat(firstLineReport.skippedCount()).isEqualTo(1);
+        assertThat(firstLineReport.errors().get(0)).contains("12.5");
+    }
+
+    @Test
+    @DisplayName("Issue #34: setScore records real actor username and role in AuditService")
+    void setScoreAuditsRealActor() {
+        UserRepository userRepository = mock(UserRepository.class);
+        AuditService auditService = mock(AuditService.class);
+        ReflectionTestUtils.setField(labScoreService, "userRepository", userRepository);
+        ReflectionTestUtils.setField(labScoreService, "auditService", auditService);
+
+        UUID instructorId = UUID.randomUUID();
+        User instructor = User.builder().id(instructorId).username("prof_ivanov").role(Role.INSTRUCTOR).build();
+
+        when(studentRepository.findById(studentId)).thenReturn(Optional.of(student));
+        when(labScoreRepository.findByStudentId(studentId)).thenReturn(Optional.empty());
+        when(userRepository.findById(instructorId)).thenReturn(Optional.of(instructor));
+
+        labScoreService.setScore(studentId, 55, true, "Checked", instructorId);
+
+        verify(auditService).logEvent(
+                eq(instructorId),
+                eq("prof_ivanov"),
+                eq("INSTRUCTOR"),
+                eq("LAB_SCORE_UPDATE"),
+                eq("STUDENT:" + studentId),
+                eq("0"),
+                eq("55"),
+                isNull()
+        );
     }
 }
