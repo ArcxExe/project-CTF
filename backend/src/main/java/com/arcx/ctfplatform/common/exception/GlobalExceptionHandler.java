@@ -3,21 +3,33 @@ package com.arcx.ctfplatform.common.exception;
 import com.arcx.ctfplatform.common.response.ApiErrorResponse;
 import com.arcx.ctfplatform.common.time.TimeProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.sql.SQLException;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestControllerAdvice
 @RequiredArgsConstructor
@@ -83,6 +95,116 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return build(HttpStatus.FORBIDDEN, localizeMessage(ex.getMessage()), request, null);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxUploadSize(
+            MaxUploadSizeExceededException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.PAYLOAD_TOO_LARGE, "Размер загружаемого файла превышает допустимый лимит", request, null);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiErrorResponse> handleResponseStatus(
+            ResponseStatusException ex,
+            HttpServletRequest request
+    ) {
+        HttpStatusCode status = ex.getStatusCode();
+        String rawReason = ex.getReason();
+        String message = (rawReason != null && !rawReason.isBlank())
+                ? localizeMessage(rawReason)
+                : resolveReasonPhrase(status);
+        return build(status, message, request, null);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException ex,
+            HttpServletRequest request
+    ) {
+        Throwable mostSpecific = ex.getMostSpecificCause();
+        String causeMessage = mostSpecific != null ? mostSpecific.getMessage() : ex.getMessage();
+        log.warn("Data integrity violation on path {}: {}", request.getRequestURI(), causeMessage);
+
+        String sqlState = extractSqlState(ex);
+        String lower = causeMessage != null ? causeMessage.toLowerCase(Locale.ROOT) : "";
+
+        if ("22001".equals(sqlState) || "23502".equals(sqlState) || "23514".equals(sqlState)
+                || lower.contains("value too long")
+                || lower.contains("data truncation")
+                || lower.contains("not-null")
+                || lower.contains("null value in column")
+                || lower.contains("check constraint")
+                || lower.contains("chk_")) {
+            return build(HttpStatus.BAD_REQUEST,
+                    "Некорректные данные: превышена допустимая длина или нарушены ограничения", request, null);
+        }
+        if ("23505".equals(sqlState)
+                || lower.contains("duplicate key")
+                || lower.contains("unique constraint")
+                || lower.contains("already exists")) {
+            return build(HttpStatus.CONFLICT, "Запись с такими данными уже существует", request, null);
+        }
+        if ("23503".equals(sqlState) || lower.contains("foreign key")) {
+            return build(HttpStatus.CONFLICT,
+                    "Операция невозможна: нарушена целостность связанных данных", request, null);
+        }
+        return build(HttpStatus.CONFLICT,
+                "Конфликт данных: запись уже существует или связана с другими объектами", request, null);
+    }
+
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoSuchElement(
+            NoSuchElementException ex,
+            HttpServletRequest request
+    ) {
+        String raw = ex.getMessage();
+        String message = (raw == null || raw.isBlank()) ? "Ресурс не найден" : localizeMessage(raw);
+        return build(HttpStatus.NOT_FOUND, message, request, null);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingPart(
+            MissingServletRequestPartException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.BAD_REQUEST,
+                "Отсутствует обязательная часть запроса: " + ex.getRequestPartName(), request, null);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingParam(
+            MissingServletRequestParameterException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.BAD_REQUEST,
+                "Отсутствует обязательный параметр запроса: " + ex.getParameterName(), request, null);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.METHOD_NOT_ALLOWED, "Метод запроса не поддерживается", request, null);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResourceFound(
+            NoResourceFoundException ex,
+            HttpServletRequest request
+    ) {
+        return build(HttpStatus.NOT_FOUND, "Ресурс не найден", request, null);
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<Void> handleAsyncRequestNotUsable(
+            AsyncRequestNotUsableException ex,
+            HttpServletRequest request
+    ) {
+        log.debug("Async request closed by client on path {}: {}", request.getRequestURI(), ex.getMessage());
+        return null;
     }
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -165,6 +287,8 @@ public class GlobalExceptionHandler {
             case "Session type is required" -> "Необходимо указать тип занятия";
             case "Invalid CSV row: expected studentCode and score" ->
                     "Некорректная строка CSV: ожидаются шифр студента и баллы";
+            case "Cycle number must be between" -> "Номер занятия вне допустимого диапазона";
+            case "No value present" -> "Ресурс не найден";
             case "Access Denied", "Access is denied" -> "Недостаточно прав для выполнения операции";
             default -> {
                 if (raw.startsWith("Student not found:")) {
@@ -196,8 +320,24 @@ public class GlobalExceptionHandler {
         };
     }
 
+    private String extractSqlState(Throwable ex) {
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof SQLException sqlEx && sqlEx.getSQLState() != null) {
+                return sqlEx.getSQLState();
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    private String resolveReasonPhrase(HttpStatusCode status) {
+        HttpStatus resolved = HttpStatus.resolve(status.value());
+        return resolved != null ? resolved.getReasonPhrase() : String.valueOf(status.value());
+    }
+
     private ResponseEntity<ApiErrorResponse> build(
-            HttpStatus status,
+            HttpStatusCode status,
             String message,
             HttpServletRequest request,
             Map<String, String> validationErrors
@@ -205,7 +345,7 @@ public class GlobalExceptionHandler {
         ApiErrorResponse response = ApiErrorResponse.builder()
                 .timestamp(timeProvider.now())
                 .status(status.value())
-                .error(status.getReasonPhrase())
+                .error(resolveReasonPhrase(status))
                 .message(message)
                 .path(request.getRequestURI())
                 .validationErrors(validationErrors)

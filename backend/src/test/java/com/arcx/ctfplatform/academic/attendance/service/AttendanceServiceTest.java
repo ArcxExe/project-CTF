@@ -107,7 +107,7 @@ class AttendanceServiceTest {
     @Test
     @DisplayName("updateCell stores a new mark and returns the recalculated row")
     void testUpdateCellCreatesMark() {
-        when(studentRepository.findById(ivanov.getId())).thenReturn(Optional.of(ivanov));
+        when(studentRepository.findByIdWithLock(ivanov.getId())).thenReturn(Optional.of(ivanov));
         when(attendanceRepository.findCell(
                 ivanov.getId(), SessionType.LECTURE, 3)).thenReturn(Optional.empty());
         when(attendanceRepository.save(any(StudentAttendance.class)))
@@ -123,6 +123,7 @@ class AttendanceServiceTest {
         assertThat(row.lecturesPresentCount()).isEqualTo(1);
         assertThat(row.attendancePercent()).isEqualTo(100.0);
 
+        verify(studentRepository).findByIdWithLock(ivanov.getId());
         verify(attendanceRepository).save(any(StudentAttendance.class));
         verify(attendanceRepository, never()).delete(any(StudentAttendance.class));
     }
@@ -131,7 +132,7 @@ class AttendanceServiceTest {
     @DisplayName("updateCell with null status resets the cell")
     void testUpdateCellResetsMark() {
         StudentAttendance existing = attendance(ivanov, SessionType.LECTURE, 3, AttendanceStatus.ABSENT);
-        when(studentRepository.findById(ivanov.getId())).thenReturn(Optional.of(ivanov));
+        when(studentRepository.findByIdWithLock(ivanov.getId())).thenReturn(Optional.of(ivanov));
         when(attendanceRepository.findCell(
                 ivanov.getId(), SessionType.LECTURE, 3)).thenReturn(Optional.of(existing));
         when(attendanceRepository.findByStudentId(ivanov.getId())).thenReturn(List.of());
@@ -142,6 +143,7 @@ class AttendanceServiceTest {
         assertThat(row.lectures().get(3)).isNull();
         assertThat(row.attendancePercent()).isZero();
 
+        verify(studentRepository).findByIdWithLock(ivanov.getId());
         verify(attendanceRepository).delete(existing);
         verify(attendanceRepository, never()).save(any(StudentAttendance.class));
     }
@@ -202,7 +204,7 @@ class AttendanceServiceTest {
     @DisplayName("updateCell throws when student does not exist")
     void testStudentNotFound() {
         UUID unknownId = UUID.randomUUID();
-        when(studentRepository.findById(unknownId)).thenReturn(Optional.empty());
+        when(studentRepository.findByIdWithLock(unknownId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> attendanceService.updateCell(
                 unknownId, SessionType.LECTURE, 1, AttendanceStatus.PRESENT, null, adminId))
@@ -214,7 +216,7 @@ class AttendanceServiceTest {
     @DisplayName("updateCell trims comment and ignores blanks")
     void testCommentHandling() {
         StudentAttendance existing = attendance(ivanov, SessionType.LECTURE, 2, AttendanceStatus.PRESENT);
-        when(studentRepository.findById(ivanov.getId())).thenReturn(Optional.of(ivanov));
+        when(studentRepository.findByIdWithLock(ivanov.getId())).thenReturn(Optional.of(ivanov));
         when(attendanceRepository.findCell(ivanov.getId(), SessionType.LECTURE, 2)).thenReturn(Optional.of(existing));
         when(attendanceRepository.findByStudentId(ivanov.getId())).thenReturn(List.of(existing));
 

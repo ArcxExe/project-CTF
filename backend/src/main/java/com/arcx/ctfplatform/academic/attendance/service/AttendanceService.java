@@ -188,7 +188,7 @@ public class AttendanceService {
     public StudentAttendanceRowDto updateCell(UUID studentId, SessionType sessionType, int cycleNumber,
                                               AttendanceStatus status, String comment, UUID adminId) {
         validateSession(sessionType, cycleNumber);
-        Student student = studentRepository.findById(studentId)
+        Student student = studentRepository.findByIdWithLock(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found: " + studentId));
 
         StudentAttendance record = attendanceRepository

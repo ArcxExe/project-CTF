@@ -6,9 +6,11 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.arcx.ctfplatform.academic.entity.AcademicFlow;
 import com.arcx.ctfplatform.academic.group.dto.AcademicGroupRequestDTO;
 import com.arcx.ctfplatform.academic.group.dto.AcademicGroupResponseDTO;
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
+import com.arcx.ctfplatform.academic.repository.AcademicFlowRepository;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.common.config.IMapping;
 
@@ -19,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 public class AcademicGroupService {
 
     private final AcademicGroupRepository repository;
+    private final AcademicFlowRepository academicFlowRepository;
     private final IMapping<AcademicGroup, AcademicGroupResponseDTO> acMappingDTO;
 
     @Transactional(readOnly = true)
@@ -45,7 +48,7 @@ public class AcademicGroupService {
 
         AcademicGroup entity = new AcademicGroup();
         entity.setName(request.name());
-        entity.setStreamId(request.streamId());
+        entity.setAcademicFlow(resolveAcademicFlow(request.streamId()));
         if (request.maxLabs() != null) {
             entity.setMaxLabs(request.maxLabs());
         }
@@ -67,7 +70,7 @@ public class AcademicGroupService {
             academicGroup.setName(request.name());
         }
 
-        academicGroup.setStreamId(request.streamId());
+        academicGroup.setAcademicFlow(resolveAcademicFlow(request.streamId()));
         if (request.maxLabs() != null) {
             academicGroup.setMaxLabs(request.maxLabs());
         }
@@ -75,6 +78,14 @@ public class AcademicGroupService {
 
         return acMappingDTO.mapping(academicGroup);
 
+    }
+
+    private AcademicFlow resolveAcademicFlow(UUID streamId) {
+        if (streamId == null) {
+            return null;
+        }
+        return academicFlowRepository.findById(streamId)
+                .orElseThrow(() -> new IllegalArgumentException("Academic flow not found"));
     }
 
     @Transactional
