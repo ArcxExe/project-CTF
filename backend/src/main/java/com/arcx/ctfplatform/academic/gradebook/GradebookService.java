@@ -3,14 +3,17 @@ package com.arcx.ctfplatform.academic.gradebook;
 import com.arcx.ctfplatform.academic.entity.AcademicGroup;
 import com.arcx.ctfplatform.academic.entity.GradingScale;
 import com.arcx.ctfplatform.academic.entity.Student;
+import com.arcx.ctfplatform.academic.entity.StudentStatus;
 import com.arcx.ctfplatform.academic.repository.AcademicGroupRepository;
 import com.arcx.ctfplatform.academic.repository.StudentRepository;
 import com.arcx.ctfplatform.academic.service.GradingService;
+import com.arcx.ctfplatform.academic.service.StudentScoreCalculator;
 import com.arcx.ctfplatform.attempts.entity.Attempt;
 import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.common.util.SimpleXlsxUtil;
+import com.arcx.ctfplatform.competitions.entity.Competition;
+import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
 import com.arcx.ctfplatform.leaderboard.service.LeaderboardService;
-import com.arcx.ctfplatform.modifiers.entity.PromoCode;
 import com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim;
 import com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment;
 import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
@@ -30,6 +33,7 @@ import com.arcx.ctfplatform.users.repository.UserRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -51,6 +55,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class GradebookService {
+
+    public static final int MAX_TOKEN_LENGTH = 64;
 
     public static final List<String> EXPORT_HEADERS = List.of(
             "№ п/п",
@@ -93,8 +99,15 @@ public class GradebookService {
     @Autowired(required = false)
     private QuizQuestionRepository quizQuestionRepository;
 
+    @Autowired(required = false)
+    private CompetitionRepository competitionRepository;
+
     public void setQuizQuestionRepository(QuizQuestionRepository quizQuestionRepository) {
         this.quizQuestionRepository = quizQuestionRepository;
+    }
+
+    public void setCompetitionRepository(CompetitionRepository competitionRepository) {
+        this.competitionRepository = competitionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -141,6 +154,7 @@ public class GradebookService {
                 allQuizAttempts,
                 questionPointsByTestId
         );
+        Competition activeComp = resolveActiveCompetition();
         Map<UUID, List<PromoCodeClaim>> claimsByStudent = promoCodeClaimRepository.findAllWithPromoCode().stream()
                 .filter(c -> c.getStudentId() != null)
                 .collect(Collectors.groupingBy(PromoCodeClaim::getStudentId));
@@ -180,6 +194,7 @@ public class GradebookService {
                     quizzesByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     testMap,
                     ktMaxProfile,
+                    activeComp,
                     claimsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     adjustmentsByStudent.getOrDefault(student.getId(), Collections.emptyList()),
                     labsByStudent.get(student.getId()),
@@ -225,10 +240,19 @@ public class GradebookService {
             student.setKt4(roundToTwoDecimals(Math.max(0.0, req.kt4())));
         }
         if (req.token() != null) {
-            student.setTokenInfo(req.token().trim().isEmpty() ? null : req.token().trim());
+            String trimmedToken = req.token().trim();
+            if (trimmedToken.length() > MAX_TOKEN_LENGTH) {
+                throw new IllegalArgumentException("Token must not exceed 64 characters");
+            }
+            student.setTokenInfo(trimmedToken.isEmpty() ? null : trimmedToken);
         }
-        if (req.examScore() != null) {
-            student.setExamScore(req.examScore() >= 0 && req.examScore() <= 100 ? req.examScore() : null);
+        if (Boolean.TRUE.equals(req.clearExamScore())) {
+            student.setExamScore(null);
+        } else if (req.examScore() != null) {
+            if (req.examScore() < 0 || req.examScore() > 100) {
+                throw new IllegalArgumentException("Exam score must be between 0 and 100");
+            }
+            student.setExamScore(req.examScore());
         }
         studentRepository.save(student);
 
@@ -242,31 +266,45 @@ public class GradebookService {
                 LabScoreService.LabSpec spec = LabScoreService.getLabSpec(labNum);
                 double clampedScore = roundToTwoDecimals(Math.max(0.0, Math.min(entry.getValue(), spec.maxTotal())));
                 Optional<StudentLab> existingLabOpt = studentLabRepository.findByStudentIdAndLabNumber(studentId, labNum);
+                boolean hasExplicitAccepted = req.labAccepted() != null
+                        && req.labAccepted().get(labNum) != null;
+
+                if (existingLabOpt.isEmpty() && clampedScore == 0.0 && !hasExplicitAccepted) {
+                    continue;
+                }
+
                 StudentLab lab = existingLabOpt
                         .orElseGet(() -> StudentLab.builder().student(student).labNumber(labNum).build());
+                boolean scoreChanged = existingLabOpt.isEmpty()
+                        || Math.abs(roundToTwoDecimals(lab.getScore()) - clampedScore) >= 0.005;
+
+                if (!scoreChanged && !hasExplicitAccepted) {
+                    continue;
+                }
+
                 lab.setMaxRawScore(spec.maxRawScore());
                 lab.setMaxDefenseScore(spec.maxDefenseScore());
 
-                boolean hasDetailedBreakdown = existingLabOpt.isPresent()
-                        && (lab.getRawScore() > 0 || lab.getDefenseScore() > 0 || lab.getPenaltyCoefficient() != 1.0);
-                if (!hasDetailedBreakdown) {
+                if (scoreChanged) {
                     double ratio = spec.maxTotal() > 0 ? (clampedScore / spec.maxTotal()) : 0.0;
-                    lab.setRawScore(roundToTwoDecimals(spec.maxRawScore() * ratio));
-                    lab.setDefenseScore(roundToTwoDecimals(clampedScore - lab.getRawScore()));
+                    double recalculatedRaw = roundToTwoDecimals(spec.maxRawScore() * ratio);
+                    double recalculatedDefense = roundToTwoDecimals(
+                            Math.min(spec.maxDefenseScore(), Math.max(0.0, clampedScore - recalculatedRaw))
+                    );
+                    lab.setRawScore(recalculatedRaw);
+                    lab.setDefenseScore(recalculatedDefense);
                     lab.setPenaltyCoefficient(1.0);
+                    lab.setScore(clampedScore);
                 }
+
                 boolean accepted;
-                if (req.labAccepted() != null && req.labAccepted().containsKey(labNum)) {
+                if (hasExplicitAccepted) {
                     accepted = Boolean.TRUE.equals(req.labAccepted().get(labNum));
-                } else if (hasDetailedBreakdown) {
-                    accepted = lab.getRawScore() >= 0.40 * spec.maxRawScore()
-                            && lab.getDefenseScore() >= 0.50 * spec.maxDefenseScore()
-                            && clampedScore >= 0.40 * spec.maxTotal();
                 } else {
                     accepted = lab.getRawScore() >= 0.40 * spec.maxRawScore()
-                            && lab.getDefenseScore() >= 0.50 * spec.maxDefenseScore();
+                            && lab.getDefenseScore() >= 0.50 * spec.maxDefenseScore()
+                            && lab.getScore() >= 0.40 * spec.maxTotal();
                 }
-                lab.setScore(clampedScore);
                 lab.setAccepted(accepted);
                 studentLabRepository.save(lab);
                 labsChanged = true;
@@ -309,7 +347,10 @@ public class GradebookService {
         if (req.studentId() == null) {
             throw new IllegalArgumentException("studentId is required");
         }
-        double penalty = req.penaltyCoefficient() > 0 ? req.penaltyCoefficient() : 1.0;
+        double penalty = req.penaltyCoefficient() != null ? req.penaltyCoefficient() : 1.0;
+        if (Double.isNaN(penalty) || Double.isInfinite(penalty) || penalty < 0.0 || penalty > 1.0) {
+            throw new IllegalArgumentException("Penalty coefficient must be between 0.0 and 1.0");
+        }
         labScoreService.recordLab(req.studentId(), req.labNumber(), req.rawScore(), req.defenseScore(), penalty);
         Student student = studentRepository.findById(req.studentId()).orElseThrow();
         if (req.acceptedOverride() != null) {
@@ -455,6 +496,13 @@ public class GradebookService {
         return SimpleXlsxUtil.writeSheet("Рейтинг", EXPORT_HEADERS, sheetRows);
     }
 
+    private Competition resolveActiveCompetition() {
+        if (competitionRepository == null) {
+            return null;
+        }
+        return StudentScoreCalculator.selectActiveCompetition(competitionRepository.findAll(), Instant.now());
+    }
+
     private GradebookRowDto buildSingleStudentRow(Student student) {
         Map<UUID, AcademicGroup> groupMap = new HashMap<>();
         if (student.getGroupId() != null) {
@@ -493,6 +541,7 @@ public class GradebookService {
                 quizzes,
                 questionPointsByTestId
         );
+        Competition activeComp = resolveActiveCompetition();
         return buildRowForStudent(
                 student,
                 1,
@@ -501,6 +550,7 @@ public class GradebookService {
                 quizzes,
                 testMap,
                 ktMaxProfile,
+                activeComp,
                 claims,
                 adjustments,
                 studentLabs,
@@ -517,15 +567,20 @@ public class GradebookService {
             List<QuizAttempt> quizzes,
             Map<UUID, Test> testMap,
             KtScoreCalculator.KtMaxProfile ktMaxProfile,
+            Competition activeComp,
             List<PromoCodeClaim> claims,
             List<ScoreAdjustment> adjustments,
             List<StudentLab> preloadedLabs,
             LabScoreService.StudentLabSummary preloadedLabSummary,
             Optional<List<GradingScale>> preloadedScales
     ) {
-        List<StudentLab> studentLabs = preloadedLabs != null
-                ? preloadedLabs
-                : studentLabRepository.findAllByStudentId(student.getId());
+        boolean isDisqualified = student.getStatus() == StudentStatus.DISQUALIFIED;
+
+        List<StudentLab> studentLabs = isDisqualified
+                ? Collections.emptyList()
+                : (preloadedLabs != null
+                        ? preloadedLabs
+                        : studentLabRepository.findAllByStudentId(student.getId()));
         Map<Integer, StudentLab> labByNum = studentLabs.stream()
                 .collect(Collectors.toMap(StudentLab::getLabNumber, l -> l, (a, b) -> b));
 
@@ -537,7 +592,9 @@ public class GradebookService {
             double score = sl != null ? roundToTwoDecimals(sl.getScore()) : 0.0;
             double rawScore = sl != null ? roundToTwoDecimals(sl.getRawScore()) : 0.0;
             double defScore = sl != null ? roundToTwoDecimals(sl.getDefenseScore()) : 0.0;
-            double penalty = sl != null && sl.getPenaltyCoefficient() > 0 ? sl.getPenaltyCoefficient() : 1.0;
+            double penalty = sl != null && sl.getPenaltyCoefficient() >= 0.0 && sl.getPenaltyCoefficient() <= 1.0
+                    ? sl.getPenaltyCoefficient()
+                    : 1.0;
             boolean accepted = sl != null && sl.isAccepted();
             if (accepted) {
                 acceptedCount++;
@@ -555,72 +612,38 @@ public class GradebookService {
             ));
         }
 
-        double rawLabScore = preloadedLabSummary != null
-                ? preloadedLabSummary.finalScore()
-                : labScoreService.getFinalLabScore(student.getId());
-        double totalLab = roundToTwoDecimals(Math.min(rawLabScore, 143.0));
-        boolean isEligible = preloadedLabSummary != null
-                ? preloadedLabSummary.isEligible()
-                : labScoreService.isEligible(student.getId());
-        double lPercent = roundToTwoDecimals(Math.max(0.0, Math.min((totalLab / 143.0) * 100.0, 100.0)));
-
-        // KT 1..4 (no hardcoded 25-point cap; percentage computed from actual max KT score)
-        KtScoreCalculator.StudentKtResult ktResult = KtScoreCalculator.computeStudentKt(
-                student, quizzes, testMap, ktMaxProfile
-        );
-        double totalKt = ktResult.totalKt();
-        double kPercent = ktResult.kPercent();
-        double maxTotalKt = ktMaxProfile.totalKtMax();
-        double maxTotalPoints = roundToTwoDecimals(143.0 + maxTotalKt);
-
-        double totalPoints = roundToTwoDecimals(totalLab + totalKt);
-
-        // CTF score
-        int rawCtf = attempts.stream()
-                .filter(Attempt::isCorrect)
-                .mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded())
-                .sum();
-        int additions = 0;
-        int subtractions = 0;
-        double multiplier = 1.0;
-        for (PromoCodeClaim claim : claims) {
-            PromoCode promo = claim.getPromoCode();
-            if (promo != null && promo.getModifierType() != null) {
-                int val = promo.getValue() != null ? promo.getValue() : 0;
-                switch (promo.getModifierType()) {
-                    case FIXED_ADD -> additions += val;
-                    case FIXED_SUB -> subtractions += val;
-                    case DOUBLE_COEFF, TEMP_MULTIPLIER -> multiplier *= (val > 0 ? val : 2);
-                }
-            }
+        double rawLabScore = 0.0;
+        boolean labEligible = false;
+        if (!isDisqualified) {
+            rawLabScore = preloadedLabSummary != null
+                    ? preloadedLabSummary.finalScore()
+                    : labScoreService.getFinalLabScore(student.getId());
+            labEligible = preloadedLabSummary != null
+                    ? preloadedLabSummary.isEligible()
+                    : labScoreService.isEligible(student.getId());
         }
-        int ctfScore = (int) Math.round((rawCtf + additions) * multiplier) - subtractions;
-        if (ctfScore < 0) ctfScore = 0;
-        ctfScore += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
-        if (ctfScore < 0) ctfScore = 0;
-
-        double ctfCoeff = roundToTwoDecimals(Math.max(0.0, Math.min(ctfScore / 800.0, 1.00)));
-        double cPercent = roundToTwoDecimals(Math.max(0.0, Math.min((ctfScore / 800.0) * 100.0, 100.0)));
-
-        double sScore = roundToTwoDecimals(0.50 * lPercent + 0.25 * kPercent + 0.25 * cPercent);
 
         AcademicGroup group = student.getGroupId() != null ? groupMap.get(student.getGroupId()) : null;
         UUID studentFlowId = group != null ? group.getStreamId() : null;
 
-        Integer recommendedGrade = null;
-        if (isEligible) {
-            if (preloadedScales != null && preloadedScales.isPresent()) {
-                recommendedGrade = gradingService.calculateFinalGradeWithExam(
-                        sScore, lPercent, kPercent, true, student.getExamScore(), studentFlowId, preloadedScales.get()
-                );
-            } else {
-                recommendedGrade = gradingService.calculateFinalGradeWithExam(
-                        sScore, lPercent, kPercent, true, student.getExamScore(), studentFlowId
-                );
-            }
-        }
-        int numericGrade = (recommendedGrade != null) ? recommendedGrade : 2;
+        StudentScoreCalculator.StudentMetrics metrics = StudentScoreCalculator.calculateMetrics(
+                student,
+                rawLabScore,
+                labEligible,
+                attempts,
+                quizzes,
+                testMap,
+                ktMaxProfile,
+                activeComp,
+                claims,
+                adjustments,
+                studentFlowId,
+                gradingService,
+                preloadedScales
+        );
 
+        double maxTotalKt = ktMaxProfile.totalKtMax();
+        double maxTotalPoints = roundToTwoDecimals(143.0 + maxTotalKt);
         String groupName = group != null ? group.getName() : "Без группы";
         String statusStr = student.getStatus() != null ? student.getStatus().name().toLowerCase(Locale.ROOT) : "active";
 
@@ -634,25 +657,25 @@ public class GradebookService {
                 groupName,
                 statusStr,
                 labCells,
-                totalLab,
+                metrics.totalLab(),
                 acceptedCount,
-                isEligible,
-                lPercent,
-                ktResult.kt1(),
-                ktResult.kt2(),
-                ktResult.kt3(),
-                ktResult.kt4(),
-                totalKt,
-                kPercent,
-                totalPoints,
-                ctfScore,
-                ctfCoeff,
-                cPercent,
+                metrics.isEligible(),
+                metrics.lPercent(),
+                metrics.ktResult().kt1(),
+                metrics.ktResult().kt2(),
+                metrics.ktResult().kt3(),
+                metrics.ktResult().kt4(),
+                metrics.ktResult().totalKt(),
+                metrics.ktResult().kPercent(),
+                metrics.totalPoints(),
+                metrics.ctfScore(),
+                metrics.ctfCoeff(),
+                metrics.cPercent(),
                 student.getTokenInfo(),
-                sScore,
+                metrics.sScore(),
                 student.getExamScore(),
-                recommendedGrade,
-                numericGrade,
+                metrics.recommendedGrade(),
+                metrics.numericGrade(),
                 ktMaxProfile.kt1Max(),
                 ktMaxProfile.kt2Max(),
                 ktMaxProfile.kt3Max(),

@@ -7,6 +7,6 @@ public record LabDetailUpdateRequest(
         int labNumber,
         double rawScore,
         double defenseScore,
-        double penaltyCoefficient,
+        Double penaltyCoefficient,
         Boolean acceptedOverride
 ) {}

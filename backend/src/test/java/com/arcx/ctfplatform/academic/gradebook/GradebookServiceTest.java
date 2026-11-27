@@ -416,4 +416,268 @@ class GradebookServiceTest {
         assertThat(row.maxTotalPoints()).isEqualTo(243.0);
         assertThat(row.kPercent()).isEqualTo(50.0);
     }
+
+    @Test
+    @DisplayName("Issue #28: DISQUALIFIED student has zeroed labs, KT, CTF, S%, isEligible=false, and grade=2")
+    void testDisqualifiedStudentZeroedInGradebook() {
+        student.setStatus(StudentStatus.DISQUALIFIED);
+        student.setExamScore(95);
+
+        List<StudentLab> labs = new ArrayList<>();
+        double[] maxScores = {10, 12, 12, 15, 24, 28, 20, 22};
+        for (int i = 1; i <= 8; i++) {
+            labs.add(StudentLab.builder()
+                    .student(student)
+                    .labNumber(i)
+                    .score(maxScores[i - 1])
+                    .isAccepted(true)
+                    .build());
+        }
+        Attempt ctfAttempt = Attempt.builder()
+                .studentId(student.getId())
+                .isCorrect(true)
+                .scoreAwarded(800)
+                .build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(student));
+        when(academicGroupRepository.findAll()).thenReturn(List.of(group));
+        when(studentLabRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(labs);
+        when(attemptRepository.findAll()).thenReturn(List.of(ctfAttempt));
+        when(quizAttemptRepository.findAll()).thenReturn(List.of());
+        when(testRepository.findAll()).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAll()).thenReturn(List.of());
+
+        List<GradebookRowDto> rows = gradebookService.getGradebook(groupId, null);
+        assertThat(rows).hasSize(1);
+        GradebookRowDto row = rows.get(0);
+
+        assertThat(row.status()).isEqualTo("disqualified");
+        assertThat(row.totalLab()).isZero();
+        assertThat(row.acceptedLabsCount()).isZero();
+        assertThat(row.isEligible()).isFalse();
+        assertThat(row.lPercent()).isZero();
+        assertThat(row.kt1()).isZero();
+        assertThat(row.kt2()).isZero();
+        assertThat(row.kt3()).isZero();
+        assertThat(row.kt4()).isZero();
+        assertThat(row.totalKt()).isZero();
+        assertThat(row.kPercent()).isZero();
+        assertThat(row.totalPoints()).isZero();
+        assertThat(row.ctfScore()).isZero();
+        assertThat(row.ctfCoeff()).isZero();
+        assertThat(row.cPercent()).isZero();
+        assertThat(row.sScore()).isZero();
+        assertThat(row.recommendedGrade()).isEqualTo(2);
+        assertThat(row.grade()).isEqualTo(2);
+        assertThat(row.labs().get(1).score()).isZero();
+        assertThat(row.labs().get(1).accepted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Issue #28: Gradebook respects active competition sumTestPoints flag identically to Leaderboard")
+    void testGradebookIncludesQuizPointsWhenSumTestPointsEnabled() {
+        com.arcx.ctfplatform.competitions.repository.CompetitionRepository competitionRepository =
+                org.mockito.Mockito.mock(com.arcx.ctfplatform.competitions.repository.CompetitionRepository.class);
+        gradebookService.setCompetitionRepository(competitionRepository);
+
+        UUID compId = UUID.randomUUID();
+        com.arcx.ctfplatform.competitions.entity.Competition activeComp =
+                com.arcx.ctfplatform.competitions.entity.Competition.builder()
+                        .id(compId)
+                        .status(com.arcx.ctfplatform.competitions.entity.CompetitionStatus.ACTIVE)
+                        .sumTestPoints(true)
+                        .build();
+        when(competitionRepository.findAll()).thenReturn(List.of(activeComp));
+
+        UUID lectureTestId = UUID.randomUUID();
+        var lectureTest = com.arcx.ctfplatform.tests.entity.Test.builder()
+                .id(lectureTestId)
+                .competitionId(compId)
+                .type(TestType.LECTURE)
+                .build();
+        QuizAttempt qa = QuizAttempt.builder()
+                .studentId(student.getId())
+                .quizId(lectureTestId)
+                .status(QuizAttemptStatus.COMPLETED)
+                .score(120.0)
+                .build();
+        Attempt attempt = Attempt.builder()
+                .studentId(student.getId())
+                .isCorrect(true)
+                .scoreAwarded(280)
+                .build();
+
+        when(studentRepository.findAll()).thenReturn(List.of(student));
+        when(academicGroupRepository.findAll()).thenReturn(List.of(group));
+        when(studentLabRepository.findAllByStudentIdIn(List.of(student.getId()))).thenReturn(List.of());
+        when(attemptRepository.findAll()).thenReturn(List.of(attempt));
+        when(quizAttemptRepository.findAll()).thenReturn(List.of(qa));
+        when(testRepository.findAll()).thenReturn(List.of(lectureTest));
+        when(promoCodeClaimRepository.findAllWithPromoCode()).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAll()).thenReturn(List.of());
+
+        List<GradebookRowDto> rows = gradebookService.getGradebook(groupId, null);
+        assertThat(rows).hasSize(1);
+        // 280 task + 120 quiz = 400 -> 400 / 800 = 0.50 (50.0%)
+        assertThat(rows.get(0).ctfScore()).isEqualTo(400);
+        assertThat(rows.get(0).ctfCoeff()).isEqualTo(0.50);
+        assertThat(rows.get(0).cPercent()).isEqualTo(50.0);
+    }
+
+    @Test
+    @DisplayName("Issue #28: updateLabDetail preserves penaltyCoefficient = 0.0 and buildRowForStudent returns 0.0")
+    void testPenaltyCoefficientZeroIsPreserved() {
+        StudentLab savedLab = StudentLab.builder()
+                .student(student)
+                .labNumber(1)
+                .rawScore(8.0)
+                .maxRawScore(8.0)
+                .defenseScore(2.0)
+                .maxDefenseScore(2.0)
+                .penaltyCoefficient(0.0)
+                .score(0.0)
+                .isAccepted(true)
+                .build();
+
+        when(studentRepository.findById(student.getId())).thenReturn(Optional.of(student));
+        when(academicGroupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(studentLabRepository.findByStudentIdAndLabNumber(student.getId(), 1)).thenReturn(Optional.empty());
+        when(studentLabRepository.save(any(StudentLab.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of(savedLab));
+        when(attemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(quizAttemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId())).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+
+        LabDetailUpdateRequest req = new LabDetailUpdateRequest(student.getId(), 1, 8.0, 2.0, 0.0, null);
+        GradebookRowDto updated = gradebookService.updateLabDetail(req);
+
+        org.mockito.ArgumentCaptor<StudentLab> labCaptor = org.mockito.ArgumentCaptor.forClass(StudentLab.class);
+        verify(studentLabRepository).save(labCaptor.capture());
+        assertThat(labCaptor.getValue().getPenaltyCoefficient()).isEqualTo(0.0);
+        assertThat(labCaptor.getValue().getScore()).isEqualTo(0.0);
+        assertThat(updated.labs().get(1).penaltyCoefficient()).isEqualTo(0.0);
+        assertThat(updated.labs().get(1).score()).isEqualTo(0.0);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> gradebookService.updateLabDetail(
+                        new LabDetailUpdateRequest(student.getId(), 1, 8.0, 2.0, -0.1, null)
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Issue #28: examScore can be explicitly cleared via clearExamScore or JSON null, while omitted keeps value")
+    void testExamScoreClearAndJsonDeserialization() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        GradebookUpdateRequest nullInJson = mapper.readValue("{\"examScore\": null}", GradebookUpdateRequest.class);
+        assertThat(nullInJson.examScore()).isNull();
+        assertThat(nullInJson.clearExamScore()).isTrue();
+
+        GradebookUpdateRequest omittedInJson = mapper.readValue("{\"kt1\": 18.5}", GradebookUpdateRequest.class);
+        assertThat(omittedInJson.examScore()).isNull();
+        assertThat(omittedInJson.clearExamScore()).isNull();
+        assertThat(omittedInJson.kt1()).isEqualTo(18.5);
+
+        student.setExamScore(88);
+        when(studentRepository.findById(student.getId())).thenReturn(Optional.of(student));
+        when(academicGroupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(attemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(quizAttemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId())).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+
+        // Omitted examScore preserves 88
+        GradebookRowDto kept = gradebookService.updateStudentGradebook(student.getId(), omittedInJson);
+        assertThat(kept.examScore()).isEqualTo(88);
+
+        // Explicit clear sets examScore to null
+        GradebookRowDto cleared = gradebookService.updateStudentGradebook(student.getId(), nullInJson);
+        assertThat(cleared.examScore()).isNull();
+        assertThat(student.getExamScore()).isNull();
+    }
+
+    @Test
+    @DisplayName("Issue #28: Direct lab score edit recalculates rawScore/defenseScore and accepted; unchanged score preserves breakdown")
+    void testDirectLabScoreEditRecalculatesBreakdownAndAccepted() {
+        StudentLab failedLab1 = StudentLab.builder()
+                .student(student)
+                .labNumber(1)
+                .rawScore(1.6)
+                .maxRawScore(8.0)
+                .defenseScore(0.4)
+                .maxDefenseScore(2.0)
+                .penaltyCoefficient(1.0)
+                .score(2.0)
+                .isAccepted(false)
+                .build();
+        StudentLab detailedLab2 = StudentLab.builder()
+                .student(student)
+                .labNumber(2)
+                .rawScore(10.0)
+                .maxRawScore(10.0)
+                .defenseScore(2.0)
+                .maxDefenseScore(2.0)
+                .penaltyCoefficient(0.85)
+                .score(10.2)
+                .isAccepted(true)
+                .build();
+
+        when(studentRepository.findById(student.getId())).thenReturn(Optional.of(student));
+        when(academicGroupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(studentLabRepository.findByStudentIdAndLabNumber(student.getId(), 1)).thenReturn(Optional.of(failedLab1));
+        when(studentLabRepository.findByStudentIdAndLabNumber(student.getId(), 2)).thenReturn(Optional.of(detailedLab2));
+        when(studentLabRepository.findAllByStudentId(student.getId())).thenReturn(List.of(failedLab1, detailedLab2));
+        when(attemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(quizAttemptRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+        when(promoCodeClaimRepository.findAllByStudentIdWithPromoCode(student.getId())).thenReturn(List.of());
+        when(scoreAdjustmentRepository.findAllByStudentId(student.getId())).thenReturn(List.of());
+
+        GradebookUpdateRequest req = new GradebookUpdateRequest(
+                null,
+                Map.of(1, 9.0, 2, 10.2),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        gradebookService.updateStudentGradebook(student.getId(), req);
+
+        // Lab 1 was raised from 2.0 -> 9.0: rawScore/defenseScore recalculated and accepted becomes true
+        assertThat(failedLab1.getScore()).isEqualTo(9.0);
+        assertThat(failedLab1.getRawScore()).isEqualTo(7.2);
+        assertThat(failedLab1.getDefenseScore()).isEqualTo(1.8);
+        assertThat(failedLab1.getPenaltyCoefficient()).isEqualTo(1.0);
+        assertThat(failedLab1.isAccepted()).isTrue();
+
+        // Lab 2 score did not change (10.2): existing detailed breakdown and penaltyCoefficient preserved
+        assertThat(detailedLab2.getRawScore()).isEqualTo(10.0);
+        assertThat(detailedLab2.getDefenseScore()).isEqualTo(2.0);
+        assertThat(detailedLab2.getPenaltyCoefficient()).isEqualTo(0.85);
+        assertThat(detailedLab2.isAccepted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Issue #28: Token exceeding 64 characters throws IllegalArgumentException")
+    void testTokenLengthValidation() {
+        when(studentRepository.findById(student.getId())).thenReturn(Optional.of(student));
+        String tooLongToken = "A".repeat(65);
+        GradebookUpdateRequest req = new GradebookUpdateRequest(
+                null, null, null, null, null, null, null, tooLongToken, null
+        );
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> gradebookService.updateStudentGradebook(student.getId(), req)
+        );
+        verify(studentRepository, never()).save(any());
+    }
 }

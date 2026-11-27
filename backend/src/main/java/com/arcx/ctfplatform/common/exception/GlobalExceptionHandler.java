@@ -288,6 +288,10 @@ public class GlobalExceptionHandler {
             case "Invalid CSV row: expected studentCode and score" ->
                     "Некорректная строка CSV: ожидаются шифр студента и баллы";
             case "Cycle number must be between" -> "Номер занятия вне допустимого диапазона";
+            case "Token must not exceed 64 characters" -> "Токен не должен превышать 64 символа";
+            case "Exam score must be between 0 and 100" -> "Балл за экзамен должен быть в диапазоне от 0 до 100";
+            case "Penalty coefficient must be between 0.0 and 1.0" ->
+                    "Штрафной коэффициент должен быть в диапазоне от 0.0 до 1.0";
             case "No value present" -> "Ресурс не найден";
             case "Access Denied", "Access is denied" -> "Недостаточно прав для выполнения операции";
             default -> {

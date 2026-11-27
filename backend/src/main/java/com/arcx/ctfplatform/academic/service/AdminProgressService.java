@@ -9,15 +9,13 @@ import com.arcx.ctfplatform.attempts.entity.Attempt;
 import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.competitions.entity.Competition;
 import com.arcx.ctfplatform.competitions.repository.CompetitionRepository;
-import com.arcx.ctfplatform.modifiers.entity.PromoCode;
 import com.arcx.ctfplatform.modifiers.entity.PromoCodeClaim;
-import com.arcx.ctfplatform.modifiers.entity.PromoModifierType;
-import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.modifiers.entity.ScoreAdjustment;
+import com.arcx.ctfplatform.modifiers.repository.PromoCodeClaimRepository;
 import com.arcx.ctfplatform.modifiers.repository.ScoreAdjustmentRepository;
 import com.arcx.ctfplatform.tests.entity.QuizAttempt;
-import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.entity.Test;
+import com.arcx.ctfplatform.tests.repository.QuizAttemptRepository;
 import com.arcx.ctfplatform.tests.repository.TestRepository;
 import com.arcx.ctfplatform.users.entity.User;
 import com.arcx.ctfplatform.users.repository.UserRepository;
@@ -25,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -47,13 +46,18 @@ public class AdminProgressService {
         List<Student> allStudents = studentRepository.findAll();
         List<User> allUsers = userRepository.findAll();
         Map<UUID, String> userIdToUsername = allUsers.stream()
-                .collect(Collectors.toMap(User::getId, u -> u.getUsername() != null ? u.getUsername() : u.getEmail()));
-        
+                .collect(Collectors.toMap(
+                        User::getId,
+                        u -> u.getUsername() != null ? u.getUsername() : u.getEmail(),
+                        (a, b) -> a
+                ));
+
         List<AcademicGroup> allGroups = academicGroupRepository.findAll();
         Map<UUID, String> groupIdToGroupName = allGroups.stream()
-                .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName));
+                .collect(Collectors.toMap(AcademicGroup::getId, AcademicGroup::getName, (a, b) -> a));
 
         List<Competition> competitions = competitionRepository.findAll();
+        Competition activeComp = StudentScoreCalculator.selectActiveCompetition(competitions, Instant.now());
 
         List<Attempt> allAttempts = attemptRepository.findAll();
         Map<UUID, List<Attempt>> attemptsByStudent = allAttempts.stream()
@@ -63,8 +67,8 @@ public class AdminProgressService {
         Map<UUID, List<QuizAttempt>> quizAttemptsByStudent = allQuizAttempts.stream()
                 .collect(Collectors.groupingBy(QuizAttempt::getStudentId));
         List<Test> allTests = testRepository.findAll();
-        Map<UUID, Test> testMap = allTests.stream().collect(Collectors.toMap(Test::getId, t -> t));
-        Map<UUID, Competition> compMap = competitions.stream().collect(Collectors.toMap(Competition::getId, c -> c));
+        Map<UUID, Test> testMap = allTests.stream()
+                .collect(Collectors.toMap(Test::getId, t -> t, (a, b) -> a));
 
         List<PromoCodeClaim> allClaims = promoCodeClaimRepository.findAllWithPromoCode();
         Map<UUID, List<PromoCodeClaim>> claimsByStudent = allClaims.stream()
@@ -80,57 +84,35 @@ public class AdminProgressService {
         for (Student student : allStudents) {
             UUID studentId = student.getId();
 
-            // 1. Total Score calculation
-            int score = 0;
-
-            // 1.1 Challenge Attempts score (CTF component only; control points and lecture quizzes are separate per regulation)
             List<Attempt> attempts = attemptsByStudent.getOrDefault(studentId, Collections.emptyList());
-            List<Attempt> correctAttempts = attempts.stream().filter(Attempt::isCorrect).toList();
-            score += correctAttempts.stream().mapToInt(a -> a.getScoreAwarded() == null ? 0 : a.getScoreAwarded()).sum();
-
-            // 1.2 Promo Codes score
+            List<QuizAttempt> quizzes = quizAttemptsByStudent.getOrDefault(studentId, Collections.emptyList());
             List<PromoCodeClaim> claims = claimsByStudent.getOrDefault(studentId, Collections.emptyList());
-            int additions = 0;
-            int subtractions = 0;
-            double multiplier = 1.0;
-            for (PromoCodeClaim claim : claims) {
-                PromoCode promo = claim.getPromoCode();
-                if (promo != null) {
-                    if (promo.getModifierType() == PromoModifierType.FIXED_ADD) {
-                        additions += promo.getValue();
-                    } else if (promo.getModifierType() == PromoModifierType.FIXED_SUB) {
-                        subtractions += promo.getValue();
-                    } else if (promo.getModifierType() == PromoModifierType.DOUBLE_COEFF) {
-                        multiplier *= promo.getValue();
-                    }
-                }
-            }
-            score = (int) Math.round((score + additions) * multiplier) - subtractions;
-            if (score < 0) {
-                score = 0;
-            }
-
-            // 1.3 Adjustments score
             List<ScoreAdjustment> adjustments = adjustmentsByStudent.getOrDefault(studentId, Collections.emptyList());
-            score += adjustments.stream().mapToInt(ScoreAdjustment::getPoints).sum();
-            if (score < 0) {
-                score = 0;
-            }
 
-            // 2. Metrics (solvedCount, attemptsCount)
-            int solvedCount = correctAttempts.size();
+            StudentScoreCalculator.CtfScoreResult ctfResult = StudentScoreCalculator.calculateCtfScore(
+                    student,
+                    attempts,
+                    quizzes,
+                    testMap,
+                    activeComp,
+                    claims,
+                    adjustments
+            );
+
             int attemptsCount = attempts.size();
-
-            // 3. User details mapping
-            String username = userIdToUsername.getOrDefault(student.getUserId(), "Unknown");
-            String groupName = student.getGroupId() != null ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы") : "Без группы";
+            String username = student.getUserId() != null
+                    ? userIdToUsername.getOrDefault(student.getUserId(), "Unknown")
+                    : "Unknown";
+            String groupName = student.getGroupId() != null
+                    ? groupIdToGroupName.getOrDefault(student.getGroupId(), "Без группы")
+                    : "Без группы";
 
             responses.add(new AdminProgressResponse(
                     studentId,
                     username,
                     groupName,
-                    score,
-                    solvedCount,
+                    ctfResult.ctfScore(),
+                    ctfResult.solvedCount(),
                     attemptsCount
             ));
         }
