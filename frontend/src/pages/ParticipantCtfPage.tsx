@@ -36,6 +36,7 @@ interface CtfTaskCardProps {
 
 const CtfTaskCard = ({ task, isSolved, onSelectCategory }: CtfTaskCardProps) => {
   const categoryText = task.category?.trim() || "Без категории";
+  const isFirstBloodLocked = Boolean(task.isFirstBloodOnly && task.firstBloodTaken && !isSolved);
 
   return (
     <Card className={cn("ctf-task-card-wrap", isSolved && "task-card-solved")}>
@@ -43,6 +44,10 @@ const CtfTaskCard = ({ task, isSolved, onSelectCategory }: CtfTaskCardProps) => 
         <div className="task-card__head">
           <div className="ctf-task-card__badges">
             {isSolved && <Badge tone="success">✓ Решено</Badge>}
+            {isFirstBloodLocked && <Badge tone="danger">🔒 First Blood занят</Badge>}
+            {task.isFirstBloodOnly && !task.firstBloodTaken && !isSolved && (
+              <Badge tone="warning">First Blood Only</Badge>
+            )}
             {onSelectCategory ? (
               <button
                 type="button"

@@ -17,6 +17,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
 import com.arcx.ctfplatform.challenges.dto.CtfTaskRequest;
 import com.arcx.ctfplatform.challenges.dto.CtfTaskResponse;
 import com.arcx.ctfplatform.challenges.entity.CtfTask;
@@ -39,6 +40,13 @@ public class CtfTaskService {
     private final IMapping<CtfTask, CtfTaskResponse> ctfTaskMapper;
     private final CompetitionRepository competitionRepository;
     private final TestRepository testRepository;
+
+    @Autowired(required = false)
+    private AttemptRepository attemptRepository;
+
+    public void setAttemptRepository(AttemptRepository attemptRepository) {
+        this.attemptRepository = attemptRepository;
+    }
 
     public CtfTaskService(
             CtfTaskRepository ctfTaskRepository,
@@ -67,7 +75,7 @@ public class CtfTaskService {
             Set<UUID> allowedIds = getStudentAccessibleTaskIds();
             all = all.stream().filter(t -> allowedIds.contains(t.getId())).toList();
         }
-        return ctfTaskMapper.mappingList(all);
+        return enrichWithSolveStats(ctfTaskMapper.mappingList(all));
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +84,7 @@ public class CtfTaskService {
         List<CtfTask> visible = ctfTaskRepository.findAll().stream()
                 .filter(t -> allowedIds.contains(t.getId()))
                 .toList();
-        return ctfTaskMapper.mappingList(visible);
+        return enrichWithSolveStats(ctfTaskMapper.mappingList(visible));
     }
 
     @Transactional(readOnly = true)
@@ -86,7 +94,7 @@ public class CtfTaskService {
         if (shouldFilterForStudent() && !getStudentAccessibleTaskIds().contains(task.getId())) {
             throw new AccessDeniedException("Task is not available");
         }
-        return ctfTaskMapper.mapping(task);
+        return enrichWithSolveStats(ctfTaskMapper.mapping(task));
     }
 
     @Transactional(readOnly = true)
@@ -96,7 +104,41 @@ public class CtfTaskService {
         if (!getStudentAccessibleTaskIds().contains(task.getId())) {
             throw new AccessDeniedException("Task is not available");
         }
-        return ctfTaskMapper.mapping(task);
+        return enrichWithSolveStats(ctfTaskMapper.mapping(task));
+    }
+
+    private CtfTaskResponse enrichWithSolveStats(CtfTaskResponse response) {
+        if (response == null || response.id() == null || attemptRepository == null) {
+            return response;
+        }
+        long solvedCount = attemptRepository.countByTaskIdAndIsCorrect(response.id(), true);
+        return response.withSolveStats(solvedCount);
+    }
+
+    private List<CtfTaskResponse> enrichWithSolveStats(List<CtfTaskResponse> responses) {
+        if (responses == null || responses.isEmpty() || attemptRepository == null) {
+            return responses;
+        }
+        List<UUID> taskIds = responses.stream()
+                .map(CtfTaskResponse::id)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (taskIds.isEmpty()) {
+            return responses;
+        }
+        Map<UUID, Long> solvedCounts = new HashMap<>();
+        List<Object[]> rows = attemptRepository.countCorrectAttemptsByTaskIdIn(taskIds);
+        if (rows != null) {
+            for (Object[] row : rows) {
+                if (row != null && row.length >= 2 && row[0] instanceof UUID tid && row[1] instanceof Number cnt) {
+                    solvedCounts.put(tid, cnt.longValue());
+                }
+            }
+        }
+        return responses.stream()
+                .map(r -> r == null || r.id() == null ? r : r.withSolveStats(solvedCounts.getOrDefault(r.id(), 0L)))
+                .toList();
     }
 
     @Transactional

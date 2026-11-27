@@ -1,4 +1,4 @@
-import { apiRequest, authTokenStorage } from "@/shared/api/client";
+import { apiRequest, downloadApiFile } from "@/shared/api/client";
 
 export interface LabCellDto {
   labNumber: number;
@@ -70,30 +70,6 @@ export interface LabDetailUpdateRequest {
   acceptedOverride?: boolean | null;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
-
-async function downloadFile(url: string, fallbackFilename: string): Promise<void> {
-  const token = authTokenStorage.get();
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}${url}`, { headers });
-  if (!response.ok) {
-    throw new Error(`Ошибка выгрузки файла: ${response.statusText}`);
-  }
-
-  const blob = await response.blob();
-  const link = document.createElement("a");
-  link.href = window.URL.createObjectURL(blob);
-  link.download = fallbackFilename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(link.href);
-}
-
 export const gradebookApi = {
   async getGradebook(groupId?: string, flowId?: string): Promise<GradebookRowDto[]> {
     const params = new URLSearchParams();
@@ -130,7 +106,11 @@ export const gradebookApi = {
     if (groupId) params.set("groupId", groupId);
     if (flowId) params.set("flowId", flowId);
     const qs = params.toString();
-    await downloadFile(`/api/gradebook/export/csv${qs ? `?${qs}` : ""}`, "Рейтинг.csv");
+    await downloadApiFile(
+      `/api/gradebook/export/csv${qs ? `?${qs}` : ""}`,
+      "Рейтинг.csv",
+      "Ошибка выгрузки ведомости"
+    );
   },
 
   async exportXlsx(groupId?: string, flowId?: string): Promise<void> {
@@ -138,6 +118,10 @@ export const gradebookApi = {
     if (groupId) params.set("groupId", groupId);
     if (flowId) params.set("flowId", flowId);
     const qs = params.toString();
-    await downloadFile(`/api/gradebook/export/xlsx${qs ? `?${qs}` : ""}`, "Рейтинг.xlsx");
+    await downloadApiFile(
+      `/api/gradebook/export/xlsx${qs ? `?${qs}` : ""}`,
+      "Рейтинг.xlsx",
+      "Ошибка выгрузки ведомости"
+    );
   },
 };

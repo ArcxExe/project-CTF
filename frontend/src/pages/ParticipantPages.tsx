@@ -81,8 +81,8 @@ export const RegisterPage = () => {
         studentCode: studentCode.trim(),
       });
       push({
-        title: "Регистрация выполнена",
-        variant: "success",
+        title: "Регистрация выполнена. Привязка учётной записи ожидает подтверждения преподавателем — статус доступен в профиле.",
+        variant: "info",
       });
     } catch (error) {
       push({
@@ -98,7 +98,10 @@ export const RegisterPage = () => {
         <div className="page-stack">
           <div>
             <h1>Регистрация участника</h1>
-            <p className="muted">Создание учебной учетной записи для участия в тестах и CTF.</p>
+            <p className="muted">
+              Создание учебной учётной записи для участия в тестах и CTF. После регистрации привязка к шифру студента
+              должна быть подтверждена преподавателем.
+            </p>
           </div>
 
           <form className="page-stack" onSubmit={handleSubmit}>
@@ -400,48 +403,78 @@ export const ParticipantTaskPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentTaskRef = useRef<Challenge | null>(null);
+  currentTaskRef.current = task;
 
   useEffect(() => {
     if (!taskId) {
       return;
     }
 
+    let cancelled = false;
+    setIsLoading(true);
+    setTask(null);
+    setHistory([]);
+    setFlag("");
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
     void Promise.all([challengesApi.getById(taskId), attemptsApi.getHistory(taskId)])
       .then(([challenge, attemptHistory]) => {
+        if (cancelled) return;
         setTask(challenge);
         setHistory(attemptHistory);
       })
       .catch((error: unknown) => {
+        if (cancelled) return;
         push({
           title: error instanceof Error ? error.message : "Не удалось загрузить задание",
           variant: "error",
         });
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      });
 
     // Listen for FIRST_BLOOD on lightweight events-only SSE channel
     const eventSource = new EventSource(buildSseUrl("/api/leaderboard/events"));
     eventSource.addEventListener("FIRST_BLOOD", (event) => {
+      if (cancelled) return;
       try {
         const data = JSON.parse((event as MessageEvent).data);
+        const latest = currentTaskRef.current;
+        const matchesCurrent = Boolean(latest && latest.title === data.challengeTitle);
         push({
-          title: `Участник ${data.username} получил First Blood по задаче "${data.challengeTitle}"! Вы всё еще можете сдать решение, но баллы за скорость уже начислены.`,
+          title: matchesCurrent
+            ? latest?.isFirstBloodOnly
+              ? `Участник ${data.username} получил First Blood по задаче «${data.challengeTitle}»! Задание «First Blood Only» закрыто для дальнейших решений.`
+              : `Участник ${data.username} получил First Blood по задаче «${data.challengeTitle}»! Вы всё ещё можете сдать решение.`
+            : `Участник ${data.username} получил First Blood по задаче «${data.challengeTitle}»!`,
           variant: "info",
         });
-        
-        setTask(current => {
-          if (current && current.title === data.challengeTitle) {
-            // Update local state to show First Blood is taken
-            return { ...current, firstBloodTaken: true };
-          }
-          return current;
-        });
+
+        if (matchesCurrent) {
+          setTask((current) =>
+            current && current.title === data.challengeTitle
+              ? {
+                  ...current,
+                  firstBloodTaken: true,
+                  solvedCount: Math.max(1, current.solvedCount ?? 0),
+                }
+              : current
+          );
+        }
       } catch (err) {
         console.error("Failed to parse FIRST_BLOOD event", err);
       }
     });
-    
+
     return () => {
+      cancelled = true;
       eventSource.close();
     };
   }, [push, taskId]);
@@ -463,6 +496,17 @@ export const ParticipantTaskPage = () => {
       });
       const attemptHistory = await attemptsApi.getHistory(task.id);
       setHistory(attemptHistory);
+      if (isCorrect) {
+        setTask((current) =>
+          current
+            ? {
+                ...current,
+                firstBloodTaken: true,
+                solvedCount: Math.max(1, (current.solvedCount ?? 0) + 1),
+              }
+            : current
+        );
+      }
       setFlag("");
     } catch (error) {
       push({
@@ -531,14 +575,44 @@ export const ParticipantTaskPage = () => {
   }
 
   const isFileUploadTask = (task as any).taskType === "FILE_UPLOAD";
+  const isSolvedByMe = history.some((item) => Boolean(item.correct ?? (item as any).isCorrect));
+  const isFirstBloodLocked = Boolean(task.isFirstBloodOnly && task.firstBloodTaken && !isSolvedByMe);
 
   return (
     <div className="page-stack">
       <PageHeader
         title="Карточка задания"
         subtitle="Описание, метаданные, вложения, подсказки и отправка флага."
-        actions={<Badge tone="info">{task.difficulty}</Badge>}
+        actions={
+          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
+            {isSolvedByMe && <Badge tone="success">✓ Решено</Badge>}
+            {isFirstBloodLocked && <Badge tone="danger">🔒 First Blood занят</Badge>}
+            {task.isFirstBloodOnly && !task.firstBloodTaken && !isSolvedByMe && (
+              <Badge tone="warning">First Blood Only</Badge>
+            )}
+            {!task.isFirstBloodOnly && task.firstBloodTaken && !isSolvedByMe && (
+              <Badge tone="neutral">First Blood взят</Badge>
+            )}
+            <Badge tone="info">{task.difficulty}</Badge>
+          </div>
+        }
       />
+
+      {isFirstBloodLocked && (
+        <div
+          role="alert"
+          style={{
+            padding: "0.85rem 1.1rem",
+            borderRadius: "var(--radius-md, 10px)",
+            background: "rgba(239, 68, 68, 0.14)",
+            border: "1px solid rgba(239, 68, 68, 0.45)",
+            color: "#f87171",
+          }}
+        >
+          <strong>Задание «First Blood Only» уже решено другим участником.</strong> Отправка решений по этой задаче
+          закрыта.
+        </div>
+      )}
 
       <div className="grid grid-2">
         <Card>
@@ -584,9 +658,10 @@ export const ParticipantTaskPage = () => {
                   label="Флаг"
                   placeholder="CTF{...}"
                   value={flag}
+                  disabled={isFirstBloodLocked}
                   onChange={(event) => setFlag(event.target.value)}
                 />
-                <Button type="submit" disabled={isSubmitting}>
+                <Button type="submit" disabled={isSubmitting || isFirstBloodLocked}>
                   {isSubmitting ? "Отправляем..." : "Отправить флаг"}
                 </Button>
               </form>
@@ -604,10 +679,15 @@ export const ParticipantTaskPage = () => {
                   type="file"
                   accept=".pdf,.zip,.txt"
                   className="ui-input"
+                  disabled={isFirstBloodLocked}
                   onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
                 />
               </label>
-              <Button type="submit" variant={isFileUploadTask ? "primary" : "secondary"} disabled={isUploadingFile || !selectedFile}>
+              <Button
+                type="submit"
+                variant={isFileUploadTask ? "primary" : "secondary"}
+                disabled={isUploadingFile || !selectedFile || isFirstBloodLocked}
+              >
                 {isUploadingFile ? "Загружаем..." : "Отправить файл"}
               </Button>
             </form>
@@ -1044,14 +1124,10 @@ export const ParticipantLabsPage = () => {
             columns={[
               { key: "studentName", title: "Участник" },
               { key: "groupName", title: "Группа" },
-              { 
-                key: "score", 
+              {
+                key: "score",
                 title: "Баллы за лаб",
-                render: (row) => {
-                  const group = groups.find((g) => g.name === row.groupName);
-                  const maxLabs = group?.maxLabs ?? 143;
-                  return `${row.score} / ${maxLabs}`;
-                }
+                render: (row) => `${row.score} / 143`,
               },
               { 
                 key: "v1Coefficient", 

@@ -12,6 +12,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.arcx.ctfplatform.attempts.repository.AttemptRepository;
+import com.arcx.ctfplatform.challenges.dto.CtfTaskResponse;
 import com.arcx.ctfplatform.challenges.entity.CtfTask;
 import com.arcx.ctfplatform.challenges.repository.CtfTaskRepository;
 import com.arcx.ctfplatform.common.config.IMapping;
@@ -31,6 +33,13 @@ public class CompetitionService {
     private final CtfTaskRepository ctfTaskRepository;
     private final IMapping<Competition, CompetitionResponse> competitionMapper;
     private final ScoreAdjustmentRepository scoreAdjustmentRepository;
+
+    @Autowired(required = false)
+    private AttemptRepository attemptRepository;
+
+    public void setAttemptRepository(AttemptRepository attemptRepository) {
+        this.attemptRepository = attemptRepository;
+    }
 
     public CompetitionService(
             CompetitionRepository competitionRepository,
@@ -56,7 +65,7 @@ public class CompetitionService {
     @Transactional(readOnly = true)
     public List<CompetitionResponse> getCompetitionsForUser(User user) {
         if (isAdminOrInstructor(user)) {
-            return competitionMapper.mappingList(competitionRepository.findAll());
+            return enrichCompetitionsWithSolveStats(competitionMapper.mappingList(competitionRepository.findAll()));
         }
         List<Competition> comps = competitionRepository.findAllByStatus(CompetitionStatus.ACTIVE);
         if (comps.isEmpty()) {
@@ -68,14 +77,15 @@ public class CompetitionService {
                     .filter(c -> c.getStatus() != CompetitionStatus.DRAFT)
                     .toList();
         }
-        return competitionMapper.mappingList(comps).stream()
+        List<CompetitionResponse> sanitized = competitionMapper.mappingList(comps).stream()
                 .map(this::sanitizeForStudent)
                 .toList();
+        return enrichCompetitionsWithSolveStats(sanitized);
     }
 
     @Transactional(readOnly = true)
     public List<CompetitionResponse> getAllCompetitionsForAdmin() {
-        return competitionMapper.mappingList(competitionRepository.findAll());
+        return enrichCompetitionsWithSolveStats(competitionMapper.mappingList(competitionRepository.findAll()));
     }
 
     @Transactional(readOnly = true)
@@ -88,9 +98,9 @@ public class CompetitionService {
             if (competition.getStatus() == CompetitionStatus.DRAFT) {
                 throw new AccessDeniedException("Competition is not available");
             }
-            return sanitizeForStudent(mapped);
+            return enrichCompetitionWithSolveStats(sanitizeForStudent(mapped));
         }
-        return mapped;
+        return enrichCompetitionWithSolveStats(mapped);
     }
 
     @Transactional(readOnly = true)
@@ -102,9 +112,68 @@ public class CompetitionService {
             if (competition.getStatus() == CompetitionStatus.DRAFT) {
                 throw new AccessDeniedException("Competition is not available");
             }
-            return sanitizeForStudent(mapped);
+            return enrichCompetitionWithSolveStats(sanitizeForStudent(mapped));
         }
-        return mapped;
+        return enrichCompetitionWithSolveStats(mapped);
+    }
+
+    private CompetitionResponse enrichCompetitionWithSolveStats(CompetitionResponse response) {
+        if (response == null) {
+            return null;
+        }
+        List<CompetitionResponse> enriched = enrichCompetitionsWithSolveStats(List.of(response));
+        return enriched.isEmpty() ? response : enriched.get(0);
+    }
+
+    private List<CompetitionResponse> enrichCompetitionsWithSolveStats(List<CompetitionResponse> responses) {
+        if (responses == null || responses.isEmpty() || attemptRepository == null) {
+            return responses;
+        }
+        List<UUID> taskIds = responses.stream()
+                .filter(java.util.Objects::nonNull)
+                .flatMap(c -> c.tasks() != null ? c.tasks().stream() : java.util.stream.Stream.empty())
+                .filter(java.util.Objects::nonNull)
+                .map(CtfTaskResponse::id)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (taskIds.isEmpty()) {
+            return responses;
+        }
+        java.util.Map<UUID, Long> solvedCounts = new java.util.HashMap<>();
+        List<Object[]> rows = attemptRepository.countCorrectAttemptsByTaskIdIn(taskIds);
+        if (rows != null) {
+            for (Object[] row : rows) {
+                if (row != null && row.length >= 2 && row[0] instanceof UUID tid && row[1] instanceof Number cnt) {
+                    solvedCounts.put(tid, cnt.longValue());
+                }
+            }
+        }
+        return responses.stream()
+                .map(comp -> {
+                    if (comp == null || comp.tasks() == null || comp.tasks().isEmpty()) {
+                        return comp;
+                    }
+                    List<CtfTaskResponse> enrichedTasks = comp.tasks().stream()
+                            .map(t -> t == null || t.id() == null
+                                    ? t
+                                    : t.withSolveStats(solvedCounts.getOrDefault(t.id(), 0L)))
+                            .toList();
+                    return new CompetitionResponse(
+                            comp.id(),
+                            comp.title(),
+                            comp.description(),
+                            comp.startDate(),
+                            comp.endDate(),
+                            comp.status(),
+                            comp.createdAt(),
+                            comp.sumTestPoints(),
+                            comp.leaderboardHidden(),
+                            comp.hiddenStudentIds(),
+                            enrichedTasks
+                    );
+                })
+                .toList();
     }
 
     @Transactional
