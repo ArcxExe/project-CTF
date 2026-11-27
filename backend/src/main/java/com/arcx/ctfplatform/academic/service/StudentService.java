@@ -88,7 +88,9 @@ public class StudentService {
 
     @Transactional
     public StudentResponse createStudent(StudentCreateRequest request, User currentUser) {
-        if (studentRepository.findByStudentCode(request.studentCode()).isPresent()) {
+        String normalizedCode = request.studentCode() != null ? request.studentCode().trim() : "";
+        if (studentRepository.findByStudentCode(normalizedCode).isPresent()
+                || studentRepository.findByStudentCodeIgnoreCase(normalizedCode).isPresent()) {
             throw new IllegalArgumentException("Student code already exists");
         }
         AcademicGroup group = null;
@@ -100,7 +102,7 @@ public class StudentService {
                 .firstName(request.firstName())
                 .lastName(request.lastName())
                 .middleName(request.middleName())
-                .studentCode(request.studentCode())
+                .studentCode(normalizedCode)
                 .academicGroup(group)
                 .status(StudentStatus.ACTIVE)
                 .createdBy(currentUser != null ? currentUser.getId() : null)
@@ -211,9 +213,11 @@ public class StudentService {
     public StudentResponse updateStudent(UUID id, StudentUpdateRequest request, User currentUser) {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
-        
-        if (!student.getStudentCode().equals(request.studentCode()) &&
-            studentRepository.findByStudentCode(request.studentCode()).isPresent()) {
+
+        String normalizedCode = request.studentCode() != null ? request.studentCode().trim() : "";
+        if (!student.getStudentCode().equalsIgnoreCase(normalizedCode)
+                && (studentRepository.findByStudentCode(normalizedCode).isPresent()
+                        || studentRepository.findByStudentCodeIgnoreCase(normalizedCode).isPresent())) {
             throw new IllegalArgumentException("Student code already exists");
         }
         
@@ -226,7 +230,7 @@ public class StudentService {
         student.setFirstName(request.firstName());
         student.setLastName(request.lastName());
         student.setMiddleName(request.middleName());
-        student.setStudentCode(request.studentCode());
+        student.setStudentCode(normalizedCode);
         student.setAcademicGroup(group);
         student.setPairNumber(request.pairNumber());
         

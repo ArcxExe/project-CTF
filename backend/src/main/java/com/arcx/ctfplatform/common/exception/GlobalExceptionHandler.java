@@ -233,6 +233,8 @@ public class GlobalExceptionHandler {
             case "Email is invalid" -> "Некорректный формат email";
             case "Student code not registered", "Invalid student code" ->
                     "Шифр / токен студента не найден в списке курса";
+            case "Ambiguous registration token" ->
+                    "Токен совпадает у нескольких студентов — используйте шифр студента для регистрации";
             case "This student code is already linked", "Student code already claimed" ->
                     "Этот шифр студента уже привязан к другой учётной записи";
             case "Student code already exists" -> "Студент с таким шифром уже существует";

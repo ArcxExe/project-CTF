@@ -225,6 +225,9 @@ public class AuthService {
         if (byToken != null && byToken.size() == 1) {
             return byToken.get(0);
         }
+        if (byToken != null && byToken.size() > 1) {
+            throw new IllegalArgumentException("Ambiguous registration token");
+        }
         throw new IllegalArgumentException("Student code not registered");
     }
 
